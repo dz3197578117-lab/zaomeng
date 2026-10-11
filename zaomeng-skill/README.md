@@ -163,8 +163,12 @@
 
 ### OpenClaw
 
+本仓库自带该 skill，直接装本地的即可（在仓库根目录执行）：
+
 ```bash
-openclaw skills install wkbin/zaomeng-skill
+python scripts/install_skill.py --openclaw-dir <OpenClaw skills 根目录>
+# 通用写法（自定义 skills 根目录）
+python scripts/install_skill.py --skills-dir <你的-skills-根目录>
 ```
 
 ### ClawHub

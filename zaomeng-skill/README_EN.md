@@ -163,8 +163,13 @@ Reference example:
 
 ### OpenClaw
 
+The skill ships inside this repository, so install it from the local copy (run from the
+repository root):
+
 ```bash
-openclaw skills install wkbin/zaomeng-skill
+python scripts/install_skill.py --openclaw-dir <your OpenClaw skills root>
+# generic form, for any custom skills root
+python scripts/install_skill.py --skills-dir <your-skills-root>
 ```
 
 ### ClawHub

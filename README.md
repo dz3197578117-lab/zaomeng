@@ -28,7 +28,7 @@
 | 从正文自动提取主要角色 | 导入书籍与重蒸馏流程可从正文自动识别主要角色并填入名单 |
 | 对话可指定起始章 | 创建对话时可选择从第几章开始剧情，章节列表由章节索引服务提供 |
 
-逐文件的完整清单（相对上游：新增 33 / 修改 63 / 删除 0，含复核方法）见 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)。
+逐文件的完整清单（相对上游：新增 33 / 修改 66 / 删除 0，含复核方法）见 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)。
 
 ## 项目构成
 

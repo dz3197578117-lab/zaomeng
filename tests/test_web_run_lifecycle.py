@@ -101,7 +101,7 @@ class RunLifecycleServiceTests(unittest.TestCase):
                 "_discover_launcher_metadata",
                 return_value={
                     "launcher_path": "/home/test/.local/bin/zaomeng",
-                    "repo_slug": "wkbin/zaomeng",
+                    "repo_slug": "dz3197578117-lab/zaomeng",
                     "repo_ref": "main",
                 },
             ), patch.object(
@@ -126,7 +126,7 @@ class RunLifecycleServiceTests(unittest.TestCase):
                 "_discover_launcher_metadata",
                 return_value={
                     "launcher_path": "/home/test/.local/bin/zaomeng",
-                    "repo_slug": "wkbin/zaomeng",
+                    "repo_slug": "dz3197578117-lab/zaomeng",
                     "repo_ref": "main",
                 },
             ), patch.object(
