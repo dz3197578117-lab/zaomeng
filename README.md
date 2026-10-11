@@ -28,7 +28,7 @@
 | 从正文自动提取主要角色 | 导入书籍与重蒸馏流程可从正文自动识别主要角色并填入名单 |
 | 对话可指定起始章 | 创建对话时可选择从第几章开始剧情，章节列表由章节索引服务提供 |
 
-逐文件的完整清单（相对上游：新增 33 / 修改 66 / 删除 0，含复核方法）见 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)。
+逐文件的完整清单（相对上游：新增 33 / 修改 67 / 删除 2，含复核方法）见 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)。
 
 ## 项目构成
 
@@ -85,23 +85,6 @@ zaomeng
 </p>
 
 - 书卷包投稿 / 问题反馈：[Issues](https://github.com/dz3197578117-lab/zaomeng/issues)
-
-## 赞助支持
-
-如果造梦对你有所帮助，欢迎请作者喝杯奶茶 🧋
-
-每一笔支持都会用于持续开发新功能、修复 Bug、提升项目稳定性，以及购买模型 API Token 用于功能测试与体验优化。感谢你帮助造梦走得更远。
-
-<table>
-  <tr>
-    <td align="center">
-      <img src="docs/assets/sponsor-wechat.png" alt="造梦微信赞助收款码" height="420">
-    </td>
-    <td align="center">
-      <img src="docs/assets/sponsor-alipay.jpg" alt="造梦支付宝赞助收款码" height="420">
-    </td>
-  </tr>
-</table>
 
 ## 许可证
 

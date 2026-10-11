@@ -3,7 +3,7 @@
 本文件回答一个问题：**本仓库里哪些源码是我们改的、上游没有的？**
 
 - 上游基线：`wkbin/zaomeng`，提交 `f178b4f83bbd152e2f82c50c2b7835d8b823c03a`（共 1070 个文件）。
-- 对照对象：本仓库 `main` 已跟踪文件，共 1103 个。
+- 对照对象：本仓库 `main` 已跟踪文件，共 1101 个。
 - 比对方式：逐文件 SHA-256，分「新增 / 内容修改 / 删除」三类；新增文件再逐条查上游是否存在（404 = 本版独有）。
 - 核对时间：基线上游 `main` 当天仍为 1070 个文件、内容与上述提交一致，因此下表中「修改」的文件**全部**是本版改动，不含上游自身的后续修改。
 
@@ -12,9 +12,9 @@
 | 类别 | 文件数 | 说明 |
 |---|---:|---|
 | 新增 | 33 | 上游无此路径；其中前 21 个已逐条 HTTP 404 核实 |
-| 内容修改 | 66 | 与基线逐字节不同；上游未动过这些文件 |
-| 删除 | 0 | 无 |
-| **合计** | **99** | 66 个修改文件的文本改动合计约 +3000 / −320 行（新增文件不计入行数） |
+| 内容修改 | 67 | 与基线逐字节不同；上游未动过这些文件 |
+| 删除 | 2 | 上游作者的收款码图片，见第十节 |
+| **合计** | **102** | 67 个修改文件的文本改动合计约 +3000 / −320 行（新增/删除文件不计入行数） |
 
 下面按功能分组。有些文件同时服务多个功能（例如 `LlmClient.kt` 既是提供方适配也是端侧推理的调用层），会在多组里重复出现，因此各组数量之和大于 84。
 
@@ -176,7 +176,9 @@
 | `src/web/review/persona_completion.py` | User-Agent 中的仓库地址 |
 | `zaomeng-skill/README.md` / `README_EN.md` | OpenClaw 安装段原为 `openclaw skills install wkbin/zaomeng-skill`（会装到上游那份），改用仓库自带的 `scripts/install_skill.py --openclaw-dir` |
 | `tests/test_web_run_lifecycle.py` | `_discover_launcher_metadata` 夹具里的 `repo_slug` 与 `install.sh` / `DEFAULT_REPO_SLUG` 实际写入的值对齐 |
-| `docs/notes/real-app-guide.md` | **新增文件**：其 clone / install.sh / skill 三条安装指令原先指向上游，已改为本仓库 |
+| `kmp/app/desktopApp/build.gradle.kts` | 桌面安装包（MSI/DMG）的 `vendor` 由 `"wkbin"` 改为 `"dz3197578117-lab"`——安装时这个值会显示给用户 |
+
+> `docs/notes/real-app-guide.md` 的三条安装指令也曾指向上游，但该文件本身属于新增，已计入第九节。
 
 **刻意保留指向原版的**：在线书卷包 `zaomeng-library`（无等价替代）、QQ 群号、AGPL 授权署名链接（`website/index.html`，许可义务）。**刻意不动**：包命名空间 `top.wkbin.zaomeng`（改了等于换 applicationId + 数据目录）。
 
@@ -223,6 +225,17 @@
 >
 > **`examples/zaomeng-lite/` 是独立的示例应用**，不参与 `:app:*` 构建，也不影响任何 CI 任务；
 > 运行方式见其 `server.py` 顶部注释（`python server.py`，默认 `http://127.0.0.1:8000`）。
+
+## 十、删除（2）
+
+| 文件 | 说明 |
+|---|---|
+| `docs/assets/sponsor-wechat.png` | 上游作者的微信收款码 |
+| `docs/assets/sponsor-alipay.jpg` | 上游作者的支付宝收款码 |
+
+`README.md` 原有的「赞助支持」段用的就是这两个收款码。本版不再向上游作者收款，
+故整段移除并删图。上游署名仍由 `website/index.html` 的 AGPL 授权链接保留，不影响许可合规。
+两个文件可从 git 历史取回。
 
 ## 怎么自己复核这份清单
 
