@@ -6,6 +6,9 @@ import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.routing.routing
+import kotlin.concurrent.Volatile
+import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,6 +48,7 @@ import top.wkbin.zaomeng.platform.ServerPlatform
  * 通用内嵌后端控制器：三端统一的 Ktor CIO server（数据走 Room）。
  * 由平台入口提供 ServerPlatform/端口/token，进程内启动一次。
  */
+@OptIn(ExperimentalAtomicApi::class)
 class LocalBackendController(
     private val serverPlatform: ServerPlatform,
     /** 0 = 随机端口（默认，避免固定端口被占用/多实例冲突）。 */
@@ -55,8 +59,20 @@ class LocalBackendController(
 
     override val state: StateFlow<BackendState> = mutableState.asStateFlow()
 
-    @Volatile
-    private var started = false
+    /**
+     * 幂等启动标记。
+     *
+     * 这里不能用 `synchronized`：它是 `kotlin.jvm.*` 专有 API，本文件在 commonMain，
+     * 而 `:server` 声明了 iosArm64/iosSimulatorArm64 目标，iOS 编译会直接报
+     * `Unresolved reference 'synchronized'`。同理 `@Volatile` 也必须在 commonMain 显式
+     * import `kotlin.concurrent.Volatile`（JVM 默认导入的 `kotlin.jvm.Volatile` 在
+     * common 里不可见，`@Volatile` 裸用同样解析不到）。
+     *
+     * `compareAndSet(false, true)` 与原先「双重检查 + 锁」的语义一致——只有第一个调用方
+     * 真正启动，其余直接返回；且 CAS 本身是原子的，比「先判断再赋值」更严谨。
+     */
+    private val started = AtomicBoolean(false)
+
     @Volatile
     private var boundPort: Int? = null
 
@@ -79,11 +95,9 @@ class LocalBackendController(
     }
 
     override fun start() {
-        if (started) return
-        synchronized(this) {
-            if (started) return
-            started = true
-        }
+        if (started.load()) return
+        // CAS 失败说明已有线程在启动或已启动，直接返回（等价于原锁内二次判断）。
+        if (!started.compareAndSet(expectedValue = false, newValue = true)) return
         mutableState.value = BackendState.Starting("启动内嵌后端…")
         try {
             val services = KtorServiceGraph(serverPlatform)
@@ -144,7 +158,7 @@ class LocalBackendController(
     }
 
     override fun retry() {
-        started = false
+        started.store(false)
         start()
     }
 }

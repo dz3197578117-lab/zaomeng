@@ -70,7 +70,15 @@ object GgufMetadataReader {
     private fun parseFile(path: Path, fileSystem: FileSystem): GgufMetadata? {
         val totalSize = fileSystem.metadataOrNull(path)?.size ?: return null
         if (totalSize < HEADER_BYTES) return null
-        return fileSystem.source(path).buffer().use { source -> parse(source, totalSize) }
+        // 不用 kotlin.io 的 use{}：它要求的接收者上界是 AutoCloseable，而 okio 的 Source
+        // 在 JVM 上恰好实现了 java.io.Closeable（于是 JVM/Android 编译得过），在 Kotlin/Native
+        // 上则不是，iOS 编译会报 receiver type mismatch。close() 是 okio.Source 的接口方法，三端都有。
+        val source = fileSystem.source(path).buffer()
+        return try {
+            parse(source, totalSize)
+        } finally {
+            source.close()
+        }
     }
 
     private fun parse(source: BufferedSource, totalSize: Long): GgufMetadata? {
