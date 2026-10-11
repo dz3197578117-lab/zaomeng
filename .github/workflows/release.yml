@@ -60,9 +60,14 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           # 附件名必须带 arm64-v8a：App 的更新检查会优先挑名字里含它的包
           # （见 kmp/app/androidApp/.../update/AppUpdateManager.kt 的 parseLatestRelease）。
-          asset="zaomeng-${version}-arm64-v8a-debug.apk"
-          gh release create "${GITHUB_REF_NAME}" \
-            "${{ steps.apk.outputs.path }}#${asset}" \
+          # 注意 gh 的 `file#label` 语法只设置显示标签、不改附件文件名，
+          # 所以先复制成目标名字再上传。
+          asset="${RUNNER_TEMP}/zaomeng-${version}-arm64-v8a-debug.apk"
+          cp "${{ steps.apk.outputs.path }}" "${asset}"
+          # 幂等：同名 Release 已存在就先删掉重建（tag 由推送产生，保留不动）
+          gh release delete "${GITHUB_REF_NAME}" --yes || true
+          gh release create "${GITHUB_REF_NAME}" "${asset}" \
             --title "造梦 ${version}" \
             --notes-file "${RUNNER_TEMP}/notes.md" \
+            --latest \
             --verify-tag
