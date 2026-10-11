@@ -1,0 +1,418 @@
+{
+  "schema_version": "persona-quality-report/v1",
+  "evaluator_version": "1.1.0",
+  "character": "林黛玉",
+  "input_fingerprint": "sha256:33321cc850147e6c071edf965cd3abba80365109f9701dc89b958da7e4056bcc",
+  "score": 100,
+  "max_score": 100,
+  "grade": "ready",
+  "verdict": "可进入对话回归",
+  "dimensions": [
+    {
+      "id": "identity",
+      "label": "身份辨识",
+      "score": 20,
+      "max_score": 20,
+      "field_count": 11,
+      "ready_field_count": 11
+    },
+    {
+      "id": "motivation",
+      "label": "动机决策",
+      "score": 20,
+      "max_score": 20,
+      "field_count": 9,
+      "ready_field_count": 9
+    },
+    {
+      "id": "voice",
+      "label": "对白声音",
+      "score": 25,
+      "max_score": 25,
+      "field_count": 6,
+      "ready_field_count": 6
+    },
+    {
+      "id": "behavior",
+      "label": "行为情绪",
+      "score": 20,
+      "max_score": 20,
+      "field_count": 12,
+      "ready_field_count": 12
+    },
+    {
+      "id": "evidence",
+      "label": "证据支撑",
+      "score": 15,
+      "max_score": 15,
+      "field_count": 0,
+      "ready_field_count": 0
+    }
+  ],
+  "evidence": {
+    "description_count": 5,
+    "dialogue_count": 5,
+    "thought_count": 3,
+    "chunk_count": 3,
+    "evidence_source": "excerpt:start；excerpt:mid；excerpt:end"
+  },
+  "metrics": {
+    "evaluated_field_count": 38,
+    "ready_field_count": 38,
+    "thin_field_count": 0,
+    "missing_field_count": 0,
+    "issue_count": 0,
+    "evidence": {
+      "description_count": 5,
+      "dialogue_count": 5,
+      "thought_count": 3,
+      "chunk_count": 3,
+      "evidence_source": "excerpt:start；excerpt:mid；excerpt:end"
+    }
+  },
+  "field_results": [
+    {
+      "field": "age_stage",
+      "label": "年龄阶段",
+      "dimension": "identity",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 9,
+      "evidence": []
+    },
+    {
+      "field": "anger_style",
+      "label": "发怒方式",
+      "dimension": "behavior",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 15,
+      "evidence": []
+    },
+    {
+      "field": "appearance_feature",
+      "label": "外貌辨识",
+      "dimension": "identity",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 16,
+      "evidence": []
+    },
+    {
+      "field": "belief_anchor",
+      "label": "信念支点",
+      "dimension": "motivation",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 17,
+      "evidence": []
+    },
+    {
+      "field": "cadence",
+      "label": "语句节奏",
+      "dimension": "voice",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 14,
+      "evidence": []
+    },
+    {
+      "field": "core_identity",
+      "label": "核心身份",
+      "dimension": "identity",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 14,
+      "evidence": []
+    },
+    {
+      "field": "core_traits",
+      "label": "核心特质",
+      "dimension": "behavior",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 8,
+      "evidence": []
+    },
+    {
+      "field": "decision_rules",
+      "label": "决策规则",
+      "dimension": "motivation",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 16,
+      "evidence": []
+    },
+    {
+      "field": "dislike_hate",
+      "label": "明显厌恶",
+      "dimension": "behavior",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 11,
+      "evidence": []
+    },
+    {
+      "field": "emotion_model",
+      "label": "情绪底模",
+      "dimension": "behavior",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 19,
+      "evidence": []
+    },
+    {
+      "field": "forbidden_behaviors",
+      "label": "不会做的事",
+      "dimension": "behavior",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 18,
+      "evidence": []
+    },
+    {
+      "field": "gender",
+      "label": "性别",
+      "dimension": "identity",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 1,
+      "evidence": []
+    },
+    {
+      "field": "grievance_style",
+      "label": "委屈方式",
+      "dimension": "behavior",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 20,
+      "evidence": []
+    },
+    {
+      "field": "habit_action",
+      "label": "习惯动作",
+      "dimension": "identity",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 16,
+      "evidence": []
+    },
+    {
+      "field": "hidden_desire",
+      "label": "隐秘渴望",
+      "dimension": "motivation",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 13,
+      "evidence": []
+    },
+    {
+      "field": "identity_anchor",
+      "label": "身份锚点",
+      "dimension": "identity",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 15,
+      "evidence": []
+    },
+    {
+      "field": "inner_conflict",
+      "label": "内在冲突",
+      "dimension": "motivation",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 16,
+      "evidence": []
+    },
+    {
+      "field": "joy_style",
+      "label": "开心方式",
+      "dimension": "behavior",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 16,
+      "evidence": []
+    },
+    {
+      "field": "key_bonds",
+      "label": "重要牵系",
+      "dimension": "behavior",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 9,
+      "evidence": []
+    },
+    {
+      "field": "moral_bottom_line",
+      "label": "道德底线",
+      "dimension": "motivation",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 19,
+      "evidence": []
+    },
+    {
+      "field": "others_impression",
+      "label": "他人观感",
+      "dimension": "identity",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 14,
+      "evidence": []
+    },
+    {
+      "field": "preference_like",
+      "label": "偏好喜好",
+      "dimension": "behavior",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 9,
+      "evidence": []
+    },
+    {
+      "field": "private_self",
+      "label": "私下的一面",
+      "dimension": "identity",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 18,
+      "evidence": []
+    },
+    {
+      "field": "restraint_threshold",
+      "label": "失控阈值",
+      "dimension": "behavior",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 18,
+      "evidence": []
+    },
+    {
+      "field": "reward_logic",
+      "label": "回报逻辑",
+      "dimension": "motivation",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 17,
+      "evidence": []
+    },
+    {
+      "field": "self_cognition",
+      "label": "自我认知",
+      "dimension": "identity",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 17,
+      "evidence": []
+    },
+    {
+      "field": "sentence_endings",
+      "label": "句尾习惯",
+      "dimension": "voice",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 6,
+      "evidence": []
+    },
+    {
+      "field": "sentence_openers",
+      "label": "起句习惯",
+      "dimension": "voice",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 5,
+      "evidence": []
+    },
+    {
+      "field": "signature_phrases",
+      "label": "口头禅",
+      "dimension": "voice",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 7,
+      "evidence": []
+    },
+    {
+      "field": "social_mode",
+      "label": "社交模式",
+      "dimension": "behavior",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 15,
+      "evidence": []
+    },
+    {
+      "field": "soul_goal",
+      "label": "灵魂目标",
+      "dimension": "motivation",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 8,
+      "evidence": []
+    },
+    {
+      "field": "speech_style",
+      "label": "说话方式",
+      "dimension": "voice",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 13,
+      "evidence": []
+    },
+    {
+      "field": "story_role",
+      "label": "故事位置",
+      "dimension": "identity",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 12,
+      "evidence": []
+    },
+    {
+      "field": "stress_response",
+      "label": "应激反应",
+      "dimension": "behavior",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 18,
+      "evidence": []
+    },
+    {
+      "field": "temperament_type",
+      "label": "气质底色",
+      "dimension": "identity",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 10,
+      "evidence": []
+    },
+    {
+      "field": "thinking_style",
+      "label": "思考方式",
+      "dimension": "motivation",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 16,
+      "evidence": []
+    },
+    {
+      "field": "typical_lines",
+      "label": "代表句",
+      "dimension": "voice",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 25,
+      "evidence": []
+    },
+    {
+      "field": "worldview",
+      "label": "世界观",
+      "dimension": "motivation",
+      "status": "ready",
+      "readiness": 1.0,
+      "value_length": 14,
+      "evidence": []
+    }
+  ],
+  "issues": []
+}

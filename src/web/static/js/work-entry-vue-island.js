@@ -1,0 +1,129 @@
+(() => {
+  const shared = window.__ZAOMENG_WORK_OVERVIEW_VUE__;
+  const vue = window.Vue;
+  const host = document.getElementById("work-entry-vue-root");
+  if (!shared || typeof shared.useRunOverviewIsland !== "function" || typeof shared.getRunOverviewActions !== "function" || !vue || !host) {
+    console.warn("[zaomeng] work-entry vue island skipped: shared overview helpers are not ready.");
+    return;
+  }
+
+  const builder = window.__ZAOMENG_BUILD_WORK_ENTRY_STATE__;
+  if (typeof builder !== "function") {
+    console.warn("[zaomeng] work-entry vue island skipped: state builder is not ready.");
+    return;
+  }
+
+  const { createApp, computed } = vue;
+
+  createApp({
+    setup() {
+      const { run } = shared.useRunOverviewIsland("work-entry-panel", "work-entry-legacy");
+      host.classList.remove("hidden");
+      const viewState = computed(() => builder(run.value || null));
+
+      function openSession(item) {
+        const api = shared.getRunOverviewActions();
+        if (typeof api.openEntrySession === "function") {
+          api.openEntrySession(item);
+          return;
+        }
+        if (typeof window.openWorkSessionFromPreviewItem === "function") {
+          window.openWorkSessionFromPreviewItem(item);
+        }
+      }
+
+      function toggleSessions() {
+        const api = shared.getRunOverviewActions();
+        if (typeof api.toggleEntrySessions === "function") {
+          api.toggleEntrySessions();
+        }
+      }
+
+      function openMode(mode) {
+        const api = shared.getRunOverviewActions();
+        if (typeof api.openEntryMode === "function") {
+          api.openEntryMode(mode);
+        }
+      }
+
+      return {
+        openMode,
+        openSession,
+        run,
+        toggleSessions,
+        viewState,
+      };
+    },
+    template: `
+      <div v-if="run" class="work-entry-vue-shell">
+        <section class="work-entry-section">
+          <article class="work-graph-card">
+            <div class="work-graph-head">
+              <strong>关系图谱</strong>
+              <span class="work-character-status" :class="'is-' + viewState.graph.badgeTone">{{ viewState.graph.badgeText }}</span>
+            </div>
+            <div v-if="viewState.graph.links.length" class="work-graph-actions">
+              <a
+                v-for="item in viewState.graph.links"
+                :key="item.url"
+                :href="item.url"
+                target="_blank"
+                rel="noreferrer"
+                class="soft-button work-graph-link"
+              >
+                {{ item.label }}
+              </a>
+            </div>
+          </article>
+          <p v-if="!viewState.graph.links.length" class="card-note">{{ viewState.graph.emptyCopy }}</p>
+        </section>
+
+        <section class="work-entry-section">
+          <div class="work-session-preview-head">
+            <strong>最近会话</strong>
+          </div>
+          <div v-if="viewState.sessions.items.length" class="work-session-preview">
+            <button
+              v-for="item in viewState.sessions.items"
+              :key="item.raw.session_id || item.raw.updated_at || item.label"
+              type="button"
+              class="work-session-card"
+              :class="{ 'has-match': item.hasMatch }"
+              @click="openSession(item.raw)"
+            >
+              <div class="work-session-head">
+                <div class="work-session-title">
+                  <strong>{{ item.label }}</strong>
+                  <small>{{ item.modeLabel }} · {{ item.participantCount || 0 }} 人</small>
+                </div>
+              </div>
+            </button>
+          </div>
+          <p v-if="!viewState.sessions.items.length" class="card-note">{{ viewState.sessions.emptyCopy }}</p>
+          <button
+            v-if="viewState.sessions.canExpand"
+            type="button"
+            class="soft-button work-entry-more"
+            @click="toggleSessions"
+          >
+            {{ viewState.sessions.toggleLabel }}
+          </button>
+        </section>
+
+        <section class="work-entry-section work-entry-section-modes">
+          <div class="work-entry-footer">
+            <button
+              v-for="item in viewState.quickModes"
+              :key="item.mode"
+              type="button"
+              class="soft-button work-mode-chip"
+              @click="openMode(item.mode)"
+            >
+              {{ item.label }}
+            </button>
+          </div>
+        </section>
+      </div>
+    `,
+  }).mount(host);
+})();

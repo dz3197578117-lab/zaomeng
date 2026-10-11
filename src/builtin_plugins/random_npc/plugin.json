@@ -1,0 +1,39 @@
+{
+  "id": "com.zaomeng.random-npc",
+  "name": "随机 NPC",
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "entry": "main.py",
+  "description": "结合当前场景随机创造一名只存在于本次会话的临时 NPC，并让其立即入场互动。",
+  "defaultEnabled": true,
+  "permissions": [
+    "chat.context.read",
+    "chat.cast.write",
+    "model.invoke"
+  ],
+  "settings": [
+    {
+      "key": "npcStyle",
+      "title": "角色风格",
+      "type": "enum",
+      "default": "mixed",
+      "options": [
+        {"value": "mixed", "label": "完全随机"},
+        {"value": "mysterious", "label": "神秘"},
+        {"value": "funny", "label": "有趣"},
+        {"value": "troublesome", "label": "麻烦"},
+        {"value": "helpful", "label": "友善"},
+        {"value": "dangerous", "label": "危险"}
+      ]
+    }
+  ],
+  "contributes": {
+    "temporaryNpcGenerators": [
+      {
+        "id": "generate-npc",
+        "title": "随机 NPC",
+        "icon": "person-add"
+      }
+    ]
+  }
+}

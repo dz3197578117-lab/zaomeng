@@ -1,0 +1,99 @@
+# Python bytecode/cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Python packaging and test artifacts
+build/
+dist/
+*.egg-info/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.hypothesis/
+.nox/
+.tox/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Tooling/cache
+.codegraph/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+.zaomeng-web/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.claude/
+*.swp
+*.swo
+*~
+
+# Local runtime/config artifacts
+config.yaml
+.env
+.env.*
+!.env.example
+*.log
+*.sqlite
+*.sqlite3
+*.db
+*.pid
+data/*
+!data/characters/
+!data/relations/
+!data/sessions/
+!data/corrections/
+data/characters/*
+data/relations/*
+data/sessions/*
+data/corrections/*
+!data/characters/.gitkeep
+!data/relations/.gitkeep
+!data/sessions/.gitkeep
+!data/corrections/.gitkeep
+zaomeng-data/
+logs/
+outputs/
+clawhub-zaomeng-skill/runtime/data/
+.tools/
+
+# Local/generated Android Studio project mirror (contains signing credentials)
+/android/
+
+# IDE/TOOLS
+.trae/
+.reasonix/
+
+# iOS / Xcode
+**/xcuserdata/
+**/*.xcuserstate
+**/DerivedData/
+.DS_Store
+
+# ---------------------------------------------------------------------------
+# 以下为「反向排除」：上面的通用规则会误伤这几个必须随仓库分发的文件
+# ---------------------------------------------------------------------------
+
+# 端侧推理靠执行 jniLibs/arm64-v8a/libllama-server.so 启动 llama-server 子进程，
+# 它不是编译期产物而是预编译好、必须随 APK 一起装的运行时资产；
+# 上面的 `*.so`（本意是挡 Python 扩展）会把它一起挡掉，导致别人 clone 后
+# 端侧功能永久不可用（要自己重跑 scripts/build-llama-server-android.sh）。
+!kmp/app/androidApp/src/main/jniLibs/**/*.so
+
+# 发布产物：debug APK 直接进仓库，clone 即可安装。
+# 上面的 `dist/` 是挡 Python 打包产物的，这里只放行 APK。
+!dist/
+dist/*
+!dist/*.apk

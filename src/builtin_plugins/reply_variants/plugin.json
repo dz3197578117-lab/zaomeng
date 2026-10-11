@@ -1,0 +1,34 @@
+{
+  "id": "com.zaomeng.reply-variants",
+  "name": "多候选回复",
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "entry": "main.py",
+  "description": "根据当前对话生成多个意图和语气不同、可直接发送的候选回复。",
+  "defaultEnabled": true,
+  "permissions": [
+    "chat.context.read",
+    "chat.draft.write",
+    "model.invoke"
+  ],
+  "settings": [
+    {
+      "key": "optionCount",
+      "title": "候选回复数量",
+      "type": "integer",
+      "default": 3,
+      "min": 2,
+      "max": 4
+    }
+  ],
+  "contributes": {
+    "chatActions": [
+      {
+        "id": "generate-variants",
+        "title": "多候选回复",
+        "icon": "variants",
+        "placement": "composer"
+      }
+    ]
+  }
+}

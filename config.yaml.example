@@ -1,0 +1,92 @@
+# Generated from src/core/config.py (Config.DEFAULT_CONFIG).
+# Run `python scripts/generate_config_example.py` to refresh this file.
+
+llm:
+  provider: auto
+  model: ''
+  temperature: 0.0
+  max_tokens: 0
+  parallel_chunk_workers: 6
+  base_url: ''
+  host_bridge_url: ''
+  host_bridge_token: ''
+  host_bridge_token_env: ''
+  api_key: ''
+  api_key_env: ''
+  timeout_seconds: 90
+  retry_attempts: 2
+  retry_backoff_seconds: 0.75
+  retry_backoff_multiplier: 2.0
+  retry_status_codes:
+  - 408
+  - 429
+  - 500
+  - 502
+  - 503
+  - 504
+engine:
+  name: local-rule-engine
+  pseudo_cost_per_1k_tokens_usd: 0.001
+cost_control:
+  daily_budget_usd: 10.0
+  enable_cost_warning: true
+  warning_threshold: 0.8
+text_processing:
+  chunk_size_tokens: 8000
+  chunk_overlap_tokens: 200
+  min_sentence_length: 10
+distillation:
+  max_characters: 10
+  min_appearances: 3
+  traits_max_count: 10
+  second_pass_mode: llm-only
+  refinement_batch_size: 4
+  stage_window_size: 6
+  llm_evidence_lines_per_stage: 6
+  values_dimensions:
+  - 勇气
+  - 智慧
+  - 善良
+  - 忠诚
+  - 野心
+  - 正义
+  - 自由
+  - 责任
+relationships:
+  dimensions:
+  - trust
+  - affection
+  - power_gap
+  - conflict_point
+  - typical_interaction
+  - hidden_attitude
+  - relation_change
+chat_engine:
+  max_history_turns: 10
+  max_speakers_per_turn: 4
+  token_limit_per_turn: 500
+  enable_cost_display: true
+  generation_mode: llm-only
+  enable_turn_interactions: true
+  allow_character_silence: true
+  min_reply_relevance: 4
+  llm_history_messages: 8
+memory:
+  recent_turns: 24
+  summary_char_limit: 360
+  long_term_max_entries: 400
+  vector_provider: local
+  pinecone_api_key: ''
+  pinecone_index: ''
+  pinecone_namespace: zaomeng
+paths:
+  characters: data/characters
+  relations: data/relations
+  sessions: data/sessions
+  corrections: data/corrections
+  logs: logs
+  rules: rules
+system:
+  log_level: INFO
+  enable_auto_save: true
+  backup_interval_hours: 24

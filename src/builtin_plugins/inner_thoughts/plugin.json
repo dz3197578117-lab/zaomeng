@@ -1,0 +1,31 @@
+{
+  "id": "com.zaomeng.inner-thoughts",
+  "name": "角色读心",
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "entry": "main.py",
+  "description": "在当前聊天中开启后，让角色回复同时包含与台词一致的内心活动。",
+  "defaultEnabled": true,
+  "permissions": [
+    "generation.enhance"
+  ],
+  "settings": [
+    {
+      "key": "defaultActive",
+      "title": "新聊天默认开启读心",
+      "type": "boolean",
+      "default": false
+    }
+  ],
+  "contributes": {
+    "generationEnhancers": [
+      {
+        "id": "inner-thoughts",
+        "title": "角色读心",
+        "description": "仅对当前聊天生效，关闭后恢复普通回复。",
+        "icon": "visibility",
+        "defaultActive": false
+      }
+    ]
+  }
+}

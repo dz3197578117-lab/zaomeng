@@ -1,0 +1,568 @@
+<section id="workflow-strip" class="studio-grid hidden">
+  <section id="bookshelf-section" class="studio-card bookshelf-card hidden">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">书架</p>
+        <h3>已经醒来的故事</h3>
+      </div>
+      <div class="card-actions bookshelf-head-actions">
+        <button id="bookshelf-open-builtin-button" type="button" class="soft-button">试玩内置小说</button>
+        <button id="bookshelf-import-run-button" type="button" class="soft-button">导入小说包</button>
+        <button id="bookshelf-new-run-button" type="button" class="soft-button">蒸馏新小说</button>
+        <input id="import-run-package-input" class="native-hidden" type="file" accept=".zip" />
+      </div>
+    </div>
+    <div id="bookshelf-vue-root" class="bookshelf-vue-root hidden"></div>
+    <div id="bookshelf-legacy">
+      <div id="bookshelf-empty" class="bookshelf-empty hidden">
+        <p class="card-copy">还没有放入新的故事。先挑一本书，把想遇见的人请出来。</p>
+      </div>
+      <div id="bookshelf-list" class="bookshelf-grid"></div>
+    </div>
+    <p id="bookshelf-status" class="card-note"></p>
+  </section>
+
+  <section id="step-model" class="studio-card">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">先让故事有声音</p>
+        <h3>为故事接通声源</h3>
+      </div>
+    </div>
+    <p class="card-copy">只需接通一次。</p>
+    <div id="model-summary" class="info-row hidden">
+      <article class="info-pill">
+        <span>当前声源</span>
+        <strong id="model-provider-view">-</strong>
+      </article>
+    </div>
+    <div class="card-actions">
+      <button id="open-settings-primary" type="button" class="primary-button">接通故事声源</button>
+    </div>
+  </section>
+
+  <section id="step-distill" class="studio-card hidden">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">挑一本书，写下想遇见的人</p>
+        <h3>先把人物从正文里请出来</h3>
+      </div>
+      <div class="card-actions bookshelf-head-actions">
+        <button id="back-from-distill-button" type="button" class="soft-button">返回书架</button>
+      </div>
+    </div>
+    <form id="create-run-form" class="stack-form">
+      <label class="upload-card" for="novel-file">
+        <input id="novel-file" class="native-hidden" type="file" accept=".txt,.md,.text,.epub" required />
+        <span class="upload-label">小说正文</span>
+        <strong id="novel-file-name">还没有放入书页</strong>
+        <em id="novel-file-hint">支持 txt / md / text / epub</em>
+      </label>
+
+      <label class="field-card">
+        <span>你想先遇见谁</span>
+        <input id="characters" type="text" placeholder="例如：林黛玉、贾宝玉、薛宝钗" required />
+        <small>多个名字可用逗号或顿号分开。</small>
+      </label>
+
+      <div class="mini-grid">
+        <label class="field-card compact-field-card">
+          <span>取样句数</span>
+          <input id="max-sentences" type="number" min="20" max="300" value="120" />
+        </label>
+        <label class="field-card compact-field-card">
+          <span>取样字数</span>
+          <input id="max-chars" type="number" min="2000" max="200000" value="50000" />
+        </label>
+      </div>
+      <p id="sampling-hint" class="card-note">选好正文后，这里会按体量自动给出建议。</p>
+      <p id="sampling-estimate" class="card-note">长篇会自动分批蒸馏，这里会显示预计轮次、调用次数和粗估耗时。</p>
+
+      <div class="card-actions">
+        <button id="submit-button" type="submit" class="primary-button">开始唤醒人物</button>
+      </div>
+    </form>
+    <p id="form-status" class="card-note"></p>
+  </section>
+
+  <section id="step-progress" class="studio-card hidden">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">书卷</p>
+        <h3 id="run-stage-title">人物与关系正在慢慢浮现</h3>
+      </div>
+      <div class="card-actions bookshelf-head-actions">
+        <button id="back-to-bookshelf-button" type="button" class="soft-button">返回书架</button>
+      </div>
+    </div>
+    <nav id="work-detail-nav" class="work-detail-nav hidden" aria-label="书卷分区">
+      <button type="button" class="work-detail-nav-button is-active" data-work-detail-tab-target="overview">概览</button>
+      <button type="button" class="work-detail-nav-button" data-work-detail-tab-target="characters">角色</button>
+      <button type="button" class="work-detail-nav-button" data-work-detail-tab-target="continue">开聊</button>
+      <button type="button" class="work-detail-nav-button" data-work-detail-tab-target="more">更多</button>
+    </nav>
+    <div class="work-detail-tabs-shell">
+      <div data-work-detail-tab="overview" class="work-detail-tab-panel">
+    <div id="work-top-vue-root" class="work-top-vue-root hidden"></div>
+    <div id="work-top-legacy">
+      <section class="work-overview-hero">
+        <div class="work-overview-hero-copy">
+          <p id="progress-copy" class="card-copy">人物会依次显形。</p>
+          <p id="work-overview-next-step" class="work-overview-next-step">这一卷的下一步会在这里告诉你。</p>
+        </div>
+        <section id="run-status-banner" class="run-status-banner hidden">
+          <div class="run-status-banner-head">
+            <span id="run-status-kicker" class="run-status-kicker">正在整理</span>
+            <span id="run-status-stage" class="run-status-stage">人物依次显形中</span>
+          </div>
+          <p id="run-status-description" class="run-status-description">这一卷还在慢慢成形，先看它往哪里走。</p>
+        </section>
+      </section>
+      <div class="work-hero-metrics">
+        <article class="work-hero-metric">
+          <span>当前书段</span>
+          <strong id="run-hero-source">-</strong>
+        </article>
+        <article class="work-hero-metric">
+          <span>角色总数</span>
+          <strong id="run-hero-character-total">-</strong>
+        </article>
+        <article class="work-hero-metric">
+          <span>总状态</span>
+          <strong id="run-hero-status">-</strong>
+        </article>
+        <article class="work-hero-metric">
+          <span>累计耗时</span>
+          <strong id="run-hero-elapsed">-</strong>
+        </article>
+      </div>
+
+      <div class="work-progress-strip">
+        <article class="work-progress-card">
+          <span>正文导入</span>
+          <strong id="run-progress-import">-</strong>
+        </article>
+        <article class="work-progress-card">
+          <span>人物蒸馏</span>
+          <strong id="run-progress-distill">-</strong>
+        </article>
+        <article class="work-progress-card">
+          <span>关键字段校对</span>
+          <strong id="run-progress-review">-</strong>
+        </article>
+        <article class="work-progress-card">
+          <span>关系图谱</span>
+          <strong id="run-progress-graph">-</strong>
+        </article>
+        <article class="work-progress-card">
+          <span>最近更新</span>
+          <strong id="run-progress-latest">-</strong>
+        </article>
+      </div>
+
+      <section class="work-action-groups">
+        <div class="work-action-group">
+          <span class="work-action-label">主动作</span>
+          <div id="detail-primary-actions" class="card-actions">
+            <button id="detail-redistill-button" type="button" class="soft-button">继续蒸馏</button>
+            <button id="open-persona-review-button" type="button" class="soft-button hidden">校对人物</button>
+            <button id="detail-start-chat-button" type="button" class="primary-button">开始聊天</button>
+            <button id="detail-stop-run-button" type="button" class="soft-button hidden">停止蒸馏</button>
+          </div>
+        </div>
+        <div id="detail-secondary-actions-shell" class="work-action-group work-detail-secondary-desktop">
+          <span class="work-action-label">次动作</span>
+          <div id="detail-secondary-actions" class="card-actions">
+            <button id="open-relation-details-button" type="button" class="soft-button hidden">关系明细</button>
+            <button id="detail-export-package-button" type="button" class="soft-button hidden">分享小说包</button>
+            <button id="detail-export-summary-button" type="button" class="soft-button hidden">导出摘要</button>
+            <button id="detail-view-graph-button" type="button" class="soft-button hidden">查看关系图</button>
+            <button id="detail-view-timeline-button" type="button" class="soft-button">查看时间线</button>
+          </div>
+        </div>
+      </section>
+      <p id="detail-action-note" class="card-note hidden">这一卷还在整理中，先看进度继续往前走。</p>
+    </div>
+      <section id="work-summary-panel" class="detail-section work-overview-panel work-summary-in-overview">
+        <div class="detail-section-head">
+          <div>
+            <p class="eyebrow">概览</p>
+            <h4>这一轮看到了什么</h4>
+          </div>
+        </div>
+        <div id="work-summary-vue-root" class="work-summary-vue-root hidden"></div>
+        <div id="work-summary-legacy">
+          <section class="work-summary-shell">
+            <article class="work-summary-card is-hero">
+              <span class="work-summary-label">一句话概览</span>
+              <strong id="work-summary-line">这一卷的整体状态会在这里收住。</strong>
+              <p id="work-summary-bottleneck" class="work-summary-copy">当前最卡的地方，也会直接告诉你。</p>
+            </article>
+            <div class="work-summary-grid">
+              <article class="work-summary-card">
+                <span class="work-summary-label">最近进展</span>
+                <div id="work-summary-events" class="work-summary-events"></div>
+                <p id="work-summary-events-empty" class="card-note hidden">这一轮暂时还没有新的进展记录。</p>
+              </article>
+              <article class="work-summary-card">
+                <span class="work-summary-label">推荐动作</span>
+                <strong id="work-summary-recommend-title">下一步建议会在这里出现。</strong>
+                <p id="work-summary-recommend-copy" class="work-summary-copy">这里会告诉你为什么先做这一步。</p>
+                <div class="work-summary-actions">
+                  <button id="work-summary-recommend-button" type="button" class="soft-button">去执行</button>
+                </div>
+              </article>
+            </div>
+          </section>
+          <details id="quality-section" class="quality-section-shell hidden">
+            <summary class="quality-summary">
+              <span>蒸馏质量快照</span>
+              <small>展开看命中、缺证据与分批信息</small>
+            </summary>
+            <div class="quality-grid">
+              <article class="quality-card">
+                <span class="quality-label">已命中人物</span>
+                <div id="quality-matched" class="bookshelf-links hidden"></div>
+                <p id="quality-matched-empty" class="card-note hidden">这一轮还没从正文里稳定捞到目标人物。</p>
+              </article>
+              <article class="quality-card">
+                <span class="quality-label">暂时缺证据</span>
+                <div id="quality-missing" class="bookshelf-links hidden"></div>
+                <p id="quality-missing-empty" class="card-note hidden">目前没有缺席的人物。</p>
+              </article>
+              <article class="quality-card">
+                <span class="quality-label">用到的阶段</span>
+                <div id="quality-stages" class="bookshelf-links hidden"></div>
+                <p id="quality-stages-empty" class="card-note hidden">这一轮暂时还没拆出明确阶段。</p>
+              </article>
+              <article class="quality-card">
+                <span class="quality-label">自动收束</span>
+                <p id="quality-repairs" class="quality-copy">暂时没有发生自动收束。</p>
+              </article>
+              <article class="quality-card">
+                <span class="quality-label">实际分批</span>
+                <p id="quality-chunks" class="quality-copy">这轮暂时还没有分批记录。</p>
+              </article>
+            </div>
+          </details>
+          <p id="quality-empty-copy" class="card-note hidden">这卷暂时还没有足够多的蒸馏线索，但人物和进度会继续在这里显出来。</p>
+        </div>
+      </section>
+      </div>
+    <section id="work-overview-loading" class="work-overview-loading hidden" aria-hidden="true">
+      <div class="work-loading-line work-loading-line-lg"></div>
+      <div class="work-loading-grid">
+        <div class="work-loading-card"></div>
+        <div class="work-loading-card"></div>
+        <div class="work-loading-card"></div>
+      </div>
+      <div class="work-loading-grid work-loading-grid-2">
+        <div class="work-loading-card"></div>
+        <div class="work-loading-card"></div>
+      </div>
+    </section>
+
+      <div class="work-detail-tabs-secondary">
+        <div data-work-detail-tab="characters" class="work-detail-tab-panel">
+      <section id="work-character-panel" class="detail-section work-overview-panel">
+        <div class="detail-section-head">
+          <div>
+            <p class="eyebrow">角色</p>
+            <h4>这一卷里谁已经站稳了</h4>
+          </div>
+          <button id="run-character-readiness-toggle" type="button" class="soft-button hidden">展开全部</button>
+        </div>
+        <div id="work-character-vue-root" class="work-character-vue-root hidden"></div>
+        <div id="work-character-legacy">
+          <div id="run-character-readiness" class="work-character-list"></div>
+          <p id="run-character-readiness-empty" class="card-note hidden">还没有角色卡，先继续蒸馏把人物请出来。</p>
+        </div>
+      </section>
+
+      <section id="work-priority-panel" class="detail-section">
+        <div class="detail-section-head">
+          <div>
+            <p class="eyebrow">下一刀</p>
+            <h4>现在最值得先补的角色</h4>
+          </div>
+        </div>
+        <p class="detail-section-copy">这里会按证据薄弱、关键字段缺口和整体稳定度，帮你排出最值得先处理的顺序。</p>
+        <div id="work-priority-vue-root" class="work-priority-vue-root hidden"></div>
+        <div id="work-priority-legacy">
+          <div id="work-priority-review-list" class="work-priority-review-list"></div>
+          <p id="work-priority-review-empty" class="card-note hidden">目前没有明显掉队角色，可以直接开聊或查看关系图。</p>
+        </div>
+      </section>
+        </div>
+
+        <div data-work-detail-tab="continue" class="work-detail-tab-panel">
+      <section id="work-entry-panel" class="detail-section work-overview-panel">
+        <div class="detail-section-head">
+          <div>
+            <p class="eyebrow">入口</p>
+            <h4>这一卷可以从哪里继续</h4>
+          </div>
+        </div>
+        <div id="work-entry-vue-root" class="work-entry-vue-root hidden"></div>
+        <div id="work-entry-legacy">
+          <article class="work-graph-card">
+            <div class="work-graph-head">
+              <strong>关系图谱</strong>
+              <span id="run-graph-status-badge" class="work-character-status">未开始</span>
+            </div>
+            <p id="run-graph-status-copy" class="detail-section-copy">先看关系与会话，再决定如何走进这一幕。</p>
+          </article>
+          <div id="graph-links" class="link-row hidden"></div>
+          <p id="graph-empty-note" class="card-note hidden">关系图暂未生成，稍后会自动补到这里。</p>
+          <div class="work-session-preview-head">
+            <strong>最近会话</strong>
+            <small>从这里续上就行</small>
+          </div>
+          <div id="work-session-resume-shell" class="card-actions hidden">
+            <button id="work-session-resume-latest-button" type="button" class="soft-button">继续最近一局</button>
+          </div>
+          <div id="work-session-preview" class="work-session-preview"></div>
+          <button id="work-session-preview-toggle" type="button" class="soft-button hidden">展开全部</button>
+          <p id="work-session-preview-empty" class="card-note hidden">还没有会话，随时可以从下方三种方式开局。</p>
+          <div class="work-mode-shortcuts">
+            <button id="quick-open-observe-button" type="button" class="soft-button">旁观此局</button>
+            <button id="quick-open-act-button" type="button" class="soft-button">化身书中人</button>
+            <button id="quick-open-insert-button" type="button" class="soft-button">以自己入场</button>
+          </div>
+        </div>
+      </section>
+        </div>
+      </div>
+
+      <div data-work-detail-tab="more" class="work-detail-tab-panel">
+    <section class="detail-section work-detail-more-source">
+      <div class="detail-section-head">
+        <div>
+          <p class="eyebrow">书页来源</p>
+          <h4>这本书最近用过的正文片段</h4>
+        </div>
+        <button id="source-history-toggle" type="button" class="soft-button hidden">展开全部</button>
+      </div>
+      <div id="source-history-vue-root" class="source-history-vue-root hidden"></div>
+      <div id="source-history-legacy">
+        <p id="source-history-note" class="detail-section-copy">当前整理会基于最近一次换入的书页继续往下走。</p>
+        <div id="source-history-list" class="source-history-list hidden"></div>
+        <p id="source-history-empty" class="card-note hidden">目前只有最初那一份正文。</p>
+      </div>
+    </section>
+
+    <section class="detail-section detail-section-timeline">
+      <div class="detail-section-head">
+        <div>
+          <p class="eyebrow">流转</p>
+          <h4>这一卷最近的整理轨迹</h4>
+        </div>
+      </div>
+      <div id="run-timeline-vue-root" class="run-timeline-vue-root hidden"></div>
+      <div id="run-timeline-legacy">
+        <ol id="events" class="timeline timeline-dense"></ol>
+        <p id="timeline-empty-note" class="card-note hidden">这轮还没有新的时间线事件。</p>
+      </div>
+    </section>
+      </div>
+    </div>
+
+    <div id="redistill-panel" class="refresh-card hidden">
+      <div id="redistill-vue-root" class="redistill-vue-root hidden"></div>
+      <section class="detail-section redistill-summary-card">
+        <div class="detail-section-head">
+          <div>
+            <p class="eyebrow">这一轮会如何继续</p>
+            <h4 id="redistill-plan-title">沿用当前书段，继续整理人物</h4>
+          </div>
+        </div>
+        <p id="redistill-source-note" class="detail-section-copy">当前会沿用上一轮使用的正文片段。</p>
+        <div class="plan-split">
+          <div class="plan-group">
+            <span class="plan-label">会做增量更新</span>
+            <div id="redistill-existing-list" class="bookshelf-links hidden"></div>
+            <p id="redistill-existing-empty" class="card-note">这一轮暂时没有需要增量更新的角色。</p>
+          </div>
+          <div class="plan-group">
+            <span class="plan-label">会首次蒸馏</span>
+            <div id="redistill-new-list" class="bookshelf-links hidden"></div>
+            <p id="redistill-new-empty" class="card-note">这一轮暂时没有新角色。</p>
+          </div>
+        </div>
+        <div id="redistill-change-shell" class="plan-group hidden">
+          <span class="plan-label">这轮刚补稳了什么</span>
+          <div id="redistill-change-list" class="redistill-change-list"></div>
+          <p id="redistill-change-empty" class="card-note">增量蒸馏完成后，这里会总结本轮字段变化。</p>
+        </div>
+      </section>
+      <label class="upload-card" for="redistill-novel-file">
+        <input id="redistill-novel-file" class="native-hidden" type="file" accept=".txt,.md,.text,.epub" />
+        <span class="upload-label">新的书页</span>
+        <strong id="redistill-file-name">沿用当前书段</strong>
+        <em id="redistill-file-hint">如果这是连载的新章节，就在这里换入新的正文片段</em>
+      </label>
+      <label class="field-card">
+        <span>继续把谁请进来</span>
+        <input id="redistill-characters" type="text" placeholder="例如：王熙凤、贾母" />
+        <small>已有角色会做增量更新，新角色会首次蒸馏。</small>
+      </label>
+      <div class="pill-row" id="redistill-character-pills"></div>
+      <section id="redistill-recommend-shell" class="detail-section redistill-recommend-shell hidden">
+        <div class="detail-section-head">
+          <div>
+            <p class="eyebrow">推荐片段</p>
+            <h4 id="redistill-recommend-title">替这一轮找更适合补料的正文窗口</h4>
+          </div>
+          <div class="card-actions">
+            <button id="redistill-recommend-button" type="button" class="soft-button">推荐片段</button>
+          </div>
+        </div>
+        <p id="redistill-recommend-note" class="detail-section-copy">选中一位已有角色后，可以让系统从当前书段里挑出几段更适合增量补稳的正文。</p>
+        <div id="redistill-recommend-list" class="redistill-recommend-list"></div>
+      </section>
+      <div class="card-actions">
+        <button id="redistill-add-button" type="button" class="soft-button">只加新人物</button>
+        <button id="redistill-refresh-button" type="button" class="soft-button">沿用当前</button>
+        <button id="redistill-button" type="button" class="primary-button">继续整理</button>
+      </div>
+      <p id="redistill-status" class="card-note"></p>
+    </div>
+  </section>
+
+  <section id="step-character-overview" class="studio-card hidden">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">角色页</p>
+        <h3 id="character-overview-title">人物档案</h3>
+      </div>
+      <div class="card-actions bookshelf-head-actions">
+        <button id="back-to-work-overview-button" type="button" class="soft-button">返回书卷</button>
+      </div>
+    </div>
+    <div id="character-overview-vue-root" class="character-overview-vue-root hidden"></div>
+    <div id="character-overview-legacy">
+    <section class="character-overview-hero">
+      <div class="character-overview-hero-copy">
+        <p class="character-overview-kicker" id="character-overview-work">-</p>
+        <h4 id="character-overview-name">-</h4>
+        <p id="character-overview-role" class="character-overview-role">-</p>
+      </div>
+      <div class="character-overview-health">
+        <span id="character-overview-health-badge" class="work-character-status">待整理</span>
+        <p id="character-overview-health-copy" class="card-note">关键字段状态会在这里汇总。</p>
+      </div>
+    </section>
+
+    <div class="card-actions">
+      <button id="character-overview-review-button" type="button" class="primary-button">校对字段</button>
+      <button id="character-overview-redistill-button" type="button" class="soft-button">继续增量蒸馏</button>
+      <button id="character-overview-act-button" type="button" class="soft-button">化身此人</button>
+      <button id="character-overview-insert-button" type="button" class="soft-button">以自己入场</button>
+      <button id="character-overview-export-button" type="button" class="soft-button">查看原档</button>
+    </div>
+    <p id="character-overview-status" class="card-note"></p>
+
+    <section class="detail-section">
+      <div class="detail-section-head">
+        <div>
+          <p class="eyebrow">健康度</p>
+          <h4>这一页当前能信到什么程度</h4>
+        </div>
+      </div>
+      <div id="character-overview-health-metrics" class="character-overview-health-metrics"></div>
+    </section>
+
+    <section class="detail-section">
+      <div class="detail-section-head">
+        <div>
+          <p class="eyebrow">来源与证据</p>
+          <h4>这个角色现在主要是靠什么站住的</h4>
+        </div>
+      </div>
+      <div id="character-overview-evidence-metrics" class="character-overview-evidence-metrics"></div>
+    </section>
+
+    <section class="detail-section">
+      <div class="detail-section-head">
+        <div>
+          <p class="eyebrow">可信痕迹</p>
+          <h4>这份人物资产最近被怎样改过</h4>
+        </div>
+      </div>
+      <p class="detail-section-copy">这里先做轻量判断，帮你分清哪些字段来自蒸馏稿、哪些刚被补全或校对过。</p>
+      <div id="character-overview-trust-signals" class="character-overview-trust-signals"></div>
+    </section>
+
+    <section class="detail-section">
+      <div class="detail-section-head">
+        <div>
+          <p class="eyebrow">改动时间线</p>
+          <h4>这一页最近怎样被写回过</h4>
+        </div>
+      </div>
+      <p class="detail-section-copy">这里按时间记录字段补全、手动保存和增量蒸馏写回，方便快速回看这份角色资产是怎么稳起来的。</p>
+      <div id="character-overview-change-timeline" class="character-overview-change-timeline"></div>
+      <p id="character-overview-change-timeline-empty" class="card-note hidden">还没有这位角色的改动记录，先补一次字段或继续增量蒸馏就会出现。</p>
+    </section>
+
+    <div class="character-overview-grid">
+      <section class="detail-section">
+        <div class="detail-section-head">
+          <div>
+            <p class="eyebrow">关键字段</p>
+            <h4>先看这个角色最稳的骨架</h4>
+          </div>
+        </div>
+        <div id="character-overview-key-fields" class="character-overview-fields"></div>
+      </section>
+
+      <section class="detail-section">
+        <div class="detail-section-head">
+          <div>
+            <p class="eyebrow">声音与牵系</p>
+            <h4>这一页最值得带进对话的部分</h4>
+          </div>
+        </div>
+        <div id="character-overview-voice-summary" class="character-overview-summary"></div>
+        <div id="character-overview-relation-summary" class="character-overview-summary"></div>
+      </section>
+    </div>
+
+    <section class="detail-section">
+      <div class="detail-section-head">
+        <div>
+          <p class="eyebrow">细调字段</p>
+          <h4>这些部分可以再慢慢抠细节</h4>
+        </div>
+      </div>
+      <p class="detail-section-copy">默认先收起，等关键骨架稳了，再逐组展开做细修。</p>
+      <div id="character-overview-advanced-groups" class="character-overview-advanced-groups"></div>
+    </section>
+    </div>
+  </section>
+
+  <section id="step-chat-setup" class="studio-card hidden">
+    <div class="card-head">
+      <div>
+        <p class="eyebrow">为这场相遇定下入口</p>
+        <h3>选一个进入故事的方式</h3>
+      </div>
+      <div class="card-actions bookshelf-head-actions">
+        <button id="back-to-detail-button" type="button" class="soft-button">返回书卷</button>
+      </div>
+    </div>
+    <div id="chat-setup-vue-root" class="chat-setup-vue-root hidden" tabindex="-1"></div>
+    <div id="chat-setup-state-cache" class="hidden" aria-hidden="true">
+      <input id="dialogue-mode" type="hidden" value="observe" />
+      <input id="dialogue-participants" type="hidden" value="" />
+      <input id="dialogue-controlled" type="hidden" value="" />
+      <input id="dialogue-self-name" type="hidden" value="" />
+      <input id="dialogue-self-identity" type="hidden" value="" />
+      <input id="dialogue-self-style" type="hidden" value="" />
+      <select id="dialogue-opening-preset"></select>
+      <select id="dialogue-scene-card"></select>
+      <select id="dialogue-self-card"></select>
+    </div>
+    <p id="dialogue-session-status" class="card-note hidden"></p>
+  </section>
+</section>

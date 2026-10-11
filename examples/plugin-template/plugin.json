@@ -1,0 +1,24 @@
+{
+  "id": "com.example.quick-reply",
+  "name": "快捷接话示例",
+  "version": "0.1.0",
+  "apiVersion": "1",
+  "entry": "main.py",
+  "description": "演示聊天动作、权限声明与宿主模型调用。",
+  "defaultEnabled": false,
+  "permissions": [
+    "chat.context.read",
+    "chat.draft.write",
+    "model.invoke"
+  ],
+  "contributes": {
+    "chatActions": [
+      {
+        "id": "quick-reply",
+        "title": "快捷接话",
+        "placement": "composer",
+        "icon": "sparkles"
+      }
+    ]
+  }
+}

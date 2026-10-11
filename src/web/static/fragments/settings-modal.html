@@ -1,0 +1,631 @@
+<div id="settings-modal" class="modal hidden">
+  <div class="modal-backdrop" data-close-modal="true"></div>
+  <div class="modal-card">
+    <div class="modal-scroll">
+      <div id="model-settings-vue-root" class="model-settings-vue-root hidden"></div>
+      <div id="model-settings-legacy">
+        <form id="model-settings-form" class="stack-form">
+          <section id="connection-details" class="connection-details">
+            <label class="field-card">
+              <span>故事声源</span>
+              <select id="model-provider" class="native-hidden">
+                <option value="openai-compatible">通用接口</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="ollama">Ollama</option>
+              </select>
+              <div id="model-provider-options" class="choice-deck provider-deck modal-choice-deck">
+                <button type="button" class="choice-card compact-choice-card" data-value="openai-compatible">
+                  <strong>通用接口</strong>
+                  <span>适合大多数兼容 OpenAI 的声源</span>
+                </button>
+                <button type="button" class="choice-card compact-choice-card" data-value="openai">
+                  <strong>OpenAI</strong>
+                  <span>直接连到 OpenAI 官方接口</span>
+                </button>
+                <button type="button" class="choice-card compact-choice-card" data-value="anthropic">
+                  <strong>Anthropic</strong>
+                  <span>用 Claude 系列声源继续故事</span>
+                </button>
+                <button type="button" class="choice-card compact-choice-card" data-value="ollama">
+                  <strong>Ollama</strong>
+                  <span>连接本地已运行的模型服务</span>
+                </button>
+              </div>
+            </label>
+
+            <div class="mini-grid">
+              <label class="field-card">
+                <span>声源名</span>
+                <input id="model-name" type="text" placeholder="例如：deepseek-chat / gpt-4.1 / qwen2.5:14b" />
+              </label>
+              <label class="field-card">
+                <span>入口地址</span>
+                <input id="model-base-url" type="text" placeholder="例如：https://api.openai.com/v1" />
+              </label>
+            </div>
+
+            <div class="mini-grid">
+              <label class="field-card">
+                <span>通信密钥</span>
+                <input id="model-api-key" type="password" placeholder="把密钥放在这里，故事才会真正开口" />
+                <small id="model-api-key-hint">留空时会沿用已经保存的密钥。</small>
+              </label>
+              <label class="field-card">
+                <span>单次输出上限</span>
+                <input id="model-max-tokens" type="number" min="0" max="16000" step="100" placeholder="留空或填 0，则沿用推荐值" />
+                <small id="model-max-tokens-hint">未另设时会沿用当前默认值。</small>
+              </label>
+            </div>
+          </section>
+
+          <div class="card-actions">
+            <button id="open-plugin-manager-button" type="button" class="soft-button">管理插件</button>
+            <button id="close-settings-button" type="button" class="soft-button">稍后再说</button>
+            <button id="save-model-settings-button" type="submit" class="primary-button">保存</button>
+          </div>
+        </form>
+        <p id="model-settings-status" class="card-note"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="plugin-manager-modal" class="modal hidden">
+  <div class="modal-backdrop" data-plugin-manager-close="true"></div>
+  <div class="modal-card plugin-manager-modal-card" role="dialog" aria-modal="true" aria-labelledby="plugin-manager-title">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">扩展能力</p>
+        <h3 id="plugin-manager-title">插件</h3>
+        <p class="panel-copy">查看插件权限和运行状态，并在不重启应用的情况下启用、停用或刷新。</p>
+      </div>
+      <button id="close-plugin-manager-button" type="button" class="soft-button">关闭</button>
+    </div>
+    <div class="modal-scroll">
+      <div class="plugin-manager-toolbar">
+        <p>API v1 插件在应用进程内运行，只安装你信任的第三方插件。</p>
+        <button id="refresh-plugins-button" type="button" class="soft-button">刷新插件</button>
+      </div>
+      <p id="plugin-manager-status" class="card-note"></p>
+      <div id="plugin-manager-list" class="plugin-manager-list"></div>
+    </div>
+  </div>
+</div>
+
+<div id="persona-review-modal" class="modal hidden">
+  <div class="modal-backdrop" data-close-modal="true" data-modal-id="persona-review-modal"></div>
+  <div class="modal-card inspector-modal-card">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">人物校对</p>
+        <h3>把人物再收紧一点</h3>
+        <p class="panel-copy">改动会写回人物包，用在后续聊天与继续蒸馏里。</p>
+      </div>
+      <button id="close-persona-review-button" type="button" class="soft-button">先放一放</button>
+    </div>
+    <div class="modal-scroll">
+      <div id="persona-review-vue-root" class="persona-review-vue-root hidden"></div>
+      <form id="persona-review-form" class="stack-form">
+        <label class="field-card">
+          <span>当前人物</span>
+          <select id="persona-review-character" class="native-hidden"></select>
+          <div id="persona-review-character-options" class="pill-row persona-pill-row modal-pill-row">
+            <span class="pill hint-pill">请先选择一卷已完成的人物</span>
+          </div>
+        </label>
+
+        <section class="review-group">
+          <div class="review-group-head">
+            <strong>关键字段</strong>
+            <p>先抓住身份、外显辨识、关系和说话味道。只要这一层站稳，聊天里的这个人就先活起来了。</p>
+          </div>
+          <div class="mini-grid">
+            <label class="field-card">
+              <div class="field-card-head">
+                <span>核心身份</span>
+                <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="core_identity">AI补全</button>
+              </div>
+              <input id="persona-core-identity" type="text" />
+            </label>
+            <label class="field-card">
+              <div class="field-card-head">
+                <span>故事位置</span>
+                <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="story_role">AI补全</button>
+              </div>
+              <input id="persona-story-role" type="text" />
+            </label>
+          </div>
+          <div class="mini-grid">
+            <label class="field-card">
+              <div class="field-card-head">
+                <span>身份锚点</span>
+                <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="identity_anchor">AI补全</button>
+              </div>
+              <input id="persona-identity-anchor" type="text" />
+            </label>
+            <label class="field-card">
+              <div class="field-card-head">
+                <span>气质底色</span>
+                <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="temperament_type">AI补全</button>
+              </div>
+              <input id="persona-temperament-type" type="text" />
+            </label>
+          </div>
+          <label class="field-card">
+            <div class="field-card-head">
+              <span>灵魂目标</span>
+              <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="soul_goal">AI补全</button>
+            </div>
+            <textarea id="persona-soul-goal" rows="2"></textarea>
+          </label>
+          <label class="field-card">
+            <div class="field-card-head">
+              <span>核心特质</span>
+              <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="core_traits">AI补全</button>
+            </div>
+            <textarea id="persona-core-traits" rows="2" placeholder="用；分开"></textarea>
+          </label>
+          <label class="field-card">
+            <div class="field-card-head">
+              <span>重要牵系</span>
+              <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="key_bonds">AI补全</button>
+            </div>
+            <textarea id="persona-key-bonds" rows="2" placeholder="用；分开"></textarea>
+          </label>
+          <label class="field-card">
+            <div class="field-card-head">
+              <span>说话方式</span>
+              <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="speech_style">AI补全</button>
+            </div>
+            <textarea id="persona-speech-style" rows="2"></textarea>
+          </label>
+          <label class="field-card">
+            <div class="field-card-head">
+              <span>世界观</span>
+              <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="worldview">AI补全</button>
+            </div>
+            <textarea id="persona-worldview" rows="2"></textarea>
+          </label>
+          <label class="field-card">
+            <div class="field-card-head">
+              <span>信念支点</span>
+              <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="belief_anchor">AI补全</button>
+            </div>
+            <textarea id="persona-belief-anchor" rows="2"></textarea>
+          </label>
+          <label class="field-card">
+            <div class="field-card-head">
+              <span>道德底线</span>
+              <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="moral_bottom_line">AI补全</button>
+            </div>
+            <textarea id="persona-moral-bottom-line" rows="2"></textarea>
+          </label>
+          <label class="field-card">
+            <span>失控阈值</span>
+            <textarea id="persona-restraint-threshold" rows="2"></textarea>
+          </label>
+          <label class="field-card">
+            <span>应激反应</span>
+            <textarea id="persona-stress-response" rows="2"></textarea>
+          </label>
+        </section>
+
+        <details class="review-advanced-shell">
+          <summary class="review-advanced-trigger">
+            <span>继续细调更多字段</span>
+            <small>这里会把容易互相重叠的细字段拆开，你可以按分工慢慢修，不必一口气全写满。</small>
+          </summary>
+
+          <section class="review-group review-advanced-panel">
+            <div class="review-group-head">
+              <strong>内核细调</strong>
+              <p>这里放更细的心理、判断和外界观感，适合补齐人物的细腻层次。</p>
+            </div>
+            <label class="field-card">
+              <div class="field-card-head">
+                <span>隐秘渴望</span>
+                <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="hidden_desire">AI补全</button>
+              </div>
+              <textarea id="persona-hidden-desire" rows="2"></textarea>
+            </label>
+            <div class="mini-grid">
+              <label class="field-card">
+                <div class="field-card-head">
+                  <span>内在冲突</span>
+                  <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="inner_conflict">AI补全</button>
+                </div>
+                <textarea id="persona-inner-conflict" rows="2"></textarea>
+              </label>
+              <label class="field-card">
+                <div class="field-card-head">
+                  <span>自我认知</span>
+                  <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="self_cognition">AI补全</button>
+                </div>
+                <textarea id="persona-self-cognition" rows="2"></textarea>
+              </label>
+            </div>
+            <label class="field-card">
+              <div class="field-card-head">
+                <span>私下的一面</span>
+                <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="private_self">AI补全</button>
+              </div>
+              <textarea id="persona-private-self" rows="2"></textarea>
+            </label>
+            <label class="field-card">
+              <div class="field-card-head">
+                <span>思考方式</span>
+                <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="thinking_style">AI补全</button>
+              </div>
+              <textarea id="persona-thinking-style" rows="2"></textarea>
+            </label>
+            <label class="field-card">
+              <div class="field-card-head">
+                <span>社交模式</span>
+                <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="social_mode">AI补全</button>
+              </div>
+              <textarea id="persona-social-mode" rows="2"></textarea>
+            </label>
+            <label class="field-card">
+              <span>决策规则</span>
+              <textarea id="persona-decision-rules" rows="2" placeholder="用；分开"></textarea>
+            </label>
+            <label class="field-card">
+              <span>回报逻辑</span>
+              <textarea id="persona-reward-logic" rows="2"></textarea>
+            </label>
+            <label class="field-card">
+              <div class="field-card-head">
+                <span>他人观感</span>
+                <button type="button" class="inline-assist-button hidden" data-persona-autofill-field="others_impression">AI补全</button>
+              </div>
+              <textarea id="persona-others-impression" rows="2"></textarea>
+            </label>
+          </section>
+
+          <section class="review-group review-advanced-panel">
+            <div class="review-group-head">
+              <strong>对白细调</strong>
+              <p>这些字段不一定适合联网补全，但很适合你直接手修出人物口气。</p>
+            </div>
+            <div class="mini-grid">
+              <label class="field-card">
+                <span>语句节奏</span>
+                <input id="persona-cadence" type="text" />
+              </label>
+              <label class="field-card">
+                <span>句尾习惯</span>
+                <input id="persona-sentence-endings" type="text" placeholder="用；分开" />
+              </label>
+            </div>
+            <div class="mini-grid">
+              <label class="field-card">
+                <span>起句习惯</span>
+                <input id="persona-sentence-openers" type="text" placeholder="用；分开" />
+              </label>
+              <label class="field-card">
+                <span>口头禅</span>
+                <input id="persona-signature-phrases" type="text" placeholder="用；分开" />
+              </label>
+            </div>
+            <label class="field-card">
+              <span>代表句</span>
+              <textarea id="persona-typical-lines" rows="3" placeholder="用；分开"></textarea>
+            </label>
+          </section>
+
+          <section class="review-group review-advanced-panel">
+            <div class="review-group-head">
+              <strong>情绪细调</strong>
+              <p>这一层更偏细节表现。没有把握时宁可留空，也别强凹一套设定。</p>
+            </div>
+            <label class="field-card">
+              <span>不会做的事</span>
+              <textarea id="persona-forbidden-behaviors" rows="2" placeholder="用；分开"></textarea>
+            </label>
+            <label class="field-card">
+              <span>情绪底模</span>
+              <textarea id="persona-emotion-model" rows="2"></textarea>
+            </label>
+            <div class="mini-grid">
+              <label class="field-card">
+                <span>发怒方式</span>
+                <textarea id="persona-anger-style" rows="2"></textarea>
+              </label>
+              <label class="field-card">
+                <span>开心方式</span>
+                <textarea id="persona-joy-style" rows="2"></textarea>
+              </label>
+            </div>
+            <label class="field-card">
+              <span>委屈方式</span>
+              <textarea id="persona-grievance-style" rows="2"></textarea>
+            </label>
+          </section>
+        </details>
+
+        <div class="card-actions">
+          <button id="save-persona-review-button" type="submit" class="primary-button">保存校对</button>
+        </div>
+      </form>
+
+      <p id="persona-review-status" class="card-note"></p>
+      <details id="persona-review-reference-panel" class="persona-reference-panel hidden">
+        <summary class="persona-reference-trigger">
+          <span>看看这次补全参考了什么</span>
+          <small id="persona-review-reference-summary">网页摘要参考</small>
+        </summary>
+        <div id="persona-review-reference-list" class="persona-reference-list"></div>
+      </details>
+    </div>
+  </div>
+</div>
+
+<div id="dialogue-memory-modal" class="modal hidden">
+  <div
+    id="dialogue-memory-modal-backdrop"
+    class="modal-backdrop"
+    data-close-modal="true"
+    data-modal-id="dialogue-memory-modal"
+    onclick="window.closeDialogueMemoryModal && window.closeDialogueMemoryModal()"
+  ></div>
+  <div class="modal-card dialogue-memory-modal-card" role="dialog" aria-modal="true" aria-labelledby="dialogue-memory-modal-title">
+    <div class="panel-head dialogue-memory-modal-head">
+      <div class="dialogue-memory-modal-title-group">
+        <p class="eyebrow">聊天记录</p>
+        <h3 id="dialogue-memory-modal-title">本局记忆</h3>
+        <p class="panel-copy">场景、人物与未完的线索都收在这里。</p>
+        <span id="dialogue-memory-modal-updated" class="dialogue-memory-modal-updated">更新于刚刚</span>
+      </div>
+      <div class="dialogue-memory-modal-actions">
+        <button
+          type="button"
+          class="soft-button dialogue-memory-modal-copy"
+          onclick="window.copyDialogueMemorySummary && window.copyDialogueMemorySummary()"
+        >
+          复制摘要
+        </button>
+        <button
+          id="close-dialogue-memory-modal-button"
+          type="button"
+          class="dialogue-memory-modal-close"
+          aria-label="关闭本局记忆"
+          title="关闭"
+          data-close-modal="true"
+          data-modal-id="dialogue-memory-modal"
+          onclick="window.closeDialogueMemoryModal && window.closeDialogueMemoryModal()"
+        >
+          <span aria-hidden="true">×</span>
+        </button>
+      </div>
+    </div>
+    <div class="modal-scroll dialogue-memory-modal-scroll">
+      <div id="dialogue-memory-modal-mount"></div>
+    </div>
+  </div>
+</div>
+
+<div id="dialogue-consistency-modal" class="modal hidden">
+  <div
+    id="dialogue-consistency-modal-backdrop"
+    class="modal-backdrop"
+    data-close-modal="true"
+    data-modal-id="dialogue-consistency-modal"
+  ></div>
+  <div class="modal-card dialogue-consistency-modal-card" role="dialog" aria-modal="true" aria-labelledby="dialogue-consistency-modal-title">
+    <div class="panel-head dialogue-consistency-modal-head">
+      <div>
+        <p class="eyebrow">对话质量</p>
+        <h3 id="dialogue-consistency-modal-title">人物一致性检查</h3>
+        <p class="panel-copy">查看角色语气、动机、知识边界和关系态度是否连贯。</p>
+      </div>
+      <button
+        id="close-dialogue-consistency-modal-button"
+        type="button"
+        class="dialogue-memory-modal-close"
+        aria-label="关闭人物一致性检查"
+        title="关闭"
+      >
+        <span aria-hidden="true">×</span>
+      </button>
+    </div>
+    <div class="modal-scroll dialogue-consistency-modal-scroll">
+      <div id="dialogue-consistency-modal-mount"></div>
+    </div>
+  </div>
+</div>
+
+<div id="scene-card-modal" class="modal hidden">
+  <div class="modal-backdrop" data-close-modal="true" data-modal-id="scene-card-modal"></div>
+  <div class="modal-card inspector-modal-card">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">场景卡</p>
+        <h3>先把这一幕的场子搭起来</h3>
+        <p class="panel-copy">它会决定这场聊天从哪里起势、带着什么气氛往前推。关键字段必填，剩下的可以慢慢细调。</p>
+      </div>
+      <button id="close-scene-card-button" type="button" class="soft-button">先放一放</button>
+    </div>
+    <div class="modal-scroll">
+      <div id="scene-card-vue-root" class="scene-card-vue-root hidden"></div>
+    </div>
+  </div>
+</div>
+
+<div id="self-card-modal" class="modal hidden">
+  <div class="modal-backdrop" data-close-modal="true" data-modal-id="self-card-modal"></div>
+  <div class="modal-card inspector-modal-card">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">角色卡</p>
+        <h3>先替自己捏一个入场人设</h3>
+        <p class="panel-copy">这些设定会直接带进“以自己入场”的聊天里。关键字段必填，剩下的可慢慢细调。</p>
+      </div>
+      <button id="close-self-card-button" type="button" class="soft-button">先放一放</button>
+    </div>
+    <div class="modal-scroll">
+      <div id="self-card-vue-root" class="self-card-vue-root hidden"></div>
+    </div>
+  </div>
+</div>
+
+<div id="opening-preset-modal" class="modal hidden">
+  <div class="modal-backdrop" data-close-modal="true" data-modal-id="opening-preset-modal"></div>
+  <div class="modal-card inspector-modal-card">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">开局模板</p>
+        <h3>把这一套开局方式收起来</h3>
+        <p class="panel-copy">保存时会把你当前选的模式、人物、场景卡、角色卡和入场口径一起打包。下次挑中后，可以直接一键开聊。</p>
+      </div>
+      <button id="close-opening-preset-button" type="button" class="soft-button">先放一放</button>
+    </div>
+    <div class="modal-scroll">
+      <form id="opening-preset-form" class="stack-form">
+        <input id="opening-preset-id" type="hidden" value="" />
+
+        <label class="field-card">
+          <span>模板名</span>
+          <input id="opening-preset-title" type="text" placeholder="例如：雨夜试探局；自己入席花厅夜宴" />
+        </label>
+        <label class="field-card">
+          <span>留一句备注</span>
+          <textarea id="opening-preset-note" rows="3" placeholder="例如：适合三人试探，开口不要太快，先让气氛慢慢绷紧"></textarea>
+        </label>
+
+        <div class="card-actions">
+          <button id="delete-opening-preset-button" type="button" class="soft-button hidden">删除这套模板</button>
+          <button id="save-opening-preset-button" type="submit" class="primary-button">保存开局模板</button>
+        </div>
+      </form>
+
+      <p id="opening-preset-status" class="card-note"></p>
+    </div>
+  </div>
+</div>
+
+<div id="relation-details-modal" class="modal hidden">
+  <div class="modal-backdrop" data-close-modal="true" data-modal-id="relation-details-modal"></div>
+  <div class="modal-card inspector-modal-card">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">关系明细</p>
+        <h3>看看这张网是怎么织出来的</h3>
+        <p class="panel-copy">除了分值，也把关系摘要和证据句留给你回看。</p>
+      </div>
+      <button id="close-relation-details-button" type="button" class="soft-button">稍后再看</button>
+    </div>
+    <div class="modal-scroll">
+      <div id="relation-details-vue-root" class="relation-details-vue-root hidden"></div>
+      <div id="relation-details-list" class="relation-details-list"></div>
+      <p id="relation-details-status" class="card-note"></p>
+    </div>
+  </div>
+</div>
+
+<div id="builtin-novel-modal" class="modal hidden">
+  <div class="modal-backdrop" data-close-modal="true" data-modal-id="builtin-novel-modal"></div>
+  <div class="modal-card inspector-modal-card">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">内置小说</p>
+        <h3>挑一卷已经备好的故事直接试玩</h3>
+        <p class="panel-copy">这些都是已经整理好的小说包。接通声源后，点一下就会复制出你自己的本地书卷，不会改动原包。</p>
+      </div>
+      <button id="close-builtin-novel-button" type="button" class="soft-button" data-close-modal="true" data-modal-id="builtin-novel-modal">先放一放</button>
+    </div>
+    <div class="modal-scroll">
+      <div class="card-actions">
+        <button id="refresh-builtin-novels-button" type="button" class="soft-button">刷新列表</button>
+      </div>
+      <div id="builtin-novel-list" class="builtin-novel-list"></div>
+      <p id="builtin-novel-status" class="card-note"></p>
+    </div>
+  </div>
+</div>
+
+<div id="app-update-modal" class="modal hidden">
+  <div class="modal-backdrop" data-close-modal="true" data-modal-id="app-update-modal"></div>
+  <div class="modal-card update-modal-card">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">版本提醒</p>
+        <h3>造梦有新版本了</h3>
+        <p class="panel-copy">不打断这一页，只轻轻提醒你一下。想现在更新也可以，完成后会自动刷新网页。</p>
+      </div>
+      <button id="close-app-update-button" type="button" class="soft-button">稍后</button>
+    </div>
+    <div class="modal-scroll">
+      <div class="update-version-pair">
+        <div class="update-version-card">
+          <span>当前版本</span>
+          <strong id="app-update-current-version">-</strong>
+        </div>
+        <div class="update-version-card">
+          <span>远端版本</span>
+          <strong id="app-update-remote-version">-</strong>
+        </div>
+      </div>
+      <p id="app-update-status" class="card-note"></p>
+      <div class="card-actions">
+        <button id="dismiss-app-update-button" type="button" class="soft-button">稍后再说</button>
+        <button id="confirm-app-update-button" type="button" class="primary-button">现在更新</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="run-package-share-modal" class="modal hidden">
+  <div
+    id="run-package-share-modal-backdrop"
+    class="modal-backdrop"
+    data-close-modal="true"
+    data-modal-id="run-package-share-modal"
+  ></div>
+  <div class="modal-card inspector-modal-card">
+    <div class="panel-head">
+      <div>
+        <p class="eyebrow">小说包</p>
+        <h3 id="run-package-share-modal-title">分享小说包</h3>
+        <p class="panel-copy">把这一卷的人物、关系、正文和可选会话打包，别人导入后可以直接续用。</p>
+      </div>
+      <button id="close-run-package-share-button" type="button" class="soft-button">先放一放</button>
+    </div>
+    <div class="modal-scroll">
+      <div class="field-card run-package-share-option">
+        <span>是否携带会话</span>
+        <div class="run-package-share-check-row">
+          <input id="run-package-share-include-dialogue" type="checkbox" checked />
+          <span>把已有聊天记录一起放进小说包</span>
+        </div>
+        <small>不勾选时只分享正文、人物、关系和场景素材，适合作为公开试玩包。</small>
+      </div>
+      <div class="card-actions">
+        <button id="run-package-share-cancel-button" type="button" class="soft-button">取消</button>
+        <button id="run-package-share-confirm-button" type="button" class="primary-button">生成分享包</button>
+      </div>
+      <p id="run-package-share-status" class="card-note"></p>
+    </div>
+  </div>
+</div>
+
+<div id="app-confirm-modal" class="modal hidden app-confirm-modal">
+  <div
+    id="app-confirm-modal-backdrop"
+    class="modal-backdrop"
+    data-close-modal="true"
+    data-modal-id="app-confirm-modal"
+  ></div>
+  <div class="modal-card app-confirm-modal-card">
+    <div class="panel-head app-confirm-modal-head">
+      <div>
+        <h3 id="app-confirm-modal-title">确认操作</h3>
+        <p id="app-confirm-modal-message" class="panel-copy"></p>
+      </div>
+    </div>
+    <div class="app-confirm-modal-actions">
+      <button id="app-confirm-modal-cancel" type="button" class="soft-button">取消</button>
+      <button id="app-confirm-modal-confirm" type="button" class="primary-button app-confirm-danger-button">确认</button>
+    </div>
+  </div>
+</div>

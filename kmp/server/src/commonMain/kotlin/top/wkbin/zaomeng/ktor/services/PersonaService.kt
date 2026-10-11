@@ -1,0 +1,692 @@
+package top.wkbin.zaomeng.ktor.services
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import top.wkbin.zaomeng.data.api.DeleteStatusDto
+import top.wkbin.zaomeng.data.api.PersonaAvatarDto
+import top.wkbin.zaomeng.data.api.PersonaEvolutionChangeDto
+import top.wkbin.zaomeng.data.api.PersonaEvolutionProposalDto
+import top.wkbin.zaomeng.data.api.PersonaIssueDto
+import top.wkbin.zaomeng.data.api.PersonaQualityOverviewDto
+import top.wkbin.zaomeng.data.api.PersonaQualityOverviewItemDto
+import top.wkbin.zaomeng.data.api.PersonaQualityReportDto
+import top.wkbin.zaomeng.data.api.PersonaReviewDto
+import top.wkbin.zaomeng.data.api.PersonaRepairProposalDto
+import top.wkbin.zaomeng.data.api.StoryRecapDto
+import okio.Path
+import okio.Path.Companion.toPath
+import top.wkbin.zaomeng.platform.PlatformLog
+import top.wkbin.zaomeng.platform.dumpYaml
+import top.wkbin.zaomeng.platform.nowIsoString
+import top.wkbin.zaomeng.platform.parseYaml
+
+class PersonaService(
+    private val storage: StorageService,
+    private val llm: LlmClient? = null,
+    private val prompts: PromptLoader? = null,
+    private val relations: RelationsService,
+) {
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true; prettyPrint = true }
+
+    fun getReview(runId: String, character: String): PersonaReviewDto {
+        val source = resolveProfile(runId, character)
+        val profile = loadProfile(source)
+        val directory = requireNotNull(source.parent)
+        return PersonaReviewDto(
+            runId = runId,
+            character = profile["name"]?.toString()?.trim().orEmpty().ifBlank { character },
+            editableProfilePath = (directory / "PROFILE.md").takeIf { storage.exists(it) }?.toString().orEmpty(),
+            generatedProfilePath = (directory / "PROFILE.generated.md").takeIf { storage.exists(it) }?.toString().orEmpty(),
+            fields = REVIEW_FIELDS.associateWith { readField(profile, it) },
+        )
+    }
+
+    fun deletePersona(runId: String, character: String): DeleteStatusDto {
+        val normalized = character.trim()
+        if (normalized.isBlank() || normalized.contains('/') || normalized.contains('\\') || normalized.contains("..")) {
+            throw IllegalArgumentException("Invalid character name")
+        }
+        val manifest = storage.readRunManifest(runId) ?: throw NoSuchElementException("Run not found: $runId")
+        if (manifest["status"]?.jsonPrimitive?.contentOrNull == "running") {
+            throw IllegalArgumentException("蒸馏进行中，请先停止蒸馏再删除人物。")
+        }
+        val source = resolveProfile(runId, normalized)
+        val profileDir = requireNotNull(source.parent)
+        val profileNames = linkedSetOf(normalized)
+        loadProfile(source)["name"]?.toString()?.trim()?.takeIf(String::isNotBlank)?.let(profileNames::add)
+        val novelId = manifest["novel_id"]?.jsonPrimitive?.contentOrNull
+            ?.takeIf(String::isNotBlank) ?: runId
+        val entityNovelId = profileDir.parent?.name?.takeIf(String::isNotBlank) ?: novelId
+        val runDir = storage.getRunDirectory(runId)
+        val avatar = storage.avatarFile(runId, normalized)
+        if (storage.isFile(avatar)) storage.deleteFile(avatar)
+        val payload = runDir / "payloads/distill_${PathSafety.sanitizePathComponent(normalized, "character")}.json"
+        if (storage.isFile(payload)) storage.deleteFile(payload)
+        storage.deleteRecursively(profileDir)
+        storage.deletePersonaEntities(runId, entityNovelId, profileNames)
+        val relationGraph = relations.removeCharacter(runId, normalized)
+        storage.writeRunManifest(runId, removeCharacterFromManifest(manifest, normalized, relationGraph))
+        return DeleteStatusDto(status = "deleted")
+    }
+
+    private fun removeCharacterFromManifest(
+        manifest: JsonObject,
+        character: String,
+        relationGraph: JsonObject?,
+    ): JsonObject {
+        val artifactIndex = manifest["artifact_index"]?.jsonObject ?: JsonObject(emptyMap())
+        val oldCharacters = artifactIndex["characters"]?.jsonArray ?: JsonArray(emptyList())
+        val keptCharacters = buildJsonArray {
+            oldCharacters.mapNotNull { runCatching { it.jsonObject }.getOrNull() }
+                .filter { it["name"]?.jsonPrimitive?.contentOrNull != character }
+                .forEach(::add)
+        }
+        val updatedIndex = buildJsonObject {
+            artifactIndex.forEach { (key, value) -> if (key != "characters") put(key, value) }
+            put("characters", keptCharacters)
+            relationGraph?.let { graph ->
+                val oldGraph = artifactIndex["relation_graph"]?.jsonObject
+                put("relation_graph", buildJsonObject {
+                    oldGraph?.forEach { (key, value) ->
+                        if (key !in setOf("relation_count", "has_relation_graph")) put(key, value)
+                    }
+                    graph.forEach { (key, value) -> put(key, value) }
+                })
+            }
+        }
+
+        val locked = manifest["locked_characters"]?.jsonArray ?: JsonArray(emptyList())
+        val keptLocked = buildJsonArray {
+            locked.mapNotNull { it.jsonPrimitive.contentOrNull }
+                .filter { it != character }
+                .forEach { add(JsonPrimitive(it)) }
+        }
+        val wasLocked = locked.isNotEmpty() && keptLocked.size != locked.size
+
+        val progress = manifest["progress"]?.jsonObject ?: JsonObject(emptyMap())
+        val completed = progress["completed_characters"]?.jsonArray ?: JsonArray(emptyList())
+        val keptCompleted = buildJsonArray {
+            completed.mapNotNull { it.jsonPrimitive.contentOrNull }
+                .filter { it != character }
+                .forEach { add(JsonPrimitive(it)) }
+        }
+        val wasCompleted = completed.isNotEmpty() && keptCompleted.size != completed.size
+        val oldTotal = progress["total_characters"]?.jsonPrimitive?.intOrNull
+        val oldCompletedCount = progress["completed_count"]?.jsonPrimitive?.intOrNull
+        val updatedProgress = buildJsonObject {
+            progress.forEach { (key, value) ->
+                when (key) {
+                    "completed_characters" -> put(key, keptCompleted)
+                    "completed_count" -> put(
+                        key,
+                        JsonPrimitive(if (wasCompleted) keptCompleted.size else oldCompletedCount ?: keptCompleted.size),
+                    )
+                    "total_characters" -> oldTotal?.let { total ->
+                        put(key, JsonPrimitive(if (wasLocked) maxOf(0, total - 1) else total))
+                    }
+                    "current_character" -> if (value.jsonPrimitive.contentOrNull == character) {
+                        put(key, JsonPrimitive(""))
+                    } else {
+                        put(key, value)
+                    }
+                    else -> put(key, value)
+                }
+            }
+            if (oldTotal == null) put("total_characters", JsonPrimitive(keptCompleted.size))
+            if (oldCompletedCount == null) put("completed_count", JsonPrimitive(keptCompleted.size))
+        }
+
+        val summary = manifest["summary"]?.jsonObject ?: JsonObject(emptyMap())
+        val updatedSummary = buildJsonObject {
+            summary.forEach { (key, value) ->
+                when (key) {
+                    "characters_total" -> {
+                        val total = value.jsonPrimitive.intOrNull
+                        if (total != null) {
+                            put(key, JsonPrimitive(if (wasLocked) maxOf(0, total - 1) else total))
+                        } else {
+                            put(key, value)
+                        }
+                    }
+                    "characters_completed" -> {
+                        val completedCount = value.jsonPrimitive.intOrNull
+                        if (completedCount != null) {
+                            put(key, JsonPrimitive(if (wasCompleted) keptCompleted.size else completedCount))
+                        } else {
+                            put(key, value)
+                        }
+                    }
+                    else -> put(key, value)
+                }
+            }
+        }
+
+        val quality = manifest["quality"]?.jsonObject
+        val updatedQuality = quality?.let { oldQuality ->
+            buildJsonObject {
+                oldQuality.forEach { (key, value) ->
+                    when (key) {
+                        "matched_characters", "missing_characters" -> put(
+                            key,
+                            buildJsonArray {
+                                value.jsonArray.mapNotNull { it.jsonPrimitive.contentOrNull }
+                                    .filter { it != character }
+                                    .forEach { add(JsonPrimitive(it)) }
+                            },
+                        )
+                        "character_focus", "distill_chunk_by_character" -> put(
+                            key,
+                            buildJsonObject {
+                                value.jsonObject.forEach { (name, item) ->
+                                    if (name != character) put(name, item)
+                                }
+                            },
+                        )
+                        "profile_repairs" -> {
+                            val repairs = value.jsonObject
+                            val repaired = repairs["characters"]?.jsonArray
+                                ?.mapNotNull { it.jsonPrimitive.contentOrNull }
+                                ?.filter { it != character }
+                                .orEmpty()
+                            put(key, buildJsonObject {
+                                repairs.forEach { (name, item) ->
+                                    if (name !in setOf("characters", "count")) put(name, item)
+                                }
+                                put("characters", buildJsonArray { repaired.forEach { add(JsonPrimitive(it)) } })
+                                put("count", JsonPrimitive(repaired.size))
+                            })
+                        }
+                        else -> put(key, value)
+                    }
+                }
+            }
+        }
+
+        return buildJsonObject {
+            manifest.forEach { (key, value) ->
+                when (key) {
+                    "artifact_index" -> put(key, updatedIndex)
+                    "locked_characters" -> put(key, keptLocked)
+                    "progress" -> put(key, updatedProgress)
+                    "summary" -> put(key, updatedSummary)
+                    "quality" -> put(key, updatedQuality ?: value)
+                    "updated_at" -> put(key, JsonPrimitive(nowIsoString()))
+                    else -> put(key, value)
+                }
+            }
+        }
+    }
+
+    fun saveReview(runId: String, character: String, fields: Map<String, String>): PersonaReviewDto {
+        val source = resolveProfile(runId, character)
+        val profile = loadProfile(source).toMutableMap()
+        fields.forEach { (field, value) ->
+            if (field in REVIEW_FIELDS) applyField(profile, field, value)
+        }
+        val editable = requireNotNull(source.parent) / "PROFILE.md"
+        val existingBody = storage.readText(source).substringAfterFrontmatter()
+        val frontmatter = dumpYaml(profile).trimEnd()
+        storage.writeTextAtomically(editable, "---\n$frontmatter\n---\n\n$existingBody")
+        reconcileRepairArtifacts(requireNotNull(source.parent), fields)
+        return getReview(runId, character)
+    }
+
+    fun getQualityReport(runId: String, character: String): PersonaQualityReportDto {
+        val source = resolveProfile(runId, character)
+        val reportFile = requireNotNull(source.parent) / "QUALITY_REPORT.json"
+        if (storage.exists(reportFile)) {
+            runCatching { return json.decodeFromString<PersonaQualityReportDto>(storage.readText(reportFile)) }
+        }
+        val review = getReview(runId, character)
+        val issues = ProfileQualityAnalyzer.analyze(review.fields)
+        val completed = REVIEW_FIELDS.count { field ->
+            val value = review.fields[field].orEmpty().trim()
+            value.isNotBlank() && value !in INSUFFICIENT_VALUES
+        }
+        val penalty = issues.sumOf { if (it.severity == "high") 5 else 2 }.coerceAtMost(35)
+        val score = (completed * 100 / REVIEW_FIELDS.size - penalty).coerceIn(0, 100)
+        val proposal = getRepairProposal(runId, character)
+        val report = PersonaQualityReportDto(
+            character = review.character,
+            score = score,
+            maxScore = 100,
+            grade = when { score >= 85 -> "A"; score >= 70 -> "B"; score >= 55 -> "C"; else -> "D" },
+            verdict = if (issues.isEmpty()) "人物档案核心字段完整。" else "仍有 ${issues.size} 项人物信息需要复核。",
+            issues = issues,
+            evidenceCoverage = proposal.evidenceCoverage,
+            confidence = proposal.confidence,
+            pendingRepairCount = proposal.changes.size,
+        )
+        storage.writeTextAtomically(reportFile, json.encodeToString(PersonaQualityReportDto.serializer(), report))
+        return report
+    }
+
+    /**
+     * 批量汇总书卷内所有人物档案的质量，供「人物校对总览」一次性展示。
+     *
+     * 复用 [getQualityReport] 的缓存与兜底逻辑（读 QUALITY_REPORT.json，缺失时本地重算），
+     * 全程不调用 LLM，因此可以安全地对整本书的人物遍历。
+     */
+    fun qualityOverview(runId: String): PersonaQualityOverviewDto {
+        val manifest = storage.readRunManifest(runId) ?: throw NoSuchElementException("Run not found: $runId")
+        val names = manifest["artifact_index"]
+            ?.jsonObject
+            ?.get("characters")
+            ?.jsonArray
+            ?.mapNotNull { element ->
+                runCatching { element.jsonObject["name"]?.jsonPrimitive?.contentOrNull }.getOrNull()
+            }
+            ?.map(String::trim)
+            ?.filter(String::isNotBlank)
+            ?.distinct()
+            .orEmpty()
+
+        val items = names.map { character ->
+            val report = runCatching { getQualityReport(runId, character) }.getOrNull()
+            PersonaQualityOverviewItemDto(
+                character = report?.character?.takeIf(String::isNotBlank) ?: character,
+                score = report?.score ?: 0,
+                grade = report?.grade.orEmpty(),
+                verdict = report?.verdict.orEmpty(),
+                pendingRepairCount = report?.pendingRepairCount ?: 0,
+                missingFields = report?.issues.orEmpty().flatMap { it.fields }.distinct(),
+                highIssueCount = report?.issues.orEmpty().count { it.severity == "high" },
+            )
+        }.sortedWith(compareBy({ it.score }, { it.character }))
+
+        return PersonaQualityOverviewDto(
+            runId = runId,
+            items = items,
+            characterCount = items.size,
+            needsReviewCount = items.count { it.needsReview },
+            pendingRepairTotal = items.sumOf { it.pendingRepairCount },
+            missingFieldTotal = items.sumOf { it.missingFields.size },
+        )
+    }
+
+    fun getRepairProposal(runId: String, character: String): PersonaRepairProposalDto {
+        val source = resolveProfile(runId, character)
+        val proposalFile = requireNotNull(source.parent) / ProfileRepairService.REPAIR_PROPOSAL_FILE
+        if (!storage.isFile(proposalFile)) {
+            return PersonaRepairProposalDto(character = character, status = "not_available")
+        }
+        return runCatching {
+            json.decodeFromString<PersonaRepairProposalDto>(storage.readText(proposalFile))
+        }.getOrElse {
+            PersonaRepairProposalDto(character = character, status = "not_available")
+        }
+    }
+
+    fun generateEvolutionProposal(
+        runId: String,
+        character: String,
+        recap: StoryRecapDto?,
+    ): PersonaEvolutionProposalDto {
+        val review = getReview(runId, character)
+        val changes = mutableListOf<PersonaEvolutionChangeDto>()
+        val fields = review.fields
+
+        if (recap != null) {
+            // 1. 角色心境成长 (Character Arc)
+            val arc = recap.characterArcs.firstOrNull { it.name.trim() == character.trim() }
+            if (arc != null && arc.growthSummary.isNotBlank()) {
+                val currentConflict = fields["inner_conflict"].orEmpty().trim()
+                val proposedConflict = if (currentConflict.isBlank()) {
+                    arc.growthSummary
+                } else if (!currentConflict.contains(arc.growthSummary)) {
+                    "$currentConflict；${arc.growthSummary}"
+                } else {
+                    currentConflict
+                }
+                if (proposedConflict != currentConflict) {
+                    changes.add(
+                        PersonaEvolutionChangeDto(
+                            field = "inner_conflict",
+                            fieldLabel = "内心矛盾与心境",
+                            currentValue = currentConflict,
+                            proposedValue = proposedConflict,
+                            reason = "剧情复盘记录了新的心境成长：“${arc.growthSummary}”",
+                            category = "conflict",
+                        )
+                    )
+                }
+            }
+
+            // 2. 羁绊深化与变动 (Relation Changes)
+            val matchingRelations = recap.relations.filter { rel ->
+                rel.characters.any { it.trim() == character.trim() }
+            }
+            matchingRelations.forEach { rel ->
+                val other = rel.characters.firstOrNull { it.trim() != character.trim() } ?: "同伴"
+                val reason = rel.reason.ifBlank { rel.evidence }.ifBlank { rel.label }
+                val newBondDesc = "与${other}：$reason"
+                val currentBonds = fields["key_bonds"].orEmpty().trim()
+                if (reason.isNotBlank() && !currentBonds.contains(reason)) {
+                    val proposedBonds = if (currentBonds.isBlank()) newBondDesc else "$currentBonds；$newBondDesc"
+                    changes.add(
+                        PersonaEvolutionChangeDto(
+                            field = "key_bonds",
+                            fieldLabel = "关键羁绊",
+                            currentValue = currentBonds,
+                            proposedValue = proposedBonds,
+                            reason = "剧情互动中与${other}发生羁绊演变：$reason",
+                            category = "bond",
+                        )
+                    )
+                }
+            }
+
+            // 3. 名场面经典台词提炼 (Quotes)
+            val characterQuotes = recap.quotes.filter { it.speaker.trim() == character.trim() && it.message.isNotBlank() }
+            characterQuotes.forEach { quote ->
+                val currentLines = fields["typical_lines"].orEmpty().trim()
+                if (!currentLines.contains(quote.message)) {
+                    val proposedLines = if (currentLines.isBlank()) quote.message else "$currentLines；${quote.message}"
+                    changes.add(
+                        PersonaEvolutionChangeDto(
+                            field = "typical_lines",
+                            fieldLabel = "代表台词",
+                            currentValue = currentLines,
+                            proposedValue = proposedLines,
+                            reason = "在剧情高潮中留下代表性台词",
+                            category = "quote",
+                        )
+                    )
+                }
+            }
+        }
+
+        val summary = if (changes.isEmpty()) {
+            "当前未发现可自动提炼的角色成长项。"
+        } else {
+            "从近期剧情与对话中提炼出 ${changes.size} 项角色成长演化提案。"
+        }
+
+        return PersonaEvolutionProposalDto(
+            character = character,
+            status = if (changes.isEmpty()) "no_changes" else "available",
+            evolutionSummary = summary,
+            changes = changes,
+        )
+    }
+
+    fun applyEvolution(
+        runId: String,
+        character: String,
+        changes: List<PersonaEvolutionChangeDto>,
+    ): PersonaReviewDto {
+        val fieldMap = changes.associate { it.field to it.proposedValue }
+        return saveReview(runId, character, fieldMap)
+    }
+
+    private fun reconcileRepairArtifacts(directory: Path, savedFields: Map<String, String>) {
+        val qualityFile = directory / ProfileRepairService.QUALITY_REPORT_FILE
+        if (storage.isFile(qualityFile)) storage.deleteFile(qualityFile)
+        val proposalFile = directory / ProfileRepairService.REPAIR_PROPOSAL_FILE
+        if (!storage.isFile(proposalFile)) return
+        val proposal = runCatching {
+            json.decodeFromString<PersonaRepairProposalDto>(storage.readText(proposalFile))
+        }.getOrNull() ?: return
+        val remaining = proposal.changes.filterNot { change ->
+            savedFields[change.field].orEmpty().trim() == change.after.trim()
+        }
+        val updated = proposal.copy(
+            status = if (remaining.isEmpty()) "applied" else "pending",
+            changes = remaining,
+        )
+        storage.writeTextAtomically(
+            proposalFile,
+            json.encodeToString(PersonaRepairProposalDto.serializer(), updated),
+        )
+    }
+
+    fun saveAvatar(runId: String, character: String, bytes: ByteArray): PersonaAvatarDto {
+        if (!storage.runExists(runId)) throw NoSuchElementException("Run not found: $runId")
+        resolveProfile(runId, character)
+        require(bytes.isNotEmpty() && bytes.size <= MAX_AVATAR_BYTES) { "头像不能为空且不能超过 5 MB。" }
+        require(isSupportedImage(bytes)) { "仅支持 JPEG、PNG 或 WebP 图片。" }
+        val avatar = storage.avatarFile(runId, character)
+        storage.mkdirs(requireNotNull(avatar.parent))
+        storage.writeBytes(avatar, bytes)
+        val version = "${storage.lastModifiedMillis(avatar)}-${storage.fileSize(avatar)}"
+        updateAvatarVersion(runId, character, version)
+        return PersonaAvatarDto(character = character, avatarVersion = version)
+    }
+
+    fun getAvatar(runId: String, character: String): Path {
+        if (!storage.runExists(runId)) throw NoSuchElementException("Run not found: $runId")
+        val avatar = storage.avatarFile(runId, character)
+        if (!storage.isFile(avatar)) throw NoSuchElementException("Avatar not found: $character")
+        return avatar
+    }
+
+    /** 读取头像字节（供路由直接响应；头像文件统一为 PNG）。 */
+    fun getAvatarBytes(runId: String, character: String): ByteArray =
+        storage.readBytes(getAvatar(runId, character))
+
+    suspend fun suggestField(runId: String, character: String, field: String, currentFields: Map<String, String>): JsonObject {
+        if (!storage.runExists(runId)) throw NoSuchElementException("Run not found: $runId")
+        val normalizedCharacter = character.trim()
+        val normalizedField = field.trim()
+        if (normalizedCharacter.isEmpty() || normalizedField.isEmpty()) throw IllegalArgumentException("character and field are required")
+        val activeLlm = checkNotNull(llm) { "LLM service is unavailable" }
+        val activePrompts = checkNotNull(prompts) { "Prompt loader is unavailable" }
+        val profile = currentFields.entries.joinToString("\n") { "${it.key}: ${it.value}" }
+        val prompt = activePrompts.getPersonaSuggestFieldTemplate()
+            .replace("{character}", normalizedCharacter)
+            .replace("{field}", normalizedField)
+            .replace("{profile}", profile.ifBlank { "（暂无）" })
+        val response = activeLlm.chatCompletion(
+            messages = listOf(
+                LlmClient.ChatMessage("system", activePrompts.getPersonaCompletionPrompt("knowledge_based")),
+                LlmClient.ChatMessage("user", prompt),
+            ),
+            temperature = 0.2,
+            maxTokens = 700,
+            requireJsonObject = true,
+        )
+        val text = response.choices.firstOrNull()?.message?.content?.trim().orEmpty()
+        if (text.isBlank()) throw IllegalStateException("LLM returned empty persona field")
+        return try {
+            val parsed = json.decodeFromString<JsonObject>(text.removePrefix("```").removeSuffix("```").trim().removePrefix("json").trim())
+            buildJsonObject {
+                put("status", parsed["status"] ?: JsonPrimitive("insufficient"))
+                put("value", parsed["value"] ?: JsonPrimitive(""))
+                put("reason", parsed["reason"] ?: JsonPrimitive("证据不足"))
+                put("field", normalizedField)
+                put("character", normalizedCharacter)
+            }
+        } catch (error: Exception) {
+            throw IllegalStateException("LLM returned invalid persona JSON", error)
+        }
+    }
+
+    private fun resolveProfile(runId: String, character: String): Path {
+        // 轻量路径安全校验（角色名可为中文，不能含路径分隔符/穿越序列）
+        if (character.isBlank() || character.contains('/') || character.contains('\\') || character.contains("..")) {
+            throw IllegalArgumentException("Invalid character name")
+        }
+        val manifest = storage.readRunManifest(runId) ?: throw NoSuchElementException("Run not found: $runId")
+        val runDir = storage.getRunDirectory(runId)
+        val item = manifest["artifact_index"]?.jsonObject?.get("characters")?.jsonArray
+            ?.mapNotNull { runCatching { it.jsonObject }.getOrNull() }
+            ?.firstOrNull { it["name"]?.jsonPrimitive?.contentOrNull == character }
+        val candidates = buildList {
+            item?.get("profile_file")?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotBlank)?.let {
+                val indexed = it.toPath()
+                indexed.parent?.let { directory -> add(directory / "PROFILE.md") }
+                add(indexed)
+            }
+            item?.get("persona_dir")?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotBlank)?.let { directory ->
+                add(directory.toPath() / "PROFILE.md"); add(directory.toPath() / "PROFILE.generated.md")
+            }
+            add(runDir / "artifacts/characters/$character/PROFILE.md")
+            add(runDir / "artifacts/characters/$character/PROFILE.generated.md")
+        }
+        // 优先选择可解析的档案文件（有 YAML 内容），其次任意存在的文件
+        candidates.firstOrNull { storage.isFile(it) && hasParsableYaml(it) }?.let { return it }
+        candidates.firstOrNull { storage.isFile(it) }?.let { return it }
+        findProfileRecursive(runDir, character, depth = 6)?.let { return it }
+        throw NoSuchElementException("Character not found: $character")
+    }
+
+    private fun findProfileRecursive(root: Path, character: String, depth: Int): Path? {
+        if (depth <= 0) return null
+        for (child in storage.listFiles(root)) {
+            if (storage.isDirectory(child)) {
+                findProfileRecursive(child, character, depth - 1)?.let { return it }
+            } else if (storage.isFile(child) && child.parent?.name == character && child.name in PROFILE_FILENAMES) {
+                return child
+            }
+        }
+        return null
+    }
+
+    private fun hasParsableYaml(file: Path): Boolean = runCatching {
+        val text = storage.readText(file)
+        val yamlText = text.frontmatter() ?: text
+        parseYaml(yamlText) is Map<*, *>
+    }.getOrDefault(false)
+
+    private fun loadProfile(file: Path): Map<String, Any?> {
+        PlatformLog.d(TAG, "Loading persona profile from: $file")
+        val text = storage.readText(file)
+        val yamlText = text.frontmatter()
+        // 新格式：人物档案统一使用 YAML frontmatter（---\n...\n---）
+        val loaded: Map<*, *>? = yamlText?.let {
+            runCatching { parseYaml(it) as? Map<*, *> }.getOrNull()
+        }
+        if (loaded != null) {
+            return loaded.entries.associate { it.key.toString() to normalizeYamlValue(it.value) }
+        }
+        // Markdown 档案回退（对齐 Python parse_persona_markdown）：
+        // PROFILE.md 常见格式为 `- key: value` 列表，YAML 解析会把列表当 sequence 而非 map。
+        val markdownParsed = parsePersonaMarkdown(text)
+        if (markdownParsed.isNotEmpty()) {
+            PlatformLog.d(TAG, "Persona profile 以 Markdown 列表解析成功: $file（${markdownParsed.size} 个字段）")
+            return markdownParsed
+        }
+        PlatformLog.w(TAG, "Persona profile 无有效 YAML/Markdown 内容，按空档案处理: $file")
+        return emptyMap()
+    }
+
+    /**
+     * 解析 Markdown 档案（对齐 Python src/modules/persona_profile_io.py parse_persona_markdown）：
+     * 提取所有 `- key: value` 行，重复 key 以「；」合并。
+     */
+    private fun parsePersonaMarkdown(text: String): Map<String, Any?> {
+        val parsed = linkedMapOf<String, String>()
+        text.lineSequence().forEach { rawLine ->
+            val line = rawLine.trim()
+            if (!line.startsWith("- ") || ":" !in line) return@forEach
+            val (key, value) = line.drop(2).split(":", limit = 2)
+            val trimmedKey = key.trim()
+            val trimmedValue = value.trim()
+            if (trimmedKey.isBlank() || trimmedValue.isBlank()) return@forEach
+            parsed[trimmedKey] = if (parsed.containsKey(trimmedKey)) {
+                "${parsed[trimmedKey]}；$trimmedValue"
+            } else {
+                trimmedValue
+            }
+        }
+        return parsed
+    }
+
+    private fun normalizeYamlValue(value: Any?): Any? = when (value) {
+        is Map<*, *> -> value.entries.associate { it.key.toString() to normalizeYamlValue(it.value) }
+        is List<*> -> value.map(::normalizeYamlValue)
+        else -> value
+    }
+
+    private fun readField(profile: Map<String, Any?>, field: String): String {
+        val nested = when {
+            field == "cadence" || field in SPEECH_LIST_FIELDS -> (profile["speech_habits"] as? Map<*, *>)?.get(field)
+            field in EMOTION_FIELDS -> (profile["emotion_profile"] as? Map<*, *>)?.get(field)
+            field in VOICE_FIELDS -> (profile["voice_profile"] as? Map<*, *>)?.get(field)
+            else -> null
+        }
+        return PersonaProfileNormalizer.normalizeFieldValue(formatField(nested ?: profile[field]))
+    }
+
+    private fun formatField(value: Any?): String = when (value) {
+        is List<*> -> value.mapNotNull { it?.toString()?.trim()?.takeIf(String::isNotEmpty) }.joinToString("；")
+        is Map<*, *> -> value.entries.joinToString("；") { "${it.key}=${it.value}" }
+        else -> value?.toString()?.trim().orEmpty()
+    }
+
+    private fun applyField(profile: MutableMap<String, Any?>, field: String, value: String) {
+        val normalized: Any = if (field in LIST_FIELDS) value.split(Regex("\\s*[；;]\\s*")).filter(String::isNotBlank) else value.trim()
+        profile[field] = normalized
+        if (field == "cadence" || field in SPEECH_LIST_FIELDS) {
+            val nested = profile["speech_habits"].asNestedMap()
+            nested[field] = normalized
+            profile["speech_habits"] = nested
+        }
+        if (field in EMOTION_FIELDS) {
+            val nested = profile["emotion_profile"].asNestedMap()
+            nested[field] = normalized
+            profile["emotion_profile"] = nested
+        }
+        if (field in VOICE_FIELDS) {
+            val nested = profile["voice_profile"].asNestedMap()
+            nested[field] = normalized
+            profile["voice_profile"] = nested
+        }
+    }
+
+    /** 将 Any? 安全转换为可变字符串映射（star-projection，无 unchecked cast）。 */
+    private fun Any?.asNestedMap(): MutableMap<String, Any?> = when (this) {
+        is Map<*, *> -> this.entries.associate { it.key.toString() to it.value }.toMutableMap()
+        else -> mutableMapOf()
+    }
+
+    private fun updateAvatarVersion(runId: String, character: String, version: String) {
+        val manifest = storage.readRunManifest(runId) ?: throw NoSuchElementException("Run not found: $runId")
+        val artifactIndex = manifest["artifact_index"]?.jsonObject ?: JsonObject(emptyMap())
+        val characters = artifactIndex["characters"]?.jsonArray ?: JsonArray(emptyList())
+        var found = false
+        val updatedCharacters = buildJsonArray {
+            characters.forEach { element ->
+                val item = element.jsonObject
+                if (item["name"]?.jsonPrimitive?.contentOrNull == character) {
+                    found = true
+                    add(buildJsonObject { item.forEach { (k, v) -> put(k, v) }; put("avatar_version", JsonPrimitive(version)) })
+                } else add(item)
+            }
+        }
+        if (!found) throw NoSuchElementException("Character not found: $character")
+        val updatedIndex = buildJsonObject { artifactIndex.forEach { (k, v) -> put(k, v) }; put("characters", updatedCharacters) }
+        storage.writeRunManifest(runId, buildJsonObject { manifest.forEach { (k, v) -> put(k, v) }; put("artifact_index", updatedIndex) })
+    }
+
+    private fun isSupportedImage(bytes: ByteArray): Boolean =
+        bytes.startsWith(byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47)) ||
+            bytes.startsWith(byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte())) ||
+            (bytes.size >= 12 && bytes.copyOfRange(0, 4).contentEquals("RIFF".encodeToByteArray()) && bytes.copyOfRange(8, 12).contentEquals("WEBP".encodeToByteArray()))
+
+    private fun ByteArray.startsWith(prefix: ByteArray) = size >= prefix.size && copyOfRange(0, prefix.size).contentEquals(prefix)
+    private fun String.frontmatter(): String? = if (startsWith("---")) split("---", limit = 3).getOrNull(1) else null
+    private fun String.substringAfterFrontmatter(): String = if (startsWith("---")) split("---", limit = 3).getOrNull(2)?.trimStart().orEmpty() else this
+
+    companion object {
+        private const val TAG = "PersonaService"
+        private const val MAX_AVATAR_BYTES = 5 * 1024 * 1024
+        private val PROFILE_FILENAMES = setOf("PROFILE.md", "PROFILE.generated.md")
+        private val INSUFFICIENT_VALUES = setOf("不详", "信息不足", "暂无", "未知", "资料不足", "证据不足", "待补充", "留空")
+        private val REVIEW_FIELDS = listOf("core_identity", "story_role", "identity_anchor", "temperament_type", "gender", "age_stage", "appearance_feature", "habit_action", "soul_goal", "hidden_desire", "inner_conflict", "self_cognition", "private_self", "speech_style", "cadence", "typical_lines", "signature_phrases", "sentence_openers", "sentence_endings", "voice_name", "voice_pitch", "voice_speed", "voice_desc", "social_mode", "thinking_style", "decision_rules", "reward_logic", "worldview", "belief_anchor", "moral_bottom_line", "restraint_threshold", "core_traits", "key_bonds", "preference_like", "dislike_hate", "forbidden_behaviors", "stress_response", "emotion_model", "anger_style", "joy_style", "grievance_style", "others_impression")
+        private val LIST_FIELDS = setOf("typical_lines", "signature_phrases", "sentence_openers", "sentence_endings", "decision_rules", "core_traits", "key_bonds", "preference_like", "dislike_hate", "forbidden_behaviors")
+        private val SPEECH_LIST_FIELDS = setOf("signature_phrases", "sentence_openers", "sentence_endings")
+        private val EMOTION_FIELDS = setOf("anger_style", "joy_style", "grievance_style")
+        private val VOICE_FIELDS = setOf("voice_name", "voice_pitch", "voice_speed", "voice_desc")
+    }
+}

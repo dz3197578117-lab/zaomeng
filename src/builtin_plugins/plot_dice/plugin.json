@@ -1,0 +1,48 @@
+{
+  "id": "com.zaomeng.plot-dice",
+  "name": "剧情骰子",
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "entry": "main.py",
+  "description": "结合当前角色、关系和场景，由模型随机掷出一个能推动剧情的突发事件。",
+  "defaultEnabled": true,
+  "permissions": [
+    "chat.context.read",
+    "chat.draft.write",
+    "model.invoke"
+  ],
+  "settings": [
+    {
+      "key": "eventType",
+      "title": "骰面偏好",
+      "type": "enum",
+      "default": "mixed",
+      "options": [
+        {"value": "mixed", "label": "完全随机"},
+        {"value": "accident", "label": "意外"},
+        {"value": "secret", "label": "秘密"},
+        {"value": "relationship", "label": "关系"},
+        {"value": "visitor", "label": "来客"},
+        {"value": "environment", "label": "环境"},
+        {"value": "choice", "label": "抉择"},
+        {"value": "loss", "label": "失去"},
+        {"value": "gain", "label": "获得"},
+        {"value": "rumor", "label": "流言"},
+        {"value": "obstacle", "label": "障碍"},
+        {"value": "signal", "label": "征兆"},
+        {"value": "time_limit", "label": "时限"},
+        {"value": "distraction", "label": "干扰"}
+      ]
+    }
+  ],
+  "contributes": {
+    "chatActions": [
+      {
+        "id": "roll-plot",
+        "title": "剧情骰子",
+        "icon": "casino",
+        "placement": "composer"
+      }
+    ]
+  }
+}

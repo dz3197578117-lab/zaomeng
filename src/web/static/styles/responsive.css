@@ -1,0 +1,497 @@
+@media (max-width: 1180px) {
+  html.mobile-chat-active,
+  body.mobile-chat-active {
+    overflow: hidden;
+    height: 100%;
+  }
+
+  .page-shell {
+    width: 100%;
+    padding: 1rem 1rem 0.9rem;
+  }
+
+  .app-shell {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .experience-shell:not(.dialogue-layout) .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .experience-shell.mobile-shell:not(.mobile-session-drawer-open) .library-rail {
+    display: none;
+  }
+
+  .story-header.mobile-shell #toggle-sidebar-button {
+    font-weight: 600;
+    border-color: rgba(184, 132, 113, 0.24);
+    background: rgba(255, 244, 232, 0.92);
+  }
+
+  .story-header.mobile-shell #toggle-sidebar-button.mobile-session-trigger-active {
+    color: var(--accent-strong);
+    border-color: rgba(184, 132, 113, 0.34);
+    background: rgba(255, 236, 220, 0.98);
+  }
+
+  .page-shell.mobile-chat-active {
+    height: 100dvh;
+    max-height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+    padding: 0.55rem 0.65rem 0.45rem;
+    width: 100%;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 0.55rem;
+  }
+
+  .page-shell.mobile-chat-active #workspace-root {
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .story-header.mobile-chat-active {
+    padding-bottom: 0.35rem;
+  }
+
+  .story-header.mobile-chat-active .story-copy p.eyebrow {
+    font-size: 11px;
+  }
+
+  .story-header.mobile-chat-active .story-copy h2 {
+    font-size: 1.05rem;
+    line-height: 1.35;
+  }
+
+  .story-header.mobile-chat-active #open-settings-button {
+    display: none;
+  }
+
+  .experience-shell.mobile-shell.dialogue-layout {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
+    gap: 0;
+    align-items: stretch;
+  }
+
+  .experience-shell.mobile-shell.dialogue-layout > #main-shell-root {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
+    max-height: none;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .experience-shell.mobile-shell.dialogue-layout #main-shell-root > .main-shell {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+    max-height: 100%;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    overflow: hidden;
+    gap: 0.65rem;
+  }
+
+  .experience-shell.mobile-shell.dialogue-layout .chat-shell,
+  .experience-shell.mobile-shell.dialogue-layout .chat-detail,
+  .experience-shell.mobile-shell.dialogue-layout .chat-content {
+    min-height: 0;
+    height: 100%;
+    max-height: 100%;
+    overflow: hidden;
+    display: grid;
+  }
+
+  .experience-shell.mobile-shell.dialogue-layout .chat-shell {
+    display: grid;
+  }
+
+  .experience-shell.mobile-shell.dialogue-layout .transcript {
+    max-height: none;
+    min-height: 0;
+    height: 100%;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .experience-shell.mobile-shell.dialogue-layout .composer-shell {
+    flex: 0 0 auto;
+  }
+
+  .experience-shell.mobile-shell.mobile-session-drawer-open::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: rgba(34, 24, 18, 0.42);
+    z-index: 34;
+    backdrop-filter: blur(2px);
+  }
+
+  .experience-shell.mobile-shell.mobile-session-drawer-open .library-rail {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 36;
+    display: grid;
+    width: min(88vw, 18.5rem);
+    height: 100dvh;
+    max-height: 100dvh;
+    padding: 0.65rem;
+    background: var(--paper);
+    box-shadow: 0 24px 60px rgba(72, 48, 36, 0.22);
+    overflow: hidden;
+    pointer-events: auto;
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .experience-shell.mobile-shell.mobile-session-drawer-open .rail-brand {
+    display: none;
+  }
+
+  .experience-shell.mobile-shell.mobile-session-drawer-open .rail-sessions {
+    min-height: 0;
+    height: 100%;
+    max-height: 100%;
+  }
+
+  .experience-shell.mobile-shell.mobile-session-drawer-open .session-list {
+    max-height: none;
+    height: 100%;
+  }
+
+  .experience-shell.mobile-shell.dialogue-layout .app-shell {
+    position: absolute;
+    width: 0;
+    height: 0;
+    min-width: 0;
+    min-height: 0;
+    overflow: visible;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .experience-shell.dialogue-layout {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    min-height: auto;
+    height: auto;
+  }
+
+  .experience-shell.dialogue-layout .app-shell {
+    grid-template-columns: 1fr;
+    width: 100%;
+    min-width: 0;
+    min-height: auto;
+    max-height: none;
+    height: auto;
+  }
+
+  .experience-shell.dialogue-layout > #main-shell-root {
+    grid-column: 1;
+    grid-row: auto;
+    min-height: auto;
+    height: auto;
+    max-height: none;
+  }
+
+  .experience-shell.dialogue-layout #main-shell-root > .main-shell {
+    min-height: auto;
+    height: auto;
+    max-height: none;
+    grid-template-rows: auto auto;
+    overflow: visible;
+  }
+
+  .experience-shell.dialogue-layout .chat-shell,
+  .experience-shell.dialogue-layout .chat-detail,
+  .experience-shell.dialogue-layout .chat-content {
+    height: auto;
+    overflow: visible;
+  }
+
+  .experience-shell.dialogue-layout .chat-shell {
+    display: block;
+  }
+
+  .library-rail {
+    grid-template-rows: auto;
+    width: 100%;
+    height: auto;
+    max-height: none;
+  }
+
+  .experience-shell.dialogue-layout .library-rail {
+    grid-template-rows: auto;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .experience-shell.dialogue-layout .rail-sessions {
+    height: auto;
+    max-height: none;
+    min-height: 0;
+    align-self: auto;
+  }
+
+  .app-shell.sidebar-collapsed .library-rail {
+    display: none;
+  }
+
+  .experience-shell.mobile-shell.mobile-session-drawer-open .app-shell.sidebar-collapsed .library-rail {
+    display: grid;
+  }
+
+  .studio-grid,
+  .mini-grid,
+  .choice-deck,
+  .info-row,
+  .work-loading-grid,
+  .work-loading-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  #step-model,
+  #step-distill,
+  #step-progress,
+  #step-chat-setup {
+    grid-column: auto;
+    min-height: auto;
+  }
+
+  .story-header,
+  .section-head,
+  .card-head,
+  .panel-head {
+    flex-direction: column;
+  }
+
+  .story-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .bookshelf-card .card-head {
+    flex-direction: column;
+  }
+
+  .bookshelf-head-actions {
+    width: 100%;
+    margin-left: 0;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .transcript {
+    padding: 24px 16px 20px;
+    max-height: min(56vh, 32rem);
+    min-height: 18rem;
+    height: auto;
+  }
+
+  .dialogue-memory {
+    padding: 0.44rem 0.7rem;
+    gap: 0;
+  }
+
+  .dialogue-memory-head {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.42rem;
+    min-width: 0;
+    max-height: 1.78rem;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .dialogue-memory-head * {
+    white-space: nowrap !important;
+  }
+
+  .dialogue-memory-head-title {
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+    min-width: 0;
+    gap: 0.34rem;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .dialogue-memory-head-title strong,
+  .dialogue-memory-head small,
+  .dialogue-memory-copy-status {
+    white-space: nowrap;
+  }
+
+  .dialogue-memory-head-title > * {
+    flex: 0 0 auto;
+  }
+
+  #dialogue-memory-updated,
+  #dialogue-memory-copy-status,
+  #dialogue-consistency-button {
+    display: none;
+  }
+
+  #dialogue-memory-toggle-button,
+  #dialogue-consistency-button {
+    min-height: 1.48rem;
+    padding: 0 0.44rem;
+    font-size: 0.64rem;
+    flex: 0 0 auto;
+  }
+
+  .dialogue-memory-body {
+    display: none;
+  }
+
+  .dialogue-memory-modal-scroll .dialogue-memory-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dialogue-memory-modal-scroll .dialogue-state-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dialogue-memory-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dialogue-state-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-detail {
+    min-height: 20rem;
+  }
+
+  .message-inline {
+    max-width: 100%;
+  }
+
+  .dialogue-association-panel {
+    width: 100%;
+    padding: 13px 14px 14px;
+  }
+
+  .dialogue-association-options,
+  .dialogue-association-loading {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .dialogue-association-option,
+  .dialogue-association-placeholder {
+    width: 100%;
+  }
+
+  .composer-card {
+    width: 100%;
+  }
+
+  .quick-reply-row {
+    display: none;
+  }
+
+  .composer-main {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "kind"
+      "mentions"
+      "input"
+      "actions";
+    border-radius: 22px;
+    align-items: stretch;
+  }
+
+  #dialogue-message,
+  .composer-rich-editor {
+    min-height: 72px;
+    max-height: 160px;
+  }
+
+  .composer-actions {
+    width: 100%;
+  }
+
+  .composer-actions .send-button {
+    width: auto;
+    flex: 1 1 auto;
+  }
+
+  .composer-icon-button {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+  }
+
+  .send-button {
+    width: 100%;
+  }
+
+  .field-card,
+  .upload-card,
+  #create-run-form,
+  #dialogue-session-form,
+  #model-settings-form,
+  .choice-deck,
+  .info-row,
+  .chat-shell,
+  .story-header,
+  .studio-grid,
+  .composer-shell,
+  .main-shell {
+    max-width: 100%;
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .modal {
+    padding: 0.45rem;
+    align-items: stretch;
+  }
+
+  .modal-card,
+  .inspector-modal-card,
+  #settings-modal .modal-card {
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100dvh - 1.1rem);
+    padding: 0.88rem;
+    border-radius: 1.2rem;
+  }
+
+  .modal-card .panel-head,
+  .inspector-modal-card .panel-head {
+    gap: 0.55rem;
+  }
+
+  .connection-details {
+    gap: 0.62rem;
+  }
+
+  #settings-modal .choice-card,
+  #settings-modal .compact-choice-card {
+    min-height: auto;
+  }
+
+  #settings-modal .field-card,
+  #persona-review-modal .field-card {
+    padding: 0.74rem 0.78rem 0.72rem;
+  }
+}

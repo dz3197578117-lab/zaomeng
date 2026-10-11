@@ -1,0 +1,24 @@
+{
+  "id": "com.zaomeng.ai-association",
+  "name": "AI 联想",
+  "version": "1.0.0",
+  "apiVersion": "1",
+  "entry": "main.py",
+  "description": "结合当前会话、人设和用户指定方向，生成一段可直接发送的聊天草稿。",
+  "defaultEnabled": true,
+  "permissions": [
+    "chat.context.read",
+    "chat.draft.write",
+    "model.invoke"
+  ],
+  "contributes": {
+    "chatActions": [
+      {
+        "id": "suggest-turn",
+        "title": "AI 联想",
+        "icon": "sparkles",
+        "placement": "composer"
+      }
+    ]
+  }
+}

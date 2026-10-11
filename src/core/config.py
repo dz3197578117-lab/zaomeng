@@ -1,0 +1,312 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Load, validate, and manage project configuration."""
+
+import copy
+import logging
+import os
+import warnings
+import yaml
+from pathlib import Path
+from typing import Dict, Any, Optional
+
+from .exceptions import ConfigLoadError
+
+
+logger = logging.getLogger(__name__)
+_CONFIG_FILE_CACHE: dict[Path, tuple[tuple[int, int], Dict[str, Any]]] = {}
+
+
+def clear_config_cache() -> None:
+    """Clear every cached configuration file."""
+
+    _CONFIG_FILE_CACHE.clear()
+
+
+def invalidate_config_cache(config_path: str | Path) -> None:
+    """Remove one configuration file from the load cache."""
+
+    _CONFIG_FILE_CACHE.pop(Path(config_path).resolve(), None)
+
+
+class Config:
+    """Provide merged defaults and file-backed project configuration."""
+
+    SUPPORTED_PROVIDERS = (
+        "auto",
+        "local-rule-engine",
+        "host-bridge",
+        "openai",
+        "openai-compatible",
+        "anthropic",
+        "ollama",
+    )
+    
+    DEFAULT_CONFIG = {
+        "llm": {
+            "provider": "auto",
+            "model": "",
+            "temperature": 0.0,
+            "max_tokens": 0,
+            "parallel_chunk_workers": 6,
+            "base_url": "",
+            "host_bridge_url": "",
+            "host_bridge_token": "",
+            "host_bridge_token_env": "",
+            "api_key": "",
+            "api_key_env": "",
+            "timeout_seconds": 90,
+            "retry_attempts": 2,
+            "retry_backoff_seconds": 0.75,
+            "retry_backoff_multiplier": 2.0,
+            "retry_status_codes": [408, 429, 500, 502, 503, 504],
+        },
+        "engine": {
+            "name": "local-rule-engine",
+            "pseudo_cost_per_1k_tokens_usd": 0.001
+        },
+        "cost_control": {
+            "daily_budget_usd": 10.0,
+            "enable_cost_warning": True,
+            "warning_threshold": 0.8
+        },
+        "text_processing": {
+            "chunk_size_tokens": 8000,
+            "chunk_overlap_tokens": 200,
+            "min_sentence_length": 10
+        },
+        "distillation": {
+            "max_characters": 10,
+            "min_appearances": 3,
+            "traits_max_count": 10,
+            "second_pass_mode": "llm-only",
+            "refinement_batch_size": 4,
+            "stage_window_size": 6,
+            "llm_evidence_lines_per_stage": 6,
+            "values_dimensions": [
+                "勇气", "智慧", "善良", "忠诚", "野心", 
+                "正义", "自由", "责任"
+            ]
+        },
+        "relationships": {
+            "dimensions": [
+                "trust", "affection", "power_gap", 
+                "conflict_point", "typical_interaction", "hidden_attitude", "relation_change"
+            ]
+        },
+        "chat_engine": {
+            "max_history_turns": 10,
+            "max_speakers_per_turn": 4,
+            "token_limit_per_turn": 500,
+            "enable_cost_display": True,
+            "generation_mode": "llm-only",
+            "enable_turn_interactions": True,
+            "allow_character_silence": True,
+            "min_reply_relevance": 4,
+            "llm_history_messages": 8,
+        },
+        "memory": {
+            "recent_turns": 24,
+            "summary_char_limit": 360,
+            "long_term_max_entries": 400,
+            "vector_provider": "local",
+            "pinecone_api_key": "",
+            "pinecone_index": "",
+            "pinecone_namespace": "zaomeng",
+        },
+        "paths": {
+            "characters": "data/characters",
+            "relations": "data/relations",
+            "sessions": "data/sessions",
+            "corrections": "data/corrections",
+            "logs": "logs",
+            "rules": "rules"
+        },
+        "system": {
+            "log_level": "INFO",
+            "enable_auto_save": True,
+            "backup_interval_hours": 24
+        }
+    }
+    
+    def __init__(self, config_path: Optional[str] = None):
+        """Load ``config_path`` or discover a config file when it is omitted."""
+        self.config_path = self._find_config(config_path)
+        self.project_root = self._resolve_project_root()
+        self.config = self._load_config()
+        self._ensure_paths()
+
+    def _resolve_project_root(self) -> Path:
+        """Resolve a stable project root independent of the working directory."""
+        if self.config_path:
+            return self.config_path.parent.resolve()
+        runtime_root = str(os.getenv("ZAOMENG_RUNTIME_ROOT", "")).strip()
+        if runtime_root:
+            return Path(runtime_root).expanduser().resolve()
+        return Path(__file__).resolve().parents[2]
+        
+    def _find_config(self, config_path: Optional[str]) -> Optional[Path]:
+        """Find an explicit config path or the first conventional location."""
+        if config_path and os.path.exists(config_path):
+            return Path(config_path)
+        
+        # 查找可能的配置文件位置
+        possible_paths = [
+            "config.yaml",
+            "config.yml",
+            "config/config.yaml",
+            os.path.expanduser("~/.zaomeng/config.yaml")
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                return Path(path)
+        
+        return None
+    
+    def _load_config(self) -> Dict[str, Any]:
+        """Load user configuration and merge it over a copy of the defaults."""
+        if self.config_path:
+            try:
+                config = self._load_config_file(self.config_path)
+            except (OSError, yaml.YAMLError) as exc:
+                logger.warning("%s", ConfigLoadError(f"警告: 无法加载配置文件 {self.config_path}: {exc}"))
+                config = {}
+        else:
+            config = {}
+        
+        # 合并默认配置
+        merged_config = self._merge_dicts(copy.deepcopy(self.DEFAULT_CONFIG), config)
+        
+        # 验证必需配置
+        self._validate_config(merged_config)
+        
+        return merged_config
+
+    def _load_config_file(self, config_path: Path) -> Dict[str, Any]:
+        resolved = config_path.resolve()
+        stat = resolved.stat()
+        signature = (stat.st_mtime_ns, stat.st_size)
+        cached = _CONFIG_FILE_CACHE.get(resolved)
+        if cached and cached[0] == signature:
+            return copy.deepcopy(cached[1])
+
+        with open(resolved, 'r', encoding='utf-8') as f:
+            loaded = yaml.safe_load(f) or {}
+
+        if not isinstance(loaded, dict):
+            logger.warning("配置文件格式不是字典结构: %s", resolved)
+            loaded = {}
+
+        _CONFIG_FILE_CACHE[resolved] = (signature, copy.deepcopy(loaded))
+        return copy.deepcopy(loaded)
+
+    def _merge_dicts(self, base: Dict, overlay: Dict) -> Dict:
+        """Recursively merge ``overlay`` into ``base`` without mutating either."""
+        result = base.copy()
+        
+        for key, value in overlay.items():
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                result[key] = self._merge_dicts(result[key], value)
+            else:
+                result[key] = value
+        
+        return result
+    
+    def _validate_config(self, config: Dict[str, Any]):
+        """Warn when configuration values are unsupported."""
+        provider = str(config.get("llm", {}).get("provider", "auto")).strip().lower()
+        if provider not in self.SUPPORTED_PROVIDERS:
+            logger.warning(
+                "警告: 未识别的 llm.provider="
+                f"{provider}，当前支持: {', '.join(self.SUPPORTED_PROVIDERS)}"
+            )
+    
+    def _ensure_paths(self):
+        """Create all configured runtime directories."""
+        for path_key in ["characters", "relations", "sessions", "corrections", "logs", "rules"]:
+            path = self.get_path(path_key)
+            os.makedirs(path, exist_ok=True)
+    
+    def get(self, key: str, default: Any = None) -> Any:
+        """Return a value addressed by a dot-separated key."""
+        keys = key.split('.')
+        value = self.config
+        
+        for k in keys:
+            if isinstance(value, dict) and k in value:
+                value = value[k]
+            else:
+                return default
+        
+        return value
+    
+    def get_path(self, path_key: str) -> str:
+        """Return a configured path as an absolute path."""
+        relative_path = self.get(f"paths.{path_key}")
+        if not relative_path:
+            raise ValueError(
+                f"Config path key 'paths.{path_key}' is missing or empty. "
+                f"Ensure your config defines a '{path_key}' entry under 'paths'."
+            )
+        
+        # 如果是绝对路径，直接返回
+        if os.path.isabs(relative_path):
+            return relative_path
+        
+        # 否则相对于配置文件所在目录或项目根目录
+        return str((self.project_root / relative_path).resolve())
+    
+    def get_llm_config(self) -> Dict[str, Any]:
+        """Return the LLM configuration section."""
+        return self.get("llm", {})
+    
+    def get_distillation_config(self) -> Dict[str, Any]:
+        """Return the distillation configuration section."""
+        return self.get("distillation", {})
+    
+    def get_cost_config(self) -> Dict[str, Any]:
+        """Return the cost-control configuration section."""
+        return self.get("cost_control", {})
+    
+    def save(self, path: Optional[str] = None):
+        """Persist the current configuration to ``path``."""
+        save_path = Path(path) if path else self.config_path
+        
+        if not save_path:
+            save_path = Path("config.yaml")
+        
+        # 确保目录存在
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(save_path, 'w', encoding='utf-8') as f:
+            yaml.dump(self.config, f, allow_unicode=True, default_flow_style=False)
+        
+        logger.info("配置已保存到: %s", save_path)
+    
+    def update(self, updates: Dict[str, Any]):
+        """Recursively merge ``updates`` into the current configuration."""
+        self.config = self._merge_dicts(self.config, updates)
+
+    def reload(self, *, force: bool = False):
+        """Reload configuration, optionally invalidating its file cache first."""
+        if force and self.config_path:
+            invalidate_config_cache(self.config_path)
+        self.config = self._load_config()
+        self._ensure_paths()
+    
+    def get_supported_providers(self) -> list[str]:
+        """Return the supported LLM provider identifiers."""
+
+        return list(self.SUPPORTED_PROVIDERS)
+
+    def get_supported_models(self) -> list[str]:
+        """Return providers via the deprecated, historically misnamed API."""
+
+        warnings.warn(
+            "Config.get_supported_models() returns providers and is deprecated; "
+            "use get_supported_providers() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.get_supported_providers()
