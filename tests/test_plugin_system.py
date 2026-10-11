@@ -394,8 +394,9 @@ class PluginSystemTests(unittest.TestCase):
         self.assertEqual(unavailable, {})
 
     def test_app_surfaces_plugin_management_entries(self):
+        # 设置页已随 KMP 模块拆分迁到 feature/settings，不再是 app/shared 下的同路径副本
         settings_home = Path(
-            "kmp/app/shared/src/commonMain/kotlin/"
+            "kmp/feature/settings/src/commonMain/kotlin/"
             "top/wkbin/zaomeng/feature/settings/SettingsHomeScreen.kt"
         ).read_text(encoding="utf-8")
         web_modal = Path("src/web/static/fragments/settings-modal.html").read_text(
@@ -620,22 +621,34 @@ class PluginSystemTests(unittest.TestCase):
             )
             self.assertEqual(result["suggestion"], "installed")
     def test_android_chat_surfaces_plugins_in_a_dedicated_menu(self):
-        chat_screen = Path(
-            "kmp/app/shared/src/commonMain/kotlin/"
-            "top/wkbin/zaomeng/feature/chat/ChatScreen.kt"
-        ).read_text(encoding="utf-8")
+        # 对话页已随 KMP 模块拆分从 app/shared 迁到 feature/chat，且输入区被抽成
+        # composer/ChatComposer.kt、插件调用被抽进 internal/ChatToolsDelegate.kt。
+        # 断言随实现迁移，**语义不变**：对话页要有独立插件菜单，并渲染插件动作与生成增强器。
+        chat_feature = Path(
+            "kmp/feature/chat/src/commonMain/kotlin/top/wkbin/zaomeng/feature/chat"
+        )
+        chat_composer = (chat_feature / "composer" / "ChatComposer.kt").read_text(
+            encoding="utf-8"
+        )
 
-        self.assertIn('Text(if (pluginActionBusy) "插件运行中…" else "插件")', chat_screen)
-        self.assertIn("state.pluginActions.forEach", chat_screen)
-        self.assertIn("state.generationEnhancers.forEach", chat_screen)
-        chat_view_model = Path(
-            "kmp/app/shared/src/commonMain/kotlin/"
-            "top/wkbin/zaomeng/feature/chat/ChatViewModel.kt"
-        ).read_text(encoding="utf-8")
+        self.assertIn('Text(if (pluginActionBusy) "插件运行中…" else "插件")', chat_composer)
+        self.assertIn("state.pluginActions.forEach", chat_composer)
+        self.assertIn("state.generationEnhancers.forEach", chat_composer)
+        chat_view_model = (chat_feature / "ChatViewModel.kt").read_text(encoding="utf-8")
         self.assertIn("temporaryNpcGenerators", chat_view_model)
-        self.assertIn("invokePluginTemporaryNpcGenerator", chat_view_model)
-        self.assertNotIn('contentDescription = "一键生成续写建议"', chat_screen)
-        self.assertNotIn('Text(if (state.includeInnerThoughts) "关闭读心"', chat_screen)
+        chat_tools_delegate = (chat_feature / "internal" / "ChatToolsDelegate.kt").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("invokePluginTemporaryNpcGenerator", chat_tools_delegate)
+
+        # 这两个入口在重构中已下线。原断言只看 ChatScreen.kt 单文件，字符串一旦换个文件
+        # 就能躲过检查（本用例当初正是这样腐烂的），故把范围扩到整个对话页源码树——
+        # 比原断言更严，而非放宽。
+        chat_ui = "\n".join(
+            path.read_text(encoding="utf-8") for path in sorted(chat_feature.rglob("*.kt"))
+        )
+        self.assertNotIn('contentDescription = "一键生成续写建议"', chat_ui)
+        self.assertNotIn('Text(if (state.includeInnerThoughts) "关闭读心"', chat_ui)
 
     def test_manifest_rejects_unknown_permission(self):
         with tempfile.TemporaryDirectory() as tmp:
