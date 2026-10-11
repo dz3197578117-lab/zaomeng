@@ -29,8 +29,8 @@ class ReleaseUpdateChecker(
     }
 
     companion object {
-        const val RELEASE_URL = "https://api.github.com/repos/wkbin/zaomeng/releases/latest"
-        const val RELEASES_PAGE = "https://github.com/wkbin/zaomeng/releases"
+        const val RELEASE_URL = "https://api.github.com/repos/dz3197578117-lab/zaomeng/releases/latest"
+        const val RELEASES_PAGE = "https://github.com/dz3197578117-lab/zaomeng/releases"
 
         fun isNewerVersion(remote: String, current: String): Boolean {
             val remoteParts = remote.split('.').mapNotNull { it.toIntOrNull() }

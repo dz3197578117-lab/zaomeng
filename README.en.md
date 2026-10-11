@@ -8,7 +8,21 @@
 
 Distill Chinese novel characters into reusable persona bundles, extract relationship graphs, and let characters speak again with their own personality, stance, bonds, and memory.
 
-[![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-8A2BE2.svg)](LICENSE) · [Website](https://wkbin.github.io/zaomeng/) · [中文](README.md)
+[![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-8A2BE2.svg)](LICENSE) · [Website](https://dz3197578117-lab.github.io/zaomeng/) · [中文](README.md)
+
+> This repository continues from upstream Zaomeng 2.0 (current version: **2.1.2**). See "What's different in this build" below.
+
+## What's different in this build
+
+Two things were the focus: **it runs without any network**, and **Chinese model providers work out of the box**.
+
+| Change | Detail |
+| --- | --- |
+| New · on-device inference | The APK embeds a llama.cpp runtime and the settings screen gains a "On-device models" page that imports GGUF files. Chapter summaries, single-turn continuation, relation/timeline extraction, and the distillation pipeline can all run locally — no API key required, and your models and prompts never leave the device |
+| Five more provider presets | SenseNova (SenseTime), SiliconFlow, Moonshot Kimi, Zhipu GLM, MiniMax — 16 presets in total |
+| Models fetched from the API | The model settings screen can pull the live list via `GET {baseUrl}/models`; it falls back to the built-in presets on failure |
+| Ollama base URL fixed | `http://127.0.0.1:11434` → adds the missing `/v1`, which otherwise produced a wrong `/chat/completions` path |
+| On-device 500 fixed | Chat messages are normalized (at most one `system`, always first), fixing `System message must be at the beginning.` raised by Jinja templates embedded in open-weight GGUF files |
 
 ## Project layout
 
@@ -22,28 +36,28 @@ Distill Chinese novel characters into reusable persona bundles, extract relation
 
 ### Clients
 
-Android / Desktop / iOS installation and build instructions live in [`kmp/README.md`](kmp/README.md).
+Prebuilt Android builds are on [Releases](https://github.com/dz3197578117-lab/zaomeng/releases/latest) (`arm64-v8a`, currently a 2.1.2 debug build with the llama.cpp runtime bundled). Build instructions for Desktop / iOS live in [`kmp/README.md`](kmp/README.md).
 
 > ⚠️ Upgrading from the legacy Android build (1.5.0 and earlier) to **2.0.0** is a **breaking change**: local data is incompatible and is not migrated automatically. **Export your book bundles (`.zaomeng-run.zip`) as backups in the old version before upgrading.**
 
 ### Skill bundle
 
 ```bash
-# OpenClaw
-openclaw skills install wkbin/zaomeng-skill
-
-# ClawHub
-npx clawhub@latest install zaomeng-skill
-
-# Local skills directory
+# Local skills directory (the zaomeng-skill/ bundle ships with this repository)
 python scripts/install_skill.py --skills-dir <your-skills-root>
+
+# Or into a project: installs to <project-root>/skills/zaomeng-skill
+python scripts/install_skill.py --project-root <project-root>
+
+# ClawHub (installs by name from the registry)
+npx clawhub@latest install zaomeng-skill
 ```
 
 ### Web UI (legacy, no longer maintained, still installable)
 
 ```bash
 # One-click install (Linux / macOS / WSL2 / Termux)
-curl -fsSL https://raw.githubusercontent.com/wkbin/zaomeng/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dz3197578117-lab/zaomeng/main/scripts/install.sh | bash
 source ~/.bashrc
 zaomeng
 ```
@@ -64,7 +78,7 @@ Common commands after install: `zaomeng web --reload` (starts the Web UI at `htt
   <img src="docs/assets/qq-group.png" alt="Zaomeng QQ group QR code, group 1090225658" width="360">
 </p>
 
-- Submit book bundles: [zaomeng-library](https://github.com/wkbin/zaomeng-library/issues)
+- Book bundles / issue reports: [Issues](https://github.com/dz3197578117-lab/zaomeng/issues)
 
 ## License
 

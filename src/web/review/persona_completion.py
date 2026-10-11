@@ -144,7 +144,7 @@ PERSONA_AUTOFILLABLE_FIELDS = {
 }
 
 _LIST_STYLE_FIELDS = {"core_traits", "key_bonds", "preference_like", "dislike_hate"}
-_USER_AGENT = "zaomeng-persona-review/1.0 (+https://github.com/wkbin/zaomeng)"
+_USER_AGENT = "zaomeng-persona-review/1.0 (+https://github.com/dz3197578117-lab/zaomeng)"
 
 
 def _field_completion_extra_guidance(field: str) -> list[str]:

@@ -156,15 +156,17 @@ class AppUpdateManager(
 
     internal companion object {
         const val UPDATE_DIRECTORY = "app-update"
-        const val RELEASE_URL = "https://api.github.com/repos/wkbin/zaomeng/releases/latest"
+        // 更新源必须指向本仓库：原先指向上游 wkbin/zaomeng，会把「原版的包」当成自己的新版本发下来。
+        const val RELEASE_URL = "https://api.github.com/repos/dz3197578117-lab/zaomeng/releases/latest"
         const val MAX_UPDATE_BYTES = 256L * 1024L * 1024L
         const val PROGRESS_UPDATE_BYTES = 256L * 1024L
 
+        /** 只信任本仓库 release 的下载链接（路径白名单需与 [RELEASE_URL] 的 owner/repo 保持一致）。 */
         internal fun isAllowedUpdateDownloadUrl(url: String): Boolean {
             val parsed = url.toHttpUrlOrNull() ?: return false
             return parsed.isHttps &&
                 parsed.host == "github.com" &&
-                parsed.encodedPath.startsWith("/wkbin/zaomeng/releases/download/")
+                parsed.encodedPath.startsWith("/dz3197578117-lab/zaomeng/releases/download/")
         }
     }
 }

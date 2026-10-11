@@ -15,7 +15,7 @@ from src.web.time_utils import utc_now as _utc_now
 
 class UpdateServiceMixin:
     UPDATE_CHECK_TTL_SECONDS = 300
-    DEFAULT_REPO_SLUG = "wkbin/zaomeng"
+    DEFAULT_REPO_SLUG = "dz3197578117-lab/zaomeng"
     DEFAULT_REPO_REF = "main"
 
     def get_app_update_status(self, *, force_check: bool = False) -> dict[str, Any]:

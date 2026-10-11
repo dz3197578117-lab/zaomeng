@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_SLUG="${ZAOMENG_REPO_SLUG:-wkbin/zaomeng}"
+REPO_SLUG="${ZAOMENG_REPO_SLUG:-dz3197578117-lab/zaomeng}"
 REPO_REF="${ZAOMENG_REF:-main}"
 INSTALL_ROOT="${ZAOMENG_INSTALL_DIR:-$HOME/.local/share/zaomeng}"
 STORAGE_ROOT="${ZAOMENG_STORAGE_DIR:-$HOME/.local/share/zaomeng-data}"
