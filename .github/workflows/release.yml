@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Pick the APK and compute its checksum
+        id: apk
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          apk="$(ls -1 dist/*"${version}"*.apk 2>/dev/null | head -n1 || true)"
+          if [ -z "${apk}" ]; then
+            apk="$(ls -1 dist/*.apk | head -n1)"
+          fi
+          echo "path=${apk}" >> "${GITHUB_OUTPUT}"
+          echo "sha256=$(sha256sum "${apk}" | cut -d' ' -f1)" >> "${GITHUB_OUTPUT}"
+          echo "size=$(stat -c%s "${apk}")" >> "${GITHUB_OUTPUT}"
+          echo "selected: ${apk}"
+
+      - name: Compose release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes=".github/release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "${notes}" ]; then
+            cp "${notes}" "${RUNNER_TEMP}/notes.md"
+          else
+            echo "发布 ${GITHUB_REF_NAME}。" > "${RUNNER_TEMP}/notes.md"
+          fi
+          {
+            echo ""
+            echo "### 校验"
+            echo ""
+            echo '```'
+            echo "sha256: ${{ steps.apk.outputs.sha256 }}"
+            echo "size:   ${{ steps.apk.outputs.size }} bytes"
+            echo '```'
+          } >> "${RUNNER_TEMP}/notes.md"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          # 附件名必须带 arm64-v8a：App 的更新检查会优先挑名字里含它的包
+          # （见 kmp/app/androidApp/.../update/AppUpdateManager.kt 的 parseLatestRelease）。
+          asset="zaomeng-${version}-arm64-v8a-debug.apk"
+          gh release create "${GITHUB_REF_NAME}" \
+            "${{ steps.apk.outputs.path }}#${asset}" \
+            --title "造梦 ${version}" \
+            --notes-file "${RUNNER_TEMP}/notes.md" \
+            --verify-tag
