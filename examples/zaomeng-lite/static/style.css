@@ -1,0 +1,90 @@
+:root {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --card: #1d2129;
+  --border: #2a2f3a;
+  --text: #e6e8ec;
+  --muted: #9aa3b2;
+  --accent: #7f77dd;
+  --accent2: #1d9e75;
+  --scene: #5b6472;
+  --danger: #e24b4a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex; align-items: baseline; gap: 16px;
+  padding: 12px 20px; border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+.brand { font-size: 18px; font-weight: 600; }
+.brand .sub { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 6px; }
+.hint { font-size: 12px; color: var(--muted); margin-left: auto; }
+
+.layout { flex: 1; display: flex; min-height: 0; }
+.panel { overflow-y: auto; }
+.left { width: 360px; border-right: 1px solid var(--border); padding: 14px; }
+.right { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+.card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px; margin-bottom: 14px;
+}
+.card h2 {
+  font-size: 14px; margin: 0 0 10px; font-weight: 600;
+  display: flex; align-items: center; justify-content: space-between;
+}
+
+.fld { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+.fld.grow { flex: 1; margin-bottom: 0; }
+input, select, textarea {
+  background: #11141a; border: 1px solid var(--border); color: var(--text);
+  border-radius: 8px; padding: 8px 10px; font-size: 13px; font-family: inherit;
+  width: 100%;
+}
+textarea { resize: vertical; }
+.row { display: flex; gap: 8px; align-items: flex-end; }
+
+.btn {
+  background: var(--accent); color: #fff; border: none; border-radius: 8px;
+  padding: 8px 14px; font-size: 13px; cursor: pointer; font-family: inherit;
+}
+.btn:hover { filter: brightness(1.08); }
+.btn.small { padding: 6px 10px; font-size: 12px; }
+.btn.primary { background: var(--accent2); }
+.btn.ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+
+.note { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.5; white-space: pre-wrap; }
+
+.char-list { display: flex; flex-direction: column; gap: 8px; }
+.char-item { border: 1px solid var(--border); border-radius: 10px; padding: 8px; background: #14171d; }
+.char-item .top { display: flex; gap: 6px; margin-bottom: 6px; }
+.char-item input { padding: 6px 8px; }
+.char-item .nm { flex: 1; }
+.char-item .del { background: transparent; border: 1px solid var(--border); color: var(--danger); border-radius: 8px; cursor: pointer; padding: 0 9px; }
+.char-item textarea { font-size: 12px; }
+
+.chat { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.msg { max-width: 78%; padding: 10px 14px; border-radius: 14px; line-height: 1.6; font-size: 14px; white-space: pre-wrap; word-break: break-word; }
+.msg .spk { font-size: 12px; font-weight: 600; opacity: .85; margin-bottom: 3px; }
+.msg.assistant { align-self: flex-start; background: var(--card); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+.msg.scene { align-self: stretch; max-width: 100%; text-align: center; color: var(--scene); font-style: italic; background: transparent; border: none; font-size: 13px; }
+.msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+.msg .think { display: block; font-size: 12px; color: var(--muted); font-style: italic; margin-top: 6px; border-top: 1px dashed var(--border); padding-top: 5px; }
+.cursor { display: inline-block; width: 7px; height: 14px; background: var(--accent2); margin-left: 2px; vertical-align: -2px; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+.composer { display: flex; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--border); background: var(--panel); }
+.composer textarea { flex: 1; }
+.composer .btn { align-self: stretch; }

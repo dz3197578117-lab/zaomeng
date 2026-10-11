@@ -2,8 +2,8 @@
 
 本文件回答一个问题：**本仓库里哪些源码是我们改的、上游没有的？**
 
-- 上游基线：`wkbin/zaomeng`，提交 `f178b4f83bbd152e2f82c50c2b7835d8b823c03a`（导出包共 1070 个文件）。
-- 对照对象：本仓库 `main` 已跟踪文件，共 1091 个。
+- 上游基线：`wkbin/zaomeng`，提交 `f178b4f83bbd152e2f82c50c2b7835d8b823c03a`（共 1070 个文件）。
+- 对照对象：本仓库 `main` 已跟踪文件，共 1103 个。
 - 比对方式：逐文件 SHA-256，分「新增 / 内容修改 / 删除」三类；新增文件再逐条查上游是否存在（404 = 本版独有）。
 - 核对时间：基线上游 `main` 当天仍为 1070 个文件、内容与上述提交一致，因此下表中「修改」的文件**全部**是本版改动，不含上游自身的后续修改。
 
@@ -11,10 +11,10 @@
 
 | 类别 | 文件数 | 说明 |
 |---|---:|---|
-| 新增 | 21 | 上游无此路径，逐条 HTTP 404 已核实 |
+| 新增 | 33 | 上游无此路径；其中前 21 个已逐条 HTTP 404 核实 |
 | 内容修改 | 63 | 与基线逐字节不同；上游未动过这些文件 |
 | 删除 | 0 | 无 |
-| **合计** | **84** | 文本改动合计 +2998 / −316 行 |
+| **合计** | **96** | 63 个修改文件的文本改动合计 +2998 / −316 行（新增文件不计入行数） |
 
 下面按功能分组。有些文件同时服务多个功能（例如 `LlmClient.kt` 既是提供方适配也是端侧推理的调用层），会在多组里重复出现，因此各组数量之和大于 84。
 
@@ -190,11 +190,41 @@
 
 ---
 
+## 九、草稿、参考资料与轻量版示例
+
+这些不属于 App 运行时，是随仓库保存的设计稿、参考数据与示例应用。
+
+### 新增（12）
+
+| 文件 | 说明 |
+|---|---|
+| `kmp/server/llm/src/commonMain/.../providers/ProviderPresets.kt` | 第三方模型提供方预设目录草稿（14 家，含本版独有的 `openrouter`） |
+| `kmp/server/llm/src/commonMain/.../providers/ModelFetcher.kt` | 按接口拉取模型清单的草稿实现（OpenAI 兼容 / Anthropic / Gemini / Azure 四路） |
+| `docs/notes/model-integration-analysis.md` | 第三方模型接入分析（含与现有实现的对照） |
+| `docs/notes/source-changes.md` | 改动清单（记录的是「一改」那一轮，部分内容已被后续实现超越） |
+| `docs/notes/real-app-guide.md` | 接入实施指南 |
+| `docs/notes/sensenova-models.json` | 商汤 SenseNova 模型清单参考数据 |
+| `docs/notes/sensenova-api-reference.txt` | 商汤 API 文档摘录（第三方文档，仅作参考） |
+| `examples/zaomeng-lite/server.py` | 「造梦轻量版」后端：纯 Python 标准库、零第三方依赖，含 mock 模式 |
+| `examples/zaomeng-lite/index.html` | 轻量版前端页面 |
+| `examples/zaomeng-lite/static/app.js` | 轻量版前端逻辑（角色卡、多角色流式对话） |
+| `examples/zaomeng-lite/static/style.css` | 轻量版样式 |
+| `docs/changes-from-upstream.md` | 本清单自身（含复核脚本） |
+
+> **`ProviderPresets.kt` / `ModelFetcher.kt` 已可编译，但尚未接入 UI。** 界面上的提供方预设
+> 走 `feature/settings` 的 `modelCatalogs`（16 条），模型清单拉取走 `LlmClient.listModels()`。
+> 两套并存的关系与取舍见 `docs/notes/model-integration-analysis.md`；两个文件顶部的 KDoc
+> 也注明了这一现状，以及其中哪些字段目前没有消费方。
+>
+> **`examples/zaomeng-lite/` 是独立的示例应用**，不参与 `:app:*` 构建，也不影响任何 CI 任务；
+> 运行方式见其 `server.py` 顶部注释（`python server.py`，默认 `http://127.0.0.1:8000`）。
+
 ## 怎么自己复核这份清单
 
 ```bash
-# 1) 取上游基线（归档注释即基线提交号）
-unzip zaomeng-main.zip -d /tmp/upstream-base     # → /tmp/upstream-base/zaomeng-main/
+# 1) 取上游基线到 /tmp/upstream-base/zaomeng-main（提交号见文首）
+git clone https://github.com/wkbin/zaomeng /tmp/upstream-base/zaomeng-main
+git -C /tmp/upstream-base/zaomeng-main checkout f178b4f83bbd152e2f82c50c2b7835d8b823c03a
 
 # 2) 逐文件 SHA-256 比对「基线」与「仓库已跟踪文件」
 #    新增 = 只在仓库 / 修改 = 两边都有但内容不同 / 删除 = 只在基线

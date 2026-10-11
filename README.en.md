@@ -28,7 +28,7 @@ Two things were the focus: **it runs without any network**, and **Chinese model 
 | Main characters extracted from the text | The book-import and re-distillation flows can detect the main characters from the source text and fill in the list for you |
 | Pick the starting chapter | When creating a dialogue session you can choose which chapter the story starts from; the chapter list is served by a chapter index service |
 
-A file-by-file manifest (21 added / 63 modified / 0 deleted against upstream, with a reproduction method) is in [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md).
+A file-by-file manifest (33 added / 63 modified / 0 deleted against upstream, with a reproduction method) is in [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md).
 
 ## Project layout
 

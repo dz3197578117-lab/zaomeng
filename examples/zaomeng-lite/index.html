@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>造梦轻量版 · 角色对话引擎</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">造梦 <span class="sub">轻量版 · 多模型角色对话</span></div>
+    <div class="hint">选 Provider → 拉模型 → 配角色 → 开聊</div>
+  </header>
+
+  <main class="layout">
+    <!-- 左栏：模型接入 + 角色卡 -->
+    <aside class="panel left">
+      <section class="card">
+        <h2>模型接入</h2>
+        <label class="fld">Provider
+          <select id="provider"></select>
+        </label>
+        <label class="fld">API Key
+          <input id="apikey" type="password" placeholder="选 Provider 后显示提示" autocomplete="off" />
+        </label>
+        <label class="fld">Base URL
+          <input id="baseurl" type="text" placeholder="留空用预设默认地址" autocomplete="off" />
+        </label>
+        <div class="row">
+          <label class="fld grow">模型
+            <select id="model"></select>
+          </label>
+          <button id="fetchModels" class="btn small">拉取模型</button>
+        </div>
+        <div id="providerNote" class="note"></div>
+      </section>
+
+      <section class="card">
+        <h2>角色卡 <button id="addChar" class="btn small">+ 添加</button></h2>
+        <div id="charList" class="char-list"></div>
+      </section>
+
+      <section class="card">
+        <h2>场景</h2>
+        <textarea id="scene" rows="3" placeholder="例如：长安城外，月夜，酒肆。"></textarea>
+      </section>
+
+      <section class="card">
+        <button id="resetCfg" class="btn ghost small">清空本地配置</button>
+      </section>
+    </aside>
+
+    <!-- 右栏：对话 -->
+    <section class="panel right">
+      <div id="chat" class="chat"></div>
+      <div class="composer">
+        <textarea id="userInput" rows="2" placeholder="输入指令，例如：让李白和杜甫聊聊月亮；或直接让某角色继续。"></textarea>
+        <button id="send" class="btn primary">发送</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
