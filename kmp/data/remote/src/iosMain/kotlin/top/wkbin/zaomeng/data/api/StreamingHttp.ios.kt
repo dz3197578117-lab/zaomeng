@@ -3,20 +3,22 @@ package top.wkbin.zaomeng.data.api
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.darwin.Darwin
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.request.contentType
 import io.ktor.client.request.header
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.cancel
 import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.runBlocking
 import okio.Buffer
 import okio.BufferedSource
 import okio.Source
+import okio.Timeout
 import okio.buffer
 
 /**
@@ -52,7 +54,8 @@ private class ByteReadChannelSource(
     private val channel: ByteReadChannel,
 ) : Source {
     override fun read(sink: Buffer, byteCount: Long): Long {
-        if (channel.isClosedForRead && channel.availableForRead == 0) return -1L
+        // 不预先查「缓冲区是否有货」：Ktor 3.5 已移除 ByteReadChannel.availableForRead。
+        // 流结束由 readAvailable 返回 -1 表达，下面的分支已覆盖。
         val size = minOf(byteCount, 8192L).toInt()
         val bytes = ByteArray(size)
         val read = runBlocking { channel.readAvailable(bytes, 0, size) }
@@ -61,6 +64,9 @@ private class ByteReadChannelSource(
         sink.write(bytes, 0, read)
         return read.toLong()
     }
+
+    /** okio 在 Kotlin/Native 上把 timeout() 声明为抽象成员，必须显式实现；这里不做超时控制。 */
+    override fun timeout(): Timeout = Timeout.NONE
 
     override fun close() {
         channel.cancel()

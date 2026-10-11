@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
 package top.wkbin.zaomeng.data.preferences
 
 import androidx.datastore.core.DataStore
