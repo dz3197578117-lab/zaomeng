@@ -6,7 +6,25 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
-## [2.1.5] - 未发布
+## [2.1.6] - 未发布
+
+### 修复
+
+- **修复「插件一用就闪退」「剧情导演一用就闪退」**：两者同一个原因——
+  `ChatToolsDelegate` 里的成员扩展 `ToolRequest.updateState` 体内**未限定**地调用了
+  `updateState { ... }`，被解析到扩展**自身**而非同类属性 `updateState`，
+  造成无限递归 → 主线程 `StackOverflowError` → 进程崩溃重启。
+  实际上**所有工具流程**（插件动作、剧情导演、续写建议、场景切换、记忆保存、分支等）
+  都会触发。已改为 `this@ChatToolsDelegate.updateState { ... }`。
+  该缺陷来自初始基线导入，2.1.4 / 2.1.5 均受影响。
+
+### 仓库加固
+
+- 新增源码守卫 [`scripts/check-kotlin-shadowing.sh`](scripts/check-kotlin-shadowing.sh)：
+  扫描「成员扩展遮蔽同类属性并自调用」这一编译期无感知、运行期才崩的写法，
+  已接入 CI（每次推送都跑），并用修复前的代码做过对照实验确认能命中。
+
+## [2.1.5] - 2026-10-13
 
 ### 修复
 
@@ -153,7 +171,8 @@
 早期版本（含从上游造梦 2.0 继续改动的部分）逐文件清单见
 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)。
 
-[2.1.5]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.4...HEAD
+[2.1.6]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.5...HEAD
+[2.1.5]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.4...v2.1.5
 [2.1.4]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.3...v2.1.4
 [2.1.3]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.2...v2.1.3
 [2.1.2]: https://github.com/dz3197578117-lab/zaomeng/releases/tag/v2.1.2

@@ -621,8 +621,19 @@ internal class ChatToolsDelegate(
         updateState { it.copy(memoryQuality = report) }
     }
 
+    /**
+     * 工具流程内的状态更新：仅当该请求仍是当前活跃请求、且状态仍属于同一会话时才写入。
+     *
+     * ⚠️ 这里必须显式写 `this@ChatToolsDelegate.updateState`。
+     * 本函数是 `ToolRequest` 的**成员扩展**，而 ToolRequest 正是工具流程
+     * （`runTool` 的 `suspend ToolRequest.() -> Unit` 块）的接收者。
+     * 若只写 `updateState { ... }`，Kotlin 会解析到这个扩展**自身**而不是上面那个
+     * 类属性，于是无限递归 → StackOverflowError。
+     * 症状：插件动作、剧情导演等一切工具流程一用就闪退
+     * （ChatToolsDelegate.kt:625 在同一栈里重复上百次）。
+     */
     private fun ToolRequest.updateState(transform: (ChatUiState) -> ChatUiState) {
-        updateState { current ->
+        this@ChatToolsDelegate.updateState { current ->
             if (activeRequest?.id == id && current.matchesSession(runId, sessionId)) {
                 transform(current)
             } else {
