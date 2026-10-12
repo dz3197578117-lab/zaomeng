@@ -29,8 +29,10 @@ android {
         minSdk = libs.versions.android.minSdk.get().toInt()
         //noinspection OldTargetApi
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 17
-        versionName = "2.1.4"
+        // 版本号唯一来源：kmp/gradle.properties 的 zaomeng.versionName / zaomeng.versionCode。
+        // 不要在这里写死数值——AppMetadata 与桌面打包版本都从这里推导。
+        versionCode = providers.gradleProperty("zaomeng.versionCode").get().toInt()
+        versionName = providers.gradleProperty("zaomeng.versionName").get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

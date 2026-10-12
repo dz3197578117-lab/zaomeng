@@ -12,6 +12,43 @@ compose.resources {
     publicResClass = true
 }
 
+// ---------------------------------------------------------------------------
+// 生成 AppMetadata —— 版本号唯一来源是 kmp/gradle.properties
+// ---------------------------------------------------------------------------
+// 此前 AppMetadata 是 commonMain 里手写的常量，发版时没人记得改：
+// 界面显示 2.1.2 而 APK 已是 2.1.4，桌面端更新检查也一直误判自己落后。
+// 改为构建期生成，与 androidApp / desktopApp 的版本号同源，无法再漂移。
+//
+// 只生成版本号，**不生成构建时间**：构建时间每次都会变，会让这个任务永远不是
+// UP-TO-DATE，进而导致 ui/shared 及其全部下游模块每次构建都重新编译。
+val appMetadataDir = layout.buildDirectory.dir("generated/appMetadata")
+
+val generateAppMetadata by tasks.registering {
+    val outputDir = appMetadataDir
+    val versionName = providers.gradleProperty("zaomeng.versionName")
+    val versionCode = providers.gradleProperty("zaomeng.versionCode")
+    inputs.property("versionName", versionName)
+    inputs.property("versionCode", versionCode)
+    outputs.dir(outputDir)
+    doLast {
+        val packageDir = outputDir.get().asFile.resolve("top/wkbin/zaomeng/app/shared")
+        packageDir.mkdirs()
+        packageDir.resolve("AppMetadata.kt").writeText(
+            """
+            |// 由 :ui:shared 的 generateAppMetadata 任务生成，请勿手改。
+            |// 版本号来源：kmp/gradle.properties 的 zaomeng.versionName / zaomeng.versionCode。
+            |package top.wkbin.zaomeng.app.shared
+            |
+            |object AppMetadata {
+            |    const val VERSION_NAME = "${versionName.get()}"
+            |    const val VERSION_CODE = ${versionCode.get()}
+            |}
+            |
+            """.trimMargin(),
+        )
+    }
+}
+
 kotlin {
     jvm()
 
@@ -48,3 +85,7 @@ kotlin {
         }
     }
 }
+
+// 把生成的源码目录挂到 commonMain。srcDir 接收 TaskProvider，
+// Gradle 会自动补上「先跑生成任务」的依赖。
+kotlin.sourceSets.named("commonMain") { kotlin.srcDir(generateAppMetadata) }

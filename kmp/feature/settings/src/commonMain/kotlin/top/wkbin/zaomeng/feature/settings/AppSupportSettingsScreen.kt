@@ -132,7 +132,7 @@ private fun SettingsSupportGroup(
             androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             SettingsRow(
                 title = "版本信息",
-                subtitle = "v${AppMetadata.VERSION_NAME}（${AppMetadata.VERSION_CODE}）· 构建于 ${AppMetadata.BUILD_TIME_TEXT}",
+                subtitle = "v${AppMetadata.VERSION_NAME}（${AppMetadata.VERSION_CODE}）",
             )
             androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             SettingsRow(

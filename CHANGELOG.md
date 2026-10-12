@@ -1,10 +1,29 @@
 # 变更记录
 
-本文件记录造梦（本仓库改版）的逐版本变更。版本号与
-[`kmp/app/androidApp/build.gradle.kts`](kmp/app/androidApp/build.gradle.kts) 的 `versionName` 保持一致。
+本文件记录造梦（本仓库改版）的逐版本变更。版本号唯一来源是
+[`kmp/gradle.properties`](kmp/gradle.properties) 的 `zaomeng.versionName`。
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
+
+## [2.1.5] - 未发布
+
+### 修复
+
+- **修复应用内「版本信息」显示旧版本号**：2.1.4 的 APK 里 `versionName` 已是 2.1.4，
+  但设置页仍显示 2.1.2。原因是应用内版本号来自 `ui/shared` 里一个**手写常量**
+  `AppMetadata`（`VERSION_NAME=2.1.2`、`VERSION_CODE=11`），发版时只改了 Gradle
+  版本号。桌面端更新检查也读该常量，因此一直误判自己落后于最新版。
+
+### 变更
+
+- **版本号收敛为唯一来源**：`kmp/gradle.properties` 的 `zaomeng.versionName` /
+  `zaomeng.versionCode`。Android 的 `versionName`/`versionCode`、桌面打包版本、
+  以及构建期生成的 `AppMetadata` 全部由它推导；手写常量文件已删除。
+- `kmp/ui/shared` 新增 `generateAppMetadata` 任务生成 `AppMetadata`。
+  只生成版本号、不生成构建时间——构建时间每次都会变，会让该任务永远不是
+  UP-TO-DATE，导致 `ui/shared` 及其全部下游模块每次构建都重新编译。
+- 设置页版本信息副标题去掉「构建于 …」。
 
 ## [2.1.4] - 2026-10-13
 
@@ -131,6 +150,7 @@
 早期版本（含从上游造梦 2.0 继续改动的部分）逐文件清单见
 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)。
 
-[2.1.4]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.3...HEAD
+[2.1.5]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.4...HEAD
+[2.1.4]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.3...v2.1.4
 [2.1.3]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.2...v2.1.3
 [2.1.2]: https://github.com/dz3197578117-lab/zaomeng/releases/tag/v2.1.2
