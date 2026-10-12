@@ -66,6 +66,12 @@
 从 2.1.4 起改用**项目专用密钥**签名（`debug` 与 `release` 两个 build type 共用，
 由 `kmp/keystore.properties` 指定、CI 从 4 个 secret 注入），后续版本恢复正常覆盖安装。
 
+新密钥证书指纹（公开信息，CI 会校验产物必须由它签名）：
+
+```text
+09426ef9eafc96a37ea16c4293d93966eb055a116ef778a598acc359ba8e9049
+```
+
 ## [2.1.3] - 2026-10-12
 
 **Android 调试版**（`zaomeng-2.1.3-arm64-v8a-debug.apk`）。
