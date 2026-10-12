@@ -78,6 +78,14 @@ if [ -n "${LAST_TAG}" ] && [ -n "${CODE}" ]; then
        系统会视为降级，用户装不上。"
     fi
   fi
+
+  # 版本号 / tag 一致性：版本号改了却没打 tag，就是「改了但没发布」。
+  # 这种错位会让用户拿不到修复（仓库写着新版、Releases 还是旧版）。
+  if [ -n "${VERSION}" ] && [ -n "${LAST_TAG}" ] && [ "v${VERSION}" != "${LAST_TAG}" ]; then
+    warn "版本号是 ${VERSION}，但最近 tag 是 ${LAST_TAG}——这一版还没发布。
+       改完版本号记得打 tag 并推送，保持「版本号 / tag / Release / CHANGELOG」一致：
+         git tag -a v${VERSION} -m \"造梦 ${VERSION}\" && git push origin v${VERSION}"
+  fi
 fi
 
 # ---------- 2) 发布说明 ----------

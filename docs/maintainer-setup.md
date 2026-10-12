@@ -217,6 +217,12 @@ zaomeng.versionCode=18
 
 ## 五、发一个新版本
 
+> **同步规矩**：每次改动都要**提交并推送**，不要留只在本地的东西；
+> 一旦改了 `kmp/gradle.properties` 的版本号，就必须把 tag 与 Release 一起补上——
+> 否则会出现「仓库写着 2.1.6、最新发布还是 2.1.5」的错位，用户拿不到修复。
+> 版本号 / tag / Release / CHANGELOG 四者必须始终一致。
+> 自检：`./scripts/check-release-ready.sh` 会检查前四者的一致性。
+
 ```bash
 # 1) 改版本号（只改这一处）
 $EDITOR kmp/gradle.properties
