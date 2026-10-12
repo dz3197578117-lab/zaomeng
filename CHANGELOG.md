@@ -14,6 +14,9 @@
   但设置页仍显示 2.1.2。原因是应用内版本号来自 `ui/shared` 里一个**手写常量**
   `AppMetadata`（`VERSION_NAME=2.1.2`、`VERSION_CODE=11`），发版时只改了 Gradle
   版本号。桌面端更新检查也读该常量，因此一直误判自己落后于最新版。
+- **修复 `/api/web/health` 上报写死的版本号**：该接口此前固定返回
+  `"version":"0.1.0"`，与应用版本无关，排查时会误导。现在同样由
+  `kmp/gradle.properties` 构建期生成。
 
 ### 变更
 

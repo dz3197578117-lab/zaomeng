@@ -5,6 +5,7 @@ import io.ktor.server.application.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.Serializable
+import top.wkbin.zaomeng.ktor.GeneratedAppVersion
 
 @Serializable
 data class HealthResponse(
@@ -24,7 +25,9 @@ fun Route.healthRoute() {
             HttpStatusCode.OK,
             HealthResponse(
                 status = "ok",
-                version = "0.1.0",
+                // 应用版本，由构建期生成（来源：kmp/gradle.properties）。
+                // 此前写死 "0.1.0"，与应用版本无关，排查时会误导。
+                version = GeneratedAppVersion.VERSION_NAME,
                 backend = "ktor",
             )
         )

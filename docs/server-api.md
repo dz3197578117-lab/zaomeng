@@ -101,8 +101,12 @@ Authorization: Bearer <token>
 健康检查响应固定为：
 
 ```json
-{"status":"ok","version":"0.1.0","backend":"ktor"}
+{"status":"ok","version":"2.1.5","backend":"ktor"}
 ```
+
+`version` 是**应用版本号**，构建期由 `kmp/gradle.properties` 的 `zaomeng.versionName`
+生成（与 Android `versionName`、桌面打包版本、应用内「版本信息」同源），
+因此永远与当前构建一致。此前它是写死的 `0.1.0`，与应用版本无关，排查时会误导。
 
 诊断报告可能包含运行环境、存储概况与脱敏后的错误信息，不应包含模型 API Key。
 
