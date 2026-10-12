@@ -61,9 +61,20 @@ internal fun mergeTranscript(
     append: List<TranscriptItemDto>,
 ): List<TranscriptItemDto> {
     if (append.isEmpty()) return base
-    val appendedTurnIds = append.map { it.turnId }.filter { it.isNotBlank() }.toSet()
-    if (appendedTurnIds.isEmpty()) return base + append
-    return base.filterNot { it.turnId in appendedTurnIds } + append
+
+    // append **自身**也要按 turnId 去重（同一 turnId 保留最后一条，保持原有顺序）。
+    // 只做「base 与 append 之间」的去重挡不住 append 内部或 missing+appended 拼接处的重复，
+    // 那种情况下同一轮会出现两条，全部渲染出来就是多个内容相同的气泡。
+    val lastIndexByTurnId = append.withIndex()
+        .filter { it.value.turnId.isNotBlank() }
+        .associate { it.value.turnId to it.index }
+    val dedupedAppend = append.filterIndexed { index, item ->
+        item.turnId.isBlank() || lastIndexByTurnId[item.turnId] == index
+    }
+
+    val appendedTurnIds = dedupedAppend.map { it.turnId }.filter { it.isNotBlank() }.toSet()
+    if (appendedTurnIds.isEmpty()) return base + dedupedAppend
+    return base.filterNot { it.turnId in appendedTurnIds } + dedupedAppend
 }
 
 internal fun hasCommittedContent(items: List<TranscriptItemDto>): Boolean =

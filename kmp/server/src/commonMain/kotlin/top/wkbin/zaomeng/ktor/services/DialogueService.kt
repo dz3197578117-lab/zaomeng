@@ -387,6 +387,26 @@ class DialogueService(
         // enrichment runs in the background. Reload and persist under one session lock.
         val updated = sessionMutationLock(runId, sessionId).withLock {
             val sessionManifest = storageService.loadSessionManifest(runId, sessionId)
+
+            // 幂等：同一个 turnId 已经提交过「带内容的助手回复」时，直接返回既有 manifest，
+            // 不再追加第二份。
+            //
+            // turnId 来自客户端传入的 operationId（见 DialogueStreamService：
+            // `turnId = operationId.ifBlank { randomUuid() }`），而“重试上一次发送”会**复用**
+            // 同一个 operationId。若发送后连接中断、服务端其实已经提交，用户再点重试，
+            // 这里就会把同一轮再提交一次：transcript 里出现两条内容相同、turn_id 也相同的消息。
+            // 客户端 mergeTranscript 只按 turnId 去重 base 与 append，**不去重 append 自身**，
+            // 于是两份都会渲染出来 —— 表现为同一句回复冒出多个气泡，且每重试一次多一份。
+            // 只在“已有真实回复”时短路：首轮回复为空/失败时仍允许重试覆盖。
+            val alreadyCommitted = transcriptByTurnId(sessionManifest, turnId).any { item ->
+                val role = item["role"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                val text = item["message"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                role != "user" && text.isNotBlank()
+            }
+            if (alreadyCommitted) {
+                return@withLock sessionManifest
+            }
+
             saveTurn(runId, sessionId, turnId, message, messageKind, inputSpeaker, responses, evidence)
             val committed = updateSessionManifest(
                 runId = runId,

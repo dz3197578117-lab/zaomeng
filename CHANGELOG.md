@@ -17,12 +17,22 @@
   实际上**所有工具流程**（插件动作、剧情导演、续写建议、场景切换、记忆保存、分支等）
   都会触发。已改为 `this@ChatToolsDelegate.updateState { ... }`。
   该缺陷来自初始基线导入，2.1.4 / 2.1.5 均受影响。
+- **修复「同一句回复冒出多个气泡」（角色重复说话）**：服务端
+  `DialogueService.commitTurn` 没有按 turnId 做幂等检查，同一轮会被追加两次。
+  turnId 就是客户端传入的 operationId，而「重试上一次发送」会**复用**同一个 operationId：
+  发送后连接中断、但服务端其实已提交时，重试会让同一轮再提交一次。
+  客户端 `mergeTranscript` 只做 base 与 append 之间的去重，挡不住 append 自身的重复，
+  于是两条都渲染出来（每重试一次多一份）。
+  修复：`commitTurn` 在已有同 turnId 的「带内容助手回复」时直接返回既有 manifest，
+  不再追加；`mergeTranscript` 补上 append 自身的按 turnId 去重（保留最后一条、保持顺序）。
 
 ### 仓库加固
 
 - 新增源码守卫 [`scripts/check-kotlin-shadowing.sh`](scripts/check-kotlin-shadowing.sh)：
   扫描「成员扩展遮蔽同类属性并自调用」这一编译期无感知、运行期才崩的写法，
   已接入 CI（每次推送都跑），并用修复前的代码做过对照实验确认能命中。
+- 两个修复都补了回归测试，并做了对照实验：禁用服务端幂等判断后
+  `DialogueCommitIdempotencyTest` 会失败，恢复后通过。
 
 ## [2.1.5] - 2026-10-13
 
