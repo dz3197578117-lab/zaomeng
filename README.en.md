@@ -47,6 +47,8 @@ A file-by-file manifest (35 added / 67 modified / 2 deleted against upstream, wi
 
 Prebuilt Android builds are on [Releases](https://github.com/dz3197578117-lab/zaomeng/releases/latest) (`arm64-v8a`, currently a 2.1.4 debug build with the llama.cpp runtime bundled). Release assets are built by GitHub Actions when a tag is pushed, so they no longer depend on a binary committed to the repository. Build instructions for Desktop live in [`kmp/README.md`](kmp/README.md).
 
+> ⚠️ **2.1.4 is a one-time reinstall release**: the signing key used for 2.1.2 / 2.1.3 has been lost, so 2.1.4 cannot be installed over 2.1.3. If you are on 2.1.3, first export each book bundle as `.zaomeng-run.zip` (**into your Downloads folder**), then uninstall and reinstall. From 2.1.4 onward the build is signed with a dedicated, backed-up key, so normal in-place upgrades resume. See [`docs/release-android.md`](docs/release-android.md).
+
 > ⚠️ Upgrading from the legacy Android build (1.5.0 and earlier) to **2.0.0** is a **breaking change**: local data is incompatible and is not migrated automatically. **Export your book bundles (`.zaomeng-run.zip`) as backups in the old version before upgrading.**
 
 ### Skill bundle

@@ -47,6 +47,8 @@
 
 预编译的 Android 包见 [Releases](https://github.com/dz3197578117-lab/zaomeng/releases/latest)（`arm64-v8a`，当前为 2.1.4 调试版，随包内嵌 llama.cpp 运行时）。Release 附件由 GitHub Actions 在打 tag 时自动构建，不再依赖仓库里手工提交的二进制。桌面的构建说明见 [`kmp/README.md`](kmp/README.md)。
 
+> ⚠️ **2.1.4 是一次性重装版本**：2.1.2 / 2.1.3 使用的签名密钥已丢失，2.1.4 无法覆盖安装 2.1.3。正在用 2.1.3 的用户请先在旧版把书卷导出为 `.zaomeng-run.zip`（**存到「下载」目录**），再卸载重装。从 2.1.4 起改用妥善备份的专用密钥签名，后续版本恢复正常覆盖安装。详见 [`docs/release-android.md`](docs/release-android.md)。
+
 > ⚠️ 从旧版 Android（1.5.0 及更早）升级到 **2.0.0** 为**阻断性升级**，本地数据不兼容、不会自动迁移；升级前请先在旧版导出书卷包（`.zaomeng-run.zip`）备份。
 
 ### skill 包

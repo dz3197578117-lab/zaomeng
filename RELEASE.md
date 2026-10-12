@@ -10,9 +10,11 @@ There are two independent release tracks:
 | `zaomeng-skill` package | `python scripts/release_skill.py` | this file, below |
 
 The Android track is automated by [`.github/workflows/release.yml`](.github/workflows/release.yml),
-which builds the APK in CI and uploads it to the GitHub Release. It **requires** the
-`ANDROID_RELEASE_KEYSTORE_BASE64` secret so the APK keeps the same signature as previous
-releases and stays overwrite-installable. See the guide for the one-time setup, what the
+which builds the APK in CI and uploads it to the GitHub Release. It **requires** four
+signing secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
+`ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`) so every release keeps the same signature and
+stays overwrite-installable, plus a matching `EXPECTED_SIGNER_SHA256` in the workflow.
+See the guide for the one-time setup, the 2.1.4 one-time reinstall migration, what the
 workflow validates, and troubleshooting.
 
 The rest of this file covers the skill package only.

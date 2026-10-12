@@ -2,13 +2,13 @@ name: Release
 
 # 发布流程：推送 v* tag 时自动构建并上传 APK。
 #
-# 为什么必须在 CI 里注入发布密钥：
-#   Android 的 debug 包默认用 $HOME/.android/debug.keystore 签名，而这把密钥是
-#   **每台机器/每次全新环境随机生成**的。若 CI 用自己生成的密钥签名，产出的 APK
-#   签名与 2.1.2 / 2.1.3 不一致，用户将**无法覆盖安装**（只能卸载重装，丢数据）。
-#   因此这里强制要求仓库 secret ANDROID_RELEASE_KEYSTORE_BASE64 提供发布密钥，
-#   并在打包后校验签名指纹，不匹配直接失败。
-#   配置方法见 docs/release-android.md。
+# 为什么必须在 CI 里注入专用签名密钥：
+#   Android 只允许签名相同的 APK 覆盖安装。debug 包默认用
+#   $HOME/.android/debug.keystore 签名，而这把密钥是**每台机器随机生成**的：
+#   换机器、换 CI runner，签名就变了，用户点「检查更新」后会装不上，
+#   只能卸载重装（丢书卷与会话）。2.1.2/2.1.3 正是这样丢掉了签名密钥。
+#   因此这里强制要求 4 个 secret 提供项目专用密钥，并在构建前后各校验一次指纹，
+#   不匹配直接失败。配置方法见 docs/release-android.md。
 
 on:
   push:
@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "要发布的 tag（例如 v2.1.4），必须已经推送到仓库"
+        description: "要发布的 tag（例如 v2.1.5），必须已经推送到仓库"
         required: true
         type: string
 
@@ -29,9 +29,14 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # 已发布调试版（2.1.2 / 2.1.3）的签名证书指纹。
-  # 必须保持一致，否则用户无法覆盖安装。
-  EXPECTED_SIGNER_SHA256: "3c5cb56d7221ed35ef03240cda3d718dfade061a9614b92aa62b4f299733ee48"
+  # 发布密钥证书指纹（SHA-256，小写、无冒号）。
+  #
+  # ⚠️ 生成专用密钥后必须把这里改成该密钥的指纹，否则发布会失败——这是刻意设计：
+  #    签名密钥变更会让所有已安装用户无法覆盖安装，必须走一次有审计的提交。
+  #    取值方法：
+  #      keytool -list -v -keystore <你的.jks> -alias <alias> | grep SHA256
+  #    例如 3c5cb56d7221ed35ef03240cda3d718dfade061a9614b92aa62b4f299733ee48
+  EXPECTED_SIGNER_SHA256: "REPLACE_WITH_YOUR_KEY_FINGERPRINT"
 
 jobs:
   release:
@@ -54,24 +59,53 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Restore release signing key
+      - name: Restore signing key
         shell: bash
         env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          if [ -z "${KEYSTORE_BASE64}" ]; then
+
+          missing=()
+          [ -z "${KEYSTORE_BASE64}" ] && missing+=("ANDROID_KEYSTORE_BASE64")
+          [ -z "${STORE_PASSWORD}" ] && missing+=("ANDROID_KEYSTORE_PASSWORD")
+          [ -z "${KEY_ALIAS}" ] && missing+=("ANDROID_KEY_ALIAS")
+          [ -z "${KEY_PASSWORD}" ] && missing+=("ANDROID_KEY_PASSWORD")
+          if [ "${#missing[@]}" -gt 0 ]; then
             {
-              echo "::error title=缺少发布签名密钥::仓库未配置 ANDROID_RELEASE_KEYSTORE_BASE64 secret。"
-              echo "CI 若用随机生成的 debug 密钥签名，产出的 APK 将无法覆盖安装 2.1.2/2.1.3，"
-              echo "用户只能卸载重装（丢数据）。配置方法见 docs/release-android.md。"
+              echo "::error title=缺少签名 secret::未配置：${missing[*]}"
+              echo "CI 用随机 debug 密钥签名会让 APK 无法覆盖安装上一版，用户只能卸载重装。"
+              echo "配置方法见 docs/release-android.md。"
             }
             exit 1
           fi
+
           install -d -m 700 "${HOME}/.android"
-          printf '%s' "${KEYSTORE_BASE64}" | base64 -d > "${HOME}/.android/debug.keystore"
-          chmod 600 "${HOME}/.android/debug.keystore"
-          echo "已写入 ${HOME}/.android/debug.keystore"
+          keystore="${HOME}/.android/zaomeng-release.jks"
+          printf '%s' "${KEYSTORE_BASE64}" | base64 -d > "${keystore}"
+          chmod 600 "${keystore}"
+
+          # 通过 keystore.properties 交给 Gradle（debug / release 两个 build type 都会用它）
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "${keystore}" "${STORE_PASSWORD}" "${KEY_ALIAS}" "${KEY_PASSWORD}" \
+            > kmp/keystore.properties
+
+          # 构建前先核对密钥本身，避免白等一次编译
+          actual="$(keytool -J-Duser.language=en -list -v -keystore "${keystore}" \
+            -storepass "${STORE_PASSWORD}" -alias "${KEY_ALIAS}" \
+            | sed -n 's/.*SHA256: //p' | tr -d ':' | tr 'A-Z' 'a-z' | head -n1)"
+          if [ "${actual}" != "${EXPECTED_SIGNER_SHA256}" ]; then
+            {
+              echo "::error title=签名密钥不匹配::期望 ${EXPECTED_SIGNER_SHA256}，实际 ${actual:-<读取失败>}。"
+              echo "若这是有意更换签名密钥，请把 .github/workflows/release.yml 的"
+              echo "EXPECTED_SIGNER_SHA256 改成新指纹，并在发布说明里告知用户需要重装。"
+            }
+            exit 1
+          fi
+          echo "签名密钥指纹：${actual} ✓"
 
       - name: Build debug APK
         working-directory: kmp
@@ -96,13 +130,13 @@ jobs:
           fi
           build_tools="$(ls -d "${sdk}"/build-tools/* | sort -V | tail -n1)"
 
-          # 1) 签名必须与已发布的 2.1.2 / 2.1.3 一致，否则用户无法覆盖安装。
+          # 1) 产物签名必须等于配置的发布指纹，否则用户无法覆盖安装。
           signer="$("${build_tools}/apksigner" verify --print-certs "${apk}" \
             | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1)"
           if [ "${signer}" != "${EXPECTED_SIGNER_SHA256}" ]; then
             {
-              echo "::error title=签名不匹配::期望 ${EXPECTED_SIGNER_SHA256}，实际 ${signer:-<空>}。"
-              echo "该 APK 无法覆盖安装 2.1.2/2.1.3。请确认 ANDROID_RELEASE_KEYSTORE_BASE64 是发布密钥。"
+              echo "::error title=产物签名不匹配::期望 ${EXPECTED_SIGNER_SHA256}，实际 ${signer:-<未签名>}。"
+              echo "通常是 keystore.properties 没生效（检查 storeFile 路径与别名）。"
             }
             exit 1
           fi
@@ -153,10 +187,10 @@ jobs:
             echo "### 校验"
             echo ""
             echo '```'
-            echo "file:   ${{ steps.apk.outputs.name }}"
+            echo "file:    ${{ steps.apk.outputs.name }}"
             echo "package: ${{ steps.apk.outputs.package }}"
-            echo "sha256: ${{ steps.apk.outputs.sha256 }}"
-            echo "size:   ${{ steps.apk.outputs.size }} bytes"
+            echo "sha256:  ${{ steps.apk.outputs.sha256 }}"
+            echo "size:    ${{ steps.apk.outputs.size }} bytes"
             echo '```'
           } >> "${RUNNER_TEMP}/notes.md"
 

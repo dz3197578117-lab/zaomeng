@@ -49,13 +49,24 @@
 
 ## CI 发布密钥
 
-Android 覆盖安装要求签名一致，因此签名密钥通过 GitHub Actions secret
-`ANDROID_RELEASE_KEYSTORE_BASE64` 注入，**不进仓库**。相关约定：
+Android 覆盖安装要求签名一致，因此项目专用签名密钥通过 GitHub Actions secret
+注入，**不进仓库**。共 4 个：
 
-- 该 secret 只允许发布工作流读取，其他工作流不得引用；
+- `ANDROID_KEYSTORE_BASE64`（keystore 的 base64）
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+
+相关约定：
+
+- 这些 secret 只允许发布工作流读取，其他工作流不得引用；
+- 密钥必须做**至少两处互相独立的离线备份**：2.1.2/2.1.3 就是因为密钥丢失，
+  导致 2.1.4 无法覆盖安装，用户被迫卸载重装（会丢书卷与会话）；
 - 导出 base64 后立即删除临时文件（例如 `shred -u /tmp/release-keystore.b64`）；
 - 轮换密钥会改变签名，已安装用户将无法覆盖安装，必须提前公告并提供书卷导出备份路径；
-- 该密钥是 Android debug 密钥，**没有吊销机制**：一旦泄露应立即换新密钥，
+- 工作流里 `EXPECTED_SIGNER_SHA256` 固定了当前发布指纹，
+  更换密钥必须同时改这一行并走代码评审；
+- 密钥一旦泄露：Android 应用签名**没有吊销机制**，应立即换新密钥，
   并在 Release 说明中告知用户需要卸载重装。
 
 配置步骤与校验机制见 [`docs/release-android.md`](docs/release-android.md)。

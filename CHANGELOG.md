@@ -47,6 +47,20 @@
   （此前每发一版仓库体积 +39 MB）。
 - 新增 [`CHANGELOG.md`](CHANGELOG.md) 与 [`docs/release-android.md`](docs/release-android.md)。
 
+### ⚠️ 破坏性变更：需要卸载重装一次
+
+2.1.2 / 2.1.3 使用的签名密钥（Android SDK 自动生成的 debug 密钥，证书指纹
+`3c5cb56d…`）已经丢失，无法再签出与它们签名一致的包，因此
+**2.1.4 不能覆盖安装 2.1.3**。升级步骤：
+
+1. 先在 2.1.3 里把每个书卷导出为 `.zaomeng-run.zip`，**存到「下载」目录**
+   （存在应用目录里会在卸载时被一并删除）；
+2. 卸载 2.1.3；
+3. 安装 2.1.4，重新导入书卷包。
+
+从 2.1.4 起改用**项目专用密钥**签名（`debug` 与 `release` 两个 build type 共用，
+由 `kmp/keystore.properties` 指定、CI 从 4 个 secret 注入），后续版本恢复正常覆盖安装。
+
 ## [2.1.3] - 2026-10-12
 
 **Android 调试版**（`zaomeng-2.1.3-arm64-v8a-debug.apk`）。

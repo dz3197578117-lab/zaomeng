@@ -36,7 +36,12 @@ android {
     }
     signingConfigs {
         if (signingPropertiesFile.exists()) {
-            create("release") {
+            // 项目专用签名密钥（keystore.properties 指定）。
+            //
+            // 刻意不用 Android SDK 自动生成的 ~/.android/debug.keystore：
+            // 那把密钥由每台机器随机生成，一旦丢失或换机器，新包签名就与旧包不一致，
+            // 用户无法覆盖安装（只能卸载重装），CI 里也无法复现。
+            create("zaomeng") {
                 val storePath = signingProperties.getProperty("storeFile").orEmpty()
                 storeFile = rootProject.file(storePath)
                 storePassword = signingProperties.getProperty("storePassword")
@@ -62,7 +67,7 @@ android {
     buildTypes {
         release {
             if (signingPropertiesFile.exists()) {
-                signingConfig = signingConfigs.getByName("release")
+                signingConfig = signingConfigs.getByName("zaomeng")
             }
             isMinifyEnabled = true
             isShrinkResources = true
@@ -74,6 +79,12 @@ android {
         debug {
             applicationIdSuffix = ".test"
             isMinifyEnabled = false
+            // debug 包（applicationId 带 .test 后缀）同样用专用密钥签名。
+            // 它在用户设备上是独立应用身份，更新链路一样要求签名稳定：
+            // 沿用机器自带的 debug 密钥会让每次发版都可能装不上。
+            if (signingPropertiesFile.exists()) {
+                signingConfig = signingConfigs.getByName("zaomeng")
+            }
         }
     }
     compileOptions {
