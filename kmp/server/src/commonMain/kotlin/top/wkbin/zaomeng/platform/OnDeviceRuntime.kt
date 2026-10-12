@@ -14,10 +14,11 @@ import okio.Path
  * 1. **可执行文件位置**：Android 只允许对 `/data/app/<pkg>/lib/<abi>/` 下的文件执行
  *    `execve`，所以可执行文件必须以 `lib*.so` 命名放进 `jniLibs/`；JVM 桌面端则回退到
  *    环境变量 / PATH 上系统安装的 `llama-server`。
- * 2. **原生进程派生**：`ProcessBuilder`（Android/JVM 都有，iOS 没有）。
+ * 2. **原生进程派生**：`ProcessBuilder`（Android/JVM 均有）。
  * 3. **端口探测**：`ServerSocket` 分配空闲端口、`Socket` 探测监听状态。
  *
- * iOS 不实现本接口（`ServerPlatform.onDeviceRuntime()` 返回 null），UI 侧表现为「当前平台不支持端侧推理」。
+ * 若平台未分发/未安装 llama-server 原生产物，`ServerPlatform.onDeviceRuntime()` 返回 null，
+ * UI 侧表现为「当前平台不支持端侧推理」，其余功能不受影响。
  */
 interface OnDeviceRuntime {
     /** 该平台是否具备端侧推理能力。 */

@@ -10,7 +10,7 @@
 - `:server:http` 承载 Ktor 插件、SSE 编码器与 `HealthRoute`。
 - `commonMain/ktor/routes` 只负责 HTTP/SSE 参数、状态码和响应映射；业务逻辑放入 service。
 - `commonMain/ktor/services` 承载模型调用编排、对话、书卷、记忆、卡片和插件业务。
-- `commonMain/platform` 声明跨平台能力；Android、JVM、iOS 源码集提供对应实现。
+- `commonMain/platform` 声明跨平台能力；Android、JVM 源码集提供对应实现。
 - 不要在 route 中直接读写 Room、文件或安全存储。
 
 ## 存储规则
@@ -52,5 +52,3 @@
 ```powershell
 .\gradlew.bat :server:storage:jvmTest :server:llm:jvmTest :server:http:jvmTest :server:jvmTest :server:compileKotlinJvm :server:compileAndroidMain
 ```
-
-iOS 平台实现有变化时，必须说明是否已在 macOS CI 或本机执行 `:server:compileKotlinIosSimulatorArm64`。

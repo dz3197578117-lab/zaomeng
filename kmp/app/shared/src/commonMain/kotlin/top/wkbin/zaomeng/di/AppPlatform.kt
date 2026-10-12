@@ -19,7 +19,7 @@ interface AppPlatform {
 
     val dataStore: DataStore<Preferences>
 
-    /** 应用私有文件目录（背景图等用户产生的持久文件；Android filesDir / 桌面用户目录 / iOS Documents）。 */
+    /** 应用私有文件目录（背景图等用户产生的持久文件；Android filesDir / 桌面用户目录）。 */
     val filesDir: Path
 
     val cacheDir: Path

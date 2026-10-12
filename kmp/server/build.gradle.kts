@@ -2,8 +2,6 @@
 // KMP：业务逻辑（路由/服务/模型）在 commonMain；Android/JVM 平台差异用 expect/actual 隔离。
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-val hostOs = System.getProperty("os.name").lowercase()
-val isMacHost = hostOs == "mac os x" || hostOs == "macos" || hostOs == "darwin"
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -29,10 +27,6 @@ kotlin {
     jvm()
 
     // Apple target 只能在 macOS 主机上编译；Windows/CI(Linux) 自动跳过，保持本机构建可跑。
-    if (isMacHost) {
-        iosArm64()
-        iosSimulatorArm64()
-    }
 
     sourceSets {
         commonMain.dependencies {
@@ -75,19 +69,7 @@ kotlin {
             implementation(libs.junit)
             implementation(libs.kotlin.test.junit)
             implementation(libs.ktor.server.test.host)
-        }
-        if (isMacHost) {
-            iosMain {
-                dependencies {
-                    implementation(libs.ktor.client.darwin)
-                    implementation(libs.snakeyaml.engine.kmp)
-                    implementation(libs.kitearchive)
-                }
-            }
-        }
-        jvmTest.dependencies {
             implementation(libs.snakeyaml.engine.kmp)
-            implementation(libs.kitearchive)
         }
     }
 }

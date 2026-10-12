@@ -26,13 +26,7 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven("https://maven.aliyun.com/repository/google")
-        maven("https://maven.aliyun.com/repository/central") {
-            content {
-                // Aliyun 镜像未同步 io.github.yuroyami 的 KMP 变体构件（kitearchive-jvm 404），
-                // 该组强制走 mavenCentral()，避免解析成 native klib。
-                excludeGroupByRegex("io\\.github\\.yuroyami.*")
-            }
-        }
+        maven("https://maven.aliyun.com/repository/central")
     }
 }
 

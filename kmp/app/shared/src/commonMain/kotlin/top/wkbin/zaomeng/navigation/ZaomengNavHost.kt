@@ -96,7 +96,7 @@ fun ZaomengNavHost(
     onStartupUpdateCheckDisabledChange: (Boolean) -> Unit = {},
     launchChaptersRunId: String? = null,
     onChaptersLaunchConsumed: () -> Unit = {},
-    /** Android 内置导航返回处理开关切换回调，桌面/iOS 不展示此开关。 */
+    /** Android 内置导航返回处理开关切换回调，桌面不展示此开关。 */
     onBuiltInBackHandlingEnabledChange: (Boolean) -> Unit = {},
     /** 是否由 Navigation3/NavDisplay 处理应用内返回；关闭时回退到 AndroidX BackHandler。 */
     builtInBackHandlingEnabled: Boolean = true,

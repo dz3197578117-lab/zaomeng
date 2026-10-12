@@ -26,7 +26,6 @@ serializationJson = "1.11.0"
 ktor = "3.5.2"
 snakeyaml = "2.6"
 snakeyamlEngineKmp = "4.0.1"
-kitearchive = "0.1.0"
 slf4j = "2.0.18"
 desugarJdkLibs = "2.1.5"
 okio = "3.18.1"
@@ -103,7 +102,6 @@ ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "kto
 ktor-client-content-negotiation = { module = "io.ktor:ktor-client-content-negotiation", version.ref = "ktor" }
 snakeyaml = { module = "org.yaml:snakeyaml", version.ref = "snakeyaml" }
 snakeyaml-engine-kmp = { module = "it.krzeminski:snakeyaml-engine-kmp", version.ref = "snakeyamlEngineKmp" }
-kitearchive = { module = "io.github.yuroyami:kitearchive", version.ref = "kitearchive" }
 material-kolor = { module = "com.materialkolor:material-kolor", version.ref = "materialKolor" }
 slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
 desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugarJdkLibs" }

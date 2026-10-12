@@ -7,7 +7,6 @@
 - Git
 - JDK 17 或更高版本（推荐并由 CI 使用 JDK 21）
 - Android SDK（Android 构建需要）
-- Xcode（仅 iOS 构建需要）
 - Python 3.11+（仅旧基线与仓库级开发检查需要）
 
 首次构建前请阅读 [KMP 说明](kmp/README.md) 和 [代理开发规则](AGENTS.md)。依赖仓库会根据 `CI=true` 调整顺序；不要为解决本机网络问题提交仅适用于个人环境的仓库地址或代理配置。
@@ -40,14 +39,6 @@
 .\gradlew.bat :app:desktopApp:compileKotlin
 ```
 
-macOS 上的 iOS 检查：
-
-```bash
-./gradlew :server:compileKotlinIosSimulatorArm64 \
-  :app:shared:compileKotlinIosSimulatorArm64 \
-  :app:shared:linkDebugFrameworkIosSimulatorArm64
-```
-
 仅当修改旧 Python 基线、脚本或仓库级检查时，从根目录执行：
 
 ```bash
@@ -78,7 +69,7 @@ git diff --check
 
 ### 跨平台代码
 
-修改 `expect` 声明时必须更新 Android、JVM、iOS 全部 `actual`。如果本机不能构建 iOS，请在 PR 中明确标注依赖 CI 验证。
+修改 `expect` 声明时必须更新 Android 与 JVM 全部 `actual`。
 
 ## 提交与 PR
 

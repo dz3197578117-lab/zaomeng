@@ -71,7 +71,7 @@ interface ServerPlatform {
     /**
      * 端侧推理运行时；平台不具备该能力时返回 null。
      *
-     * 默认返回 null：iOS、以及没有打包 aarch64 原生产物的安装包都走这条分支，
+     * 默认返回 null：没有打包 aarch64 原生产物、或系统未安装 llama-server 的安装包都走这条分支，
      * 上层表现为「当前环境不支持端侧推理」，其余功能不受影响。
      */
     fun onDeviceRuntime(): OnDeviceRuntime? = null

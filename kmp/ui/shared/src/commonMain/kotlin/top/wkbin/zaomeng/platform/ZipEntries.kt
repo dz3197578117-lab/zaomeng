@@ -6,5 +6,5 @@ data class ZipFileEntryData(
     val content: ByteArray,
 )
 
-/** 读取 zip 归档全部文件条目（Android/JVM 走 java.util.zip；iOS 走 KiteArchive）。 */
+/** 读取 zip 归档全部文件条目（Android/JVM 均走 java.util.zip）。 */
 expect fun readZipFileEntries(bytes: ByteArray): List<ZipFileEntryData>

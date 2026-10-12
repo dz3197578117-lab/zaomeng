@@ -34,7 +34,7 @@
 
 | 目录 | 说明 | 维护状态 |
 | --- | --- | --- |
-| [`kmp/`](kmp/README.md) | Compose Multiplatform 客户端：Android / 桌面 / iOS 三端共享 UI，内嵌 Ktor + Room 后端 | ✅ 当前主力 |
+| [`kmp/`](kmp/README.md) | Compose Multiplatform 客户端：Android / 桌面两端共享 UI，内嵌 Ktor + Room 后端 | ✅ 当前主力 |
 | `zaomeng-skill/` | OpenClaw / ClawHub skill 包（命令行 / 代理环境使用） | ✅ 保留 |
 | `src/`、`src/web/` | 早期 Python 后端与 Web UI | ⛔ **不再维护**，仅作行为对照与测试基线 |
 
@@ -42,7 +42,7 @@
 
 ### 客户端
 
-预编译的 Android 包见 [Releases](https://github.com/dz3197578117-lab/zaomeng/releases/latest)（`arm64-v8a`，当前为 2.1.2 调试版，随包内嵌 llama.cpp 运行时）。桌面 / iOS 的构建说明见 [`kmp/README.md`](kmp/README.md)。
+预编译的 Android 包见 [Releases](https://github.com/dz3197578117-lab/zaomeng/releases/latest)（`arm64-v8a`，当前为 2.1.2 调试版，随包内嵌 llama.cpp 运行时）。桌面的构建说明见 [`kmp/README.md`](kmp/README.md)。
 
 > ⚠️ 从旧版 Android（1.5.0 及更早）升级到 **2.0.0** 为**阻断性升级**，本地数据不兼容、不会自动迁移；升级前请先在旧版导出书卷包（`.zaomeng-run.zip`）备份。
 

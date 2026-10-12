@@ -3,20 +3,21 @@
 本文件回答一个问题：**本仓库里哪些源码是我们改的、上游没有的？**
 
 - 上游基线：`wkbin/zaomeng`，提交 `f178b4f83bbd152e2f82c50c2b7835d8b823c03a`（共 1070 个文件）。
-- 对照对象：本仓库 `main` 已跟踪文件，共 1103 个。
+- 对照对象：本仓库 `main` 已跟踪文件，共 1066 个。
 - 比对方式：逐文件 SHA-256，分「新增 / 内容修改 / 删除」三类；新增文件再逐条查上游是否存在（404 = 本版独有）。
-- 核对口径：上游 `main` 当前仍为 1070 个文件。表中 35 个新增已**逐个**核实上游无此路径；67 个修改文件也已逐个比对——上游当前内容与其基线快照逐字节一致，故这些改动**全部**归属本版，不含上游自身的后续修改。
+- 核对口径：上游 `main` 当前仍为 1070 个文件。表中 35 个新增已**逐个**核实上游无此路径；125 个修改文件也已逐个比对——上游当前内容与其基线快照逐字节一致，故这些改动**全部**归属本版，不含上游自身的后续修改。
+- **iOS 目标已整体移除**：上游基线自带 iOS 源码与 Xcode 工程（共 37 个文件），本版决定不再维护 iOS，相关 `iosMain` 源码集、`kmp/iosApp` 工程、iOS CI 工作流及 `kitearchive` 依赖全部删除，详见第十二节。
 
 ## 汇总
 
 | 类别 | 文件数 | 说明 |
 |---|---:|---|
 | 新增 | 35 | 上游无此路径；35 个已**全部**逐条核实 |
-| 内容修改 | 67 | 与基线逐字节不同；67 个均已确认上游未动过这些文件 |
-| 删除 | 2 | 上游作者的收款码图片，见第十一节 |
-| **合计** | **104** | 67 个修改文件的文本改动合计 +3014 / −328 行（新增/删除文件不计入行数） |
+| 内容修改 | 125 | 与基线逐字节不同；125 个均已确认上游未动过这些文件 |
+| 删除 | 39 | 上游作者的收款码图片 2 个 + 上游 iOS 源码 / Xcode 工程 / iOS CI 共 37 个，见第十一、十二节 |
+| **合计** | **199** | 125 个修改文件的文本改动合计 +3048 / −642 行（新增/删除文件不计入行数） |
 
-下面按功能分组。有些文件同时服务多个功能（例如 `LlmClient.kt` 既是提供方适配也是端侧推理的调用层），会在多组里重复出现，因此各组数量之和大于 104。
+下面按功能分组。有些文件同时服务多个功能（例如 `LlmClient.kt` 既是提供方适配也是端侧推理的调用层），会在多组里重复出现，因此各组数量之和大于 199。
 
 ---
 
@@ -190,7 +191,7 @@
 
 | 文件 | 改动 |
 |---|---|
-| `kmp/server/src/commonMain/.../backend/LocalBackendController.kt` | JVM 专有 API 泄漏到 commonMain：`@Volatile` → `kotlin.concurrent.Volatile`，`synchronized` 双检锁 → `kotlin.concurrent.atomics.AtomicBoolean`（带 `@OptIn`）。否则 iOS 目标编译失败 |
+| `kmp/server/src/commonMain/.../backend/LocalBackendController.kt` | `commonMain` 不得引用 JVM 专有 API：`@Volatile` → `kotlin.concurrent.Volatile`，`synchronized` 双检锁 → `kotlin.concurrent.atomics.AtomicBoolean`（带 `@OptIn`）。该约束与 iOS 目标无关，纯为保持 commonMain 后端无关（iOS 目标见第十二节已移除） |
 | `kmp/server/src/commonMain/.../ktor/services/GgufMetadataReader.kt` | 同上：okio `Source.use {}`（上界 `AutoCloseable`）→ `try/finally { close() }` |
 | `kmp/server/src/commonMain/.../ktor/services/OnDeviceModelService.kt` | 同上 |
 | `tests/test_plugin_system.py` | 2 个用例断言的路径随 KMP 模块拆分失效（UI 从 `:app:shared` 迁到 `:feature:*`）；断言随实现迁移但**语义不变**，且把两条反向断言的范围从单文件扩到整个 `feature/chat` 源码树（更严） |
@@ -251,6 +252,29 @@
 `README.md` 原有的「赞助支持」段用的就是这两个收款码。本版不再向上游作者收款，
 故整段移除并删图。上游署名仍由 `website/index.html` 的 AGPL 授权链接保留，不影响许可合规。
 两个文件可从 git 历史取回。
+
+## 十二、移除 iOS 目标（37）
+
+本版决定不再维护 iOS：上游基线自带完整的 iOS 源码与 Xcode 工程，但 iOS 仅在 macOS 上才能编译验证，
+CI 跑不起来，且我们并没有 iOS 设备用户。与其持续为上游遗留的 iOS 编译错误打补丁，不如整体移除。
+
+### 删除（37，全部为上游基线自带）
+
+- 6 个 `iosMain` 源码集（共 28 个 `.kt`）：`app/shared`、`core/runtime`、`data/remote`、`server`、`server/storage`、`ui/shared`；
+- `kmp/iosApp/` Xcode 工程（8 个文件：`iosApp.xcodeproj`、`Info.plist`、Swift 源码、Assets 等）；
+- `.github/workflows/ios.yml`（macOS 上的 iOS CI 工作流）；
+- `kmp/server/src/jvmTest/.../platform/KiteArchiveZipTest.kt`（仅用于验证 iOS 端 ZIP 后端，随 iOS 一并移除）。
+
+### 配套改动（计入「内容修改」）
+
+- 31 个模块的 `build.gradle.kts`：移除 `if (isMacHost) { iosArm64(); iosSimulatorArm64() }` 目标块与 `val hostOs / isMacHost` 判定；
+- `kmp/gradle/libs.versions.toml`：删除 `kitearchive` 版本与依赖项（`kitearchive` 仅服务于 iOS 的 ZIP 后端，移除后生产代码走 `java.util.zip`）；
+- `kmp/settings.gradle.kts`：删除针对 `io.github.yuroyami` 的 `excludeGroupByRegex`（曾为绕开阿里云镜像缺失 kitearchive-jvm 构件）；
+- `kmp/server/build.gradle.kts`：从 `jvmTest` 移除 `kitearchive` 依赖；
+- 各 `commonMain` 平台能力 KDoc 与注释中「iOS」相关表述统一改为 Android / JVM（Desktop）口径。
+
+> `expect/actual` 不受影响：`commonMain` 的 `expect` 在 Android 与 JVM（Desktop）两端均有 `actual`，
+> iOS 移除后不存在悬空声明；端侧推理、ZIP 等能力在 Android / 桌面端行为不变。
 
 ## 怎么自己复核这份清单
 

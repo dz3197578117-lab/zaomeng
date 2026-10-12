@@ -34,7 +34,7 @@ A file-by-file manifest (35 added / 67 modified / 2 deleted against upstream, wi
 
 | Path | Description | Status |
 | --- | --- | --- |
-| [`kmp/`](kmp/README.md) | Compose Multiplatform client: shared UI across Android / Desktop / iOS with an embedded Ktor + Room backend | ✅ actively maintained |
+| [`kmp/`](kmp/README.md) | Compose Multiplatform client: shared UI across Android / Desktop with an embedded Ktor + Room backend | ✅ actively maintained |
 | `zaomeng-skill/` | OpenClaw / ClawHub skill bundle (CLI / agent environments) | ✅ kept |
 | `src/`, `src/web/` | Early Python backend and Web UI | ⛔ **no longer maintained**; kept as a behavioral reference and test baseline |
 
@@ -42,7 +42,7 @@ A file-by-file manifest (35 added / 67 modified / 2 deleted against upstream, wi
 
 ### Clients
 
-Prebuilt Android builds are on [Releases](https://github.com/dz3197578117-lab/zaomeng/releases/latest) (`arm64-v8a`, currently a 2.1.2 debug build with the llama.cpp runtime bundled). Build instructions for Desktop / iOS live in [`kmp/README.md`](kmp/README.md).
+Prebuilt Android builds are on [Releases](https://github.com/dz3197578117-lab/zaomeng/releases/latest) (`arm64-v8a`, currently a 2.1.2 debug build with the llama.cpp runtime bundled). Build instructions for Desktop live in [`kmp/README.md`](kmp/README.md).
 
 > ⚠️ Upgrading from the legacy Android build (1.5.0 and earlier) to **2.0.0** is a **breaking change**: local data is incompatible and is not migrated automatically. **Export your book bundles (`.zaomeng-run.zip`) as backups in the old version before upgrading.**
 

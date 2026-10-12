@@ -19,7 +19,7 @@ import zaomeng.ui.shared.generated.resources.ic_provider_ollama
 import zaomeng.ui.shared.generated.resources.ic_provider_openai
 import zaomeng.ui.shared.generated.resources.ic_provider_qwen
 
-/** 模型提供商品牌图标：统一走 composeResources（Android/桌面/iOS 三端一致）。 */
+/** 模型提供商品牌图标：统一走 composeResources（Android/桌面 一致）。 */
 @Composable
 fun ProviderLogoMark(catalogId: String) {
     val drawable = when (catalogId) {

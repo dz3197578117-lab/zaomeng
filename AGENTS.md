@@ -6,7 +6,7 @@
 
 造梦将中文小说人物蒸馏为人物包、关系和记忆，并提供多角色对话体验。
 
-- `kmp/`：当前主实现。Compose Multiplatform 客户端内嵌 Ktor 服务和 Room 数据库，覆盖 Android、Desktop 与 iOS。
+- `kmp/`：当前主实现。Compose Multiplatform 客户端内嵌 Ktor 服务和 Room 数据库，覆盖 Android 与 Desktop。
 - `zaomeng-skill/`：OpenClaw / ClawHub skill 包。
 - `src/`、`src/web/`：不再维护的 Python/Web 旧实现，仅用于行为对照和兼容测试。除非任务明确要求，不要在这里实现新功能。
 - `prompts/`：可编辑的提示词源文件。
@@ -29,15 +29,14 @@
 - `kmp/server/http`：HTTP 插件、SSE 编码器与基础路由。
 - `kmp/plugins-api`：插件公共契约；保持向后兼容。
 - `kmp/builtin-plugins`：内置插件实现。
-- `kmp/iosApp`：iOS Xcode 工程。
 
 依赖统一通过 `kmp/gradle/libs.versions.toml` 管理。新增依赖前先确认是否已有版本目录项，不要在模块脚本中随意硬编码版本。
 
 ## 开发原则
 
 1. 新功能优先落在 KMP 实现，不要同时维护 Python 旧后端，除非任务要求行为对齐。
-2. 业务逻辑尽量放在 `commonMain`。`commonMain` 不得直接引用 JVM、Android 或 Apple 专属 API；平台差异通过 `expect/actual` 或已有平台接口隔离。
-3. 修改共享接口时检查 Android、JVM 和 iOS 的所有 `actual` 实现。Windows 上无法完整验证 iOS，仍需保持 iOS 源码语义和 CI 可编译。
+2. 业务逻辑尽量放在 `commonMain`。`commonMain` 不得直接引用 JVM 或 Android 专属 API；平台差异通过 `expect/actual` 或已有平台接口隔离。
+3. 修改共享接口时检查 Android 与 JVM 的所有 `actual` 实现。
 4. 保持协程非阻塞。文件、数据库和网络阻塞操作应进入平台 IO dispatcher；不要在 UI 线程执行大文件解析。
 5. 不要复制大型原文或生成型静态资源。优先使用内容寻址、缓存、索引或已有资源引用。
 6. 对现有脏工作区保持克制：不要覆盖、还原或删除与当前任务无关的用户改动。
@@ -104,14 +103,6 @@ Desktop 编译：
 
 ```powershell
 .\gradlew.bat :app:desktopApp:compileKotlin
-```
-
-iOS 仅在 macOS 上验证：
-
-```bash
-./gradlew :server:compileKotlinIosSimulatorArm64 \
-  :app:shared:compileKotlinIosSimulatorArm64 \
-  :app:shared:linkDebugFrameworkIosSimulatorArm64
 ```
 
 若明确修改旧 Python 基线、脚本或仓库级检查，再从仓库根目录运行：

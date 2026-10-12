@@ -10,7 +10,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
- * 验证 snakeyaml-engine-kmp 的 API 与语义——iOS 端 parseYaml/dumpYaml actual 使用同一套调用，
+ * 验证 snakeyaml-engine-kmp 的 API 与语义——Android/JVM 端 parseYaml/dumpYaml actual 使用同一套调用，
  * 本测试在 JVM 上跑通以覆盖跨平台代码路径。
  */
 class SnakeYamlEngineKmpTest {

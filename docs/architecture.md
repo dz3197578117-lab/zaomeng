@@ -42,7 +42,6 @@ flowchart LR
 | `server/http` | HTTP 插件、SSE 编码器与基础路由 |
 | `plugins-api` | 插件稳定契约 |
 | `builtin-plugins` | 官方内置插件 |
-| `iosApp` | iOS Xcode 宿主工程 |
 
 共享业务尽量位于 `commonMain`。系统 API、HTTP engine、日志、数据库 builder、ZIP 和平台安全存储等能力通过平台接口隔离。
 

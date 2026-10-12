@@ -18,8 +18,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 
 /**
- * 跨平台共享 UI 入口：androidApp / desktopApp / iosApp 都渲染这个组合。
- * 更新检查/下载与深链属于平台能力，通过可选参数由平台入口注入（桌面/iOS 使用默认空实现）。
+ * 跨平台共享 UI 入口：androidApp / desktopApp 都渲染这个组合。
+ * 更新检查/下载与深链属于平台能力，通过可选参数由平台入口注入（桌面使用默认空实现）。
  */
 @Composable
 fun App(

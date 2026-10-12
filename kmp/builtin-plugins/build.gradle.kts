@@ -2,8 +2,6 @@
 // KMP：纯 Kotlin 逻辑放 commonMain，androidLibrary 供 App 使用，jvm() 供桌面/测试。
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-val hostOs = System.getProperty("os.name").lowercase()
-val isMacHost = hostOs == "mac os x" || hostOs == "macos" || hostOs == "darwin"
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -23,10 +21,6 @@ kotlin {
     jvm()
 
     // Apple target 只能在 macOS 主机上编译；Windows/CI(Linux) 自动跳过，保持本机构建可跑。
-    if (isMacHost) {
-        iosArm64()
-        iosSimulatorArm64()
-    }
 
     sourceSets {
         commonMain.dependencies {

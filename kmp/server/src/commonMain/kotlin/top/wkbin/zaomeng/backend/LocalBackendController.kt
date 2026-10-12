@@ -62,14 +62,12 @@ class LocalBackendController(
     /**
      * 幂等启动标记。
      *
-     * 这里不能用 `synchronized`：它是 `kotlin.jvm.*` 专有 API，本文件在 commonMain，
-     * 而 `:server` 声明了 iosArm64/iosSimulatorArm64 目标，iOS 编译会直接报
-     * `Unresolved reference 'synchronized'`。同理 `@Volatile` 也必须在 commonMain 显式
-     * import `kotlin.concurrent.Volatile`（JVM 默认导入的 `kotlin.jvm.Volatile` 在
-     * common 里不可见，`@Volatile` 裸用同样解析不到）。
+     * 这里不用 `synchronized` 而用 `AtomicBoolean.compareAndSet`：CAS 语义与「双重检查 + 锁」
+     * 一致——只有第一个调用方真正启动，其余直接返回，且本身是原子的，比「先判断再赋值」更严谨；
+     * 同时避免依赖 `kotlin.jvm.*` 专有 API，保持 commonMain 跨 JVM/Android/Desktop 后端无关。
      *
-     * `compareAndSet(false, true)` 与原先「双重检查 + 锁」的语义一致——只有第一个调用方
-     * 真正启动，其余直接返回；且 CAS 本身是原子的，比「先判断再赋值」更严谨。
+     * `@Volatile` 必须在 commonMain 显式 import `kotlin.concurrent.Volatile`：JVM 默认导入的
+     * `kotlin.jvm.Volatile` 在 common 里不可见，`@Volatile` 裸用同样解析不到。
      */
     private val started = AtomicBoolean(false)
 

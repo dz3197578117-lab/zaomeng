@@ -164,7 +164,7 @@ internal suspend fun importIntoDirectory(
     val totalBytes = runCatching { picked.size() }.getOrDefault(0L)
 
     // 用平台 IO 调度器而非 Dispatchers.IO：后者在 Kotlin/Native 上是 internal
-    // （见 :core:runtime 的 PlatformIoDispatcher，iOS 侧回落到 Dispatchers.Default）。
+    // （见 :core:runtime 的 PlatformIoDispatcher，Android/JVM 使用 Dispatchers.IO）。
     return withContext(platformIoDispatcher) {
         runCatching { directory.createDirectories() }
         runCatching { partFile.delete(mustExist = false) }

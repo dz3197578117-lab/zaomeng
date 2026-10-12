@@ -6,7 +6,7 @@ import androidx.compose.ui.graphics.Color
 
 /**
  * 平台主题钩子：Monet 模式下生成 Material You 动态色。
- * Android 12+ 且未指定种子色时跟随系统壁纸取色；指定种子色时（Android/桌面/iOS）
+ * Android 12+ 且未指定种子色时跟随系统壁纸取色；指定种子色时（Android/桌面）
  * 统一用 MaterialKolor 由种子色生成。非 null 时优先使用。
  */
 @Composable
@@ -19,7 +19,7 @@ expect fun platformColorScheme(
 /**
  * 应用系统栏（状态栏/导航栏）深浅适配，并把窗口背景设为当前主题背景色，
  * 避免预测返回/转场/启动时透出固定浅色底（部分厂商的返回预览直接取窗口底色）。
- * 桌面端/iOS no-op。
+ * 桌面端 no-op。
  */
 @Composable
 expect fun applySystemBars(darkTheme: Boolean, windowBackground: Color)

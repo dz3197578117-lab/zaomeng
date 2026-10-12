@@ -33,7 +33,7 @@ data class OnDeviceModelDto(
 /** 端侧推理的运行状态快照。 */
 @Serializable
 data class OnDeviceStatusDto(
-    /** 当前平台是否实现了端侧运行时（iOS 为 false）。 */
+    /** 当前平台是否具备端侧推理能力（Android 内置 llama-server 产物时为 true）。 */
     @SerialName("supported") val supported: Boolean = false,
     /** 是否找到了可执行的 llama-server（APK 里带了产物 / 桌面端装了）。 */
     @SerialName("available") val available: Boolean = false,

@@ -48,4 +48,4 @@ app:* -> server -> core:contracts / core:runtime / plugins-api
 - 不出现从 `core:*` 或 `data:*` 指向 `app:*`、`server` 的 Gradle 依赖。
 - 接口、客户端和服务端契约变更同步更新 `docs/server-api.md`。
 - 涉及 Room schema 的批次必须同时提供迁移与回归测试。
-- 至少执行 `git diff --check`、相关模块 JVM 测试和 Android 编译；macOS CI 补 iOS 编译。
+- 至少执行 `git diff --check`、相关模块 JVM 测试和 Android 编译。

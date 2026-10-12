@@ -45,4 +45,4 @@
 .\gradlew.bat :app:androidApp:testDebugUnitTest :app:androidApp:lintDebug :app:androidApp:assembleDebug
 ```
 
-涉及 iOS `actual` 或共享 Compose API 时，需要在 macOS 验证 iOS framework 链接，或明确交由 iOS CI 验证。
+涉及共享 Compose API 时，确保 Android 与 JVM 编译通过。

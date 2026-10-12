@@ -13,7 +13,6 @@
 - **Git**：用于克隆仓库。
 - **JDK 17+**（推荐 21）：KMP 工程要求；CI 用 21。
 - **Android SDK**（仅当你要打 Android APK）：含 build-tools 与 platform。
-- **Xcode**（仅 iOS，且必须是 macOS）：iOS 工程无法在 Windows 验证。
 - 桌面端**不需要** Android SDK，最省事，优先用它验证。
 
 ## 二、获取源码
@@ -40,9 +39,6 @@ cd zaomeng
 ```bash
 .\gradlew.bat :app:androidApp:assembleDebug   # 生成 APK（需 signing + SDK）
 ```
-
-### iOS（需 macOS + Xcode）
-用 Xcode 打开 `iosApp/iosApp.xcodeproj`，构建脚本会自动调 Gradle 生成 shared framework。
 
 ### 旧版 Web UI（不再维护，仍可用）
 ```bash
