@@ -1,0 +1,153 @@
+name: Build APK
+
+# 目的：**不配置任何 secret** 也能从仓库直接拿到可安装的 APK。
+#
+#   手动触发：Actions → Build APK → Run workflow（手机上浏览器也能点）
+#   自动触发：推送到 main 且改动了 kmp/**
+#
+# 产物在本次运行页面的 Artifacts 区域下载，保留 14 天。
+#
+# 签名说明（重要）：
+#   - 已配置发布 secret（见 docs/release-android.md）时，用专用发布密钥签名，
+#     与正式发布包一致，可以覆盖安装正式版。
+#   - 未配置时回退到**缓存住的** debug 密钥。它跨运行稳定，可以反复覆盖安装，
+#     但与正式发布包签名不同，**不能**覆盖安装正式版。
+#     缓存被清除后会生成新密钥，届时需卸载重装一次。
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "kmp/**"
+      - ".github/workflows/build-apk.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore signing key
+        id: signing
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "${KEYSTORE_BASE64}" ] && [ -n "${STORE_PASSWORD}" ] \
+             && [ -n "${KEY_ALIAS}" ] && [ -n "${KEY_PASSWORD}" ]; then
+            install -d -m 700 "${HOME}/.android"
+            keystore="${HOME}/.android/zaomeng-release.jks"
+            printf '%s' "${KEYSTORE_BASE64}" | base64 -d > "${keystore}"
+            chmod 600 "${keystore}"
+            printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+              "${keystore}" "${STORE_PASSWORD}" "${KEY_ALIAS}" "${KEY_PASSWORD}" \
+              > kmp/keystore.properties
+            {
+              echo "mode=release"
+              echo "label=专用发布密钥（可覆盖安装正式版）"
+            } >> "${GITHUB_OUTPUT}"
+            echo "使用专用发布密钥签名"
+          else
+            {
+              echo "mode=fallback"
+              echo "label=缓存的 debug 密钥（仅用于测试，不能覆盖安装正式版）"
+            } >> "${GITHUB_OUTPUT}"
+            echo "::notice title=未配置发布密钥::回退到缓存的 debug 密钥签名。产物可用于测试；要能覆盖安装正式版，请按 docs/release-android.md 配置 4 个 secret。"
+          fi
+
+      - name: Cache fallback debug keystore
+        if: steps.signing.outputs.mode == 'fallback'
+        uses: actions/cache@v4
+        with:
+          # 固定 key：让多次构建共用同一把密钥，产物之间可以互相覆盖安装。
+          # 缓存被清除时会生成新密钥，那时需要卸载重装一次。
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+
+      - name: Build debug APK
+        working-directory: kmp
+        shell: bash
+        run: ./gradlew :app:androidApp:assembleDebug --no-daemon --console=plain --stacktrace
+
+      - name: Collect APK info
+        id: apk
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          apk="$(ls -1 kmp/app/androidApp/build/outputs/apk/debug/*.apk | head -n1)"
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "${sdk}" ]; then
+            echo "::error title=找不到 Android SDK::ANDROID_HOME 与 ANDROID_SDK_ROOT 均未设置。"
+            exit 1
+          fi
+          build_tools="$(ls -d "${sdk}"/build-tools/* | sort -V | tail -n1)"
+
+          badging="$("${build_tools}/aapt2" dump badging "${apk}")"
+          package_name="$(printf '%s\n' "${badging}" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n1)"
+          version_name="$(printf '%s\n' "${badging}" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -n1)"
+          signer="$("${build_tools}/apksigner" verify --print-certs "${apk}" \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1)"
+
+          # 更新检查依赖文件名里的 arm64-v8a（见 AppUpdateManager.parseLatestRelease）
+          out="${RUNNER_TEMP}/zaomeng-${version_name}-arm64-v8a-debug.apk"
+          cp "${apk}" "${out}"
+
+          {
+            echo "path=${out}"
+            echo "version=${version_name}"
+            echo "package=${package_name}"
+            echo "signer=${signer:-<未签名>}"
+            echo "sha256=$(sha256sum "${out}" | cut -d' ' -f1)"
+            echo "size=$(stat -c%s "${out}")"
+          } >> "${GITHUB_OUTPUT}"
+
+          echo "包名：${package_name}，版本：${version_name}，签名：${signer:-<未签名>}"
+
+      - name: Write job summary
+        shell: bash
+        env:
+          SIGN_LABEL: ${{ steps.signing.outputs.label }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### 造梦 ${{ steps.apk.outputs.version }} 调试包"
+            echo ""
+            echo "| 项 | 值 |"
+            echo "| --- | --- |"
+            echo "| 包名 | \`${{ steps.apk.outputs.package }}\` |"
+            echo "| 签名来源 | ${SIGN_LABEL} |"
+            echo "| 证书指纹 | \`${{ steps.apk.outputs.signer }}\` |"
+            echo "| sha256 | \`${{ steps.apk.outputs.sha256 }}\` |"
+            echo "| 大小 | ${{ steps.apk.outputs.size }} 字节 |"
+            echo ""
+            echo "在本次运行页面的 **Artifacts** 区域下载（保留 14 天）。"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: zaomeng-${{ steps.apk.outputs.version }}-debug-apk
+          path: ${{ steps.apk.outputs.path }}
+          retention-days: 14
+          if-no-files-found: error

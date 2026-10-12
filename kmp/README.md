@@ -68,6 +68,26 @@ kmp/
 
 需要 JDK 17+（推荐 21）与 Android SDK。
 
+### 一条命令构建 APK
+
+```bash
+# 在仓库根目录执行（不是 kmp/ 里）
+./scripts/build-android-apk.sh           # debug 包（默认）
+./scripts/build-android-apk.sh release   # release 包（需要 kmp/keystore.properties 才会签名）
+```
+
+脚本会自动探测 `JAVA_HOME` 与 Android SDK，并绕过 arm64 主机上 AGP 自带 aapt2
+是 x86-64 可执行文件的问题；构建完成后打印产物路径与签名指纹。
+可用 `JAVA_HOME` / `ANDROID_HOME` / `AAPT2_OVERRIDE` 显式覆盖探测结果。
+
+### 不用本地环境
+
+推送到 `main`（改动 `kmp/**`）或手动触发 **Actions → Build APK**，
+就能在该次运行的 **Artifacts** 区域下载 APK，**不需要配置任何 secret**。
+签名规则与限制见 [`docs/release-android.md`](../docs/release-android.md)。
+
+### Gradle 直接调用
+
 ```powershell
 # Android debug APK
 .\gradlew.bat :app:androidApp:assembleDebug

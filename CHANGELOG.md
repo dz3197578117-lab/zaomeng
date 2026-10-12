@@ -46,6 +46,11 @@
   不再依赖仓库里手工提交的二进制；`dist/*.apk` 移出版本控制
   （此前每发一版仓库体积 +39 MB）。
 - 新增 [`CHANGELOG.md`](CHANGELOG.md) 与 [`docs/release-android.md`](docs/release-android.md)。
+- 新增 **Actions → Build APK** 工作流：推送到 `main`（改动 `kmp/**`）或手动触发即可构建，
+  产物在该次运行的 **Artifacts** 区域下载，**不需要配置任何 secret**。
+- 新增 [`scripts/build-android-apk.sh`](scripts/build-android-apk.sh)：一条命令本地构建，
+  自动探测 JDK 与 Android SDK，并用「实测能否解析当前平台 `android.jar`」的方式挑选可用
+  aapt2（arm64 主机上 AGP 自带的 aapt2 是 x86-64 ELF，无法执行）。
 
 ### ⚠️ 破坏性变更：需要卸载重装一次
 

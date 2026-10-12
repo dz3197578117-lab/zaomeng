@@ -154,8 +154,15 @@ gh workflow run release.yml -f tag=v2.1.5
 ## 关于 `dist/` 与手工预览包
 
 - `dist/*.apk` 已移出版本控制，Release 附件由 CI 构建。
-- 本地验证：`./gradlew :app:androidApp:assembleDebug`。
-  若本地存在 `kmp/keystore.properties`，产物会用专用密钥签名（可以覆盖安装已发布版本）；
+- **不想配 secret 也能拿到 APK**：推送到 `main`（改动 `kmp/**`）或手动触发
+  **Actions → Build APK**，在该次运行的 **Artifacts** 区域下载即可。
+  该工作流不需要任何 secret：
+  - 已配置 4 个签名 secret 时，用专用密钥签名，与正式发布包一致；
+  - 未配置时回退到**缓存住的** debug 密钥，产物可反复覆盖安装，
+    但不能覆盖安装正式版；缓存被清除后会生成新密钥，届时需卸载重装一次。
+- 本地构建：`./scripts/build-android-apk.sh`（在仓库根目录执行）。
+  自动探测 JDK / Android SDK，并实测挑选可用的 aapt2。
+  若本地存在 `kmp/keystore.properties`，产物会用专用密钥签名（可覆盖安装已发布版本）；
   没有该文件时会退回机器 debug 密钥，**那种包不能用于发布**。
 
 本地配置示例（`kmp/keystore.properties`，已被 gitignore）：
