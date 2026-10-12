@@ -6,7 +6,19 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
-## [2.1.8] - 未发布
+## [2.1.9] - 未发布
+
+### 新增
+
+- **人物时间线随剧情推进**：每轮提交后服务端推导当前时间点并写回会话
+  （`persona_chapter`），从会话起始章起每 4 轮推进一章。
+  - 推进是**推导**而非累加：同一 `turn_count` 永远算出同一个值，
+    因此断线重连、重试同一轮都不会重复推进（与 2.1.6 的 turnId 幂等叠加）；
+  - 会话上方展示**当前时间点**（如「时间点：第 5 章」），
+    可随时看到角色此刻按哪一章的身份与认知说话；
+  - 不分章、或没有人设弧线时不展示，行为与之前一致。
+
+## [2.1.8] - 2026-10-13
 
 ### 新增
 
@@ -217,7 +229,8 @@
 早期版本（含从上游造梦 2.0 继续改动的部分）逐文件清单见
 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)。
 
-[2.1.8]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.7...HEAD
+[2.1.9]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.8...HEAD
+[2.1.8]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.7...v2.1.8
 [2.1.7]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.6...v2.1.7
 [2.1.6]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.5...v2.1.6
 [2.1.5]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.4...v2.1.5

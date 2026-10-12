@@ -222,4 +222,45 @@ class PersonaArcTest {
         assertNull(arcStateForChapter(newArc("run-1", "novel-1", "甲"), 1), "空弧线返回 null")
         assertNull(arcStateForChapter(JsonObject(emptyMap()), 1), "损坏的弧线返回 null")
     }
+
+    // ---------- 时间点推进（B-3） ----------
+
+    private fun sessionOf(turnCount: Int, start: Int = 0) = buildJsonObject {
+        if (start > 0) put("start_chapter", start)
+        put("turn_count", turnCount)
+    }
+
+    @Test
+    fun `derived chapter advances every N turns from the start chapter`() {
+        assertEquals(1, derivePersonaChapter(sessionOf(0)), "没有起始章时从第 1 章开始")
+        assertEquals(1, derivePersonaChapter(sessionOf(1)))
+        assertEquals(
+            1,
+            derivePersonaChapter(sessionOf(TURNS_PER_PERSONA_CHAPTER - 1)),
+            "未满一轮不推进",
+        )
+        assertEquals(2, derivePersonaChapter(sessionOf(TURNS_PER_PERSONA_CHAPTER)))
+        assertEquals(3, derivePersonaChapter(sessionOf(TURNS_PER_PERSONA_CHAPTER * 2)))
+        assertEquals(
+            6,
+            derivePersonaChapter(sessionOf(TURNS_PER_PERSONA_CHAPTER * 2, start = 4)),
+            "起始章是推进的起点",
+        )
+    }
+
+    @Test
+    fun `derived chapter is stable so repeated commits cannot advance twice`() {
+        // 幂等在这里是**结构性**保证：不读旧值、不累加，只由 turn_count 推导。
+        // 因此同一轮重复提交（turn_count 不变）算出的时间点必然相同。
+        val manifest = sessionOf(turnCount = 9, start = 2)
+
+        val first = derivePersonaChapter(manifest)
+        repeat(5) { assertEquals(first, derivePersonaChapter(manifest), "同一 turn_count 必须得到同一个值") }
+        assertEquals(2 + 9 / TURNS_PER_PERSONA_CHAPTER, first)
+    }
+
+    @Test
+    fun `derived chapter tolerates a missing session`() {
+        assertEquals(1, derivePersonaChapter(null), "没有会话时按第 1 章")
+    }
 }

@@ -16,6 +16,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -424,8 +425,12 @@ class DialogueService(
                 manifest = sessionManifest,
                 deriveState = false,
             )
+            // 时间点推进（B-3）：由 start_chapter 与刚更新过的 turn_count **推导**，而不是累加。
+            // 同一 turn_count 永远算出同一个值，所以重复提交不会重复推进；
+            // 上面的 turnId 幂等短路又保证重复提交不会让 turn_count 增加，两者叠加即幂等。
+            val withTimePoint = applyPersonaTimePoint(runId, sessionId)
             pluginRuleEngine?.afterTurn(runId, sessionId, turnId, message, responses)
-            if (pluginRuleEngine == null) committed else storageService.loadSessionManifest(runId, sessionId)
+            if (pluginRuleEngine == null) withTimePoint else storageService.loadSessionManifest(runId, sessionId)
         }
         enqueueBackgroundPostTurn(
             runId = runId,
@@ -436,6 +441,25 @@ class DialogueService(
         )
         return updated
     }
+
+    /**
+     * 把推导出的时间点（章）写回会话 manifest。
+     *
+     * 走 StorageService 的原子读改写，与会话其他字段共用同一把锁，
+     * 不会覆盖后台派生任务刚写进去的内容；值没变就不写，避免无谓 IO。
+     */
+    private fun applyPersonaTimePoint(runId: String, sessionId: String): JsonObject =
+        storageService.updateSessionManifest(runId, sessionId) { latest ->
+            val derived = derivePersonaChapter(latest)
+            if (latest["persona_chapter"]?.jsonPrimitive?.intOrNull == derived) {
+                latest
+            } else {
+                buildJsonObject {
+                    latest.forEach { (key, value) -> if (key != "persona_chapter") put(key, value) }
+                    put("persona_chapter", derived)
+                }
+            }
+        }
 
     /** Run derived memory/state work off the response path and coalesce bursts per session. */
     private fun enqueueBackgroundPostTurn(

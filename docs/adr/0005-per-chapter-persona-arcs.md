@@ -1,6 +1,6 @@
 # ADR-0005：人物人设弧线（逐阶段状态）与按时间点注入
 
-- 状态：待实施
+- 状态：已实施（B-1 / B-2 / B-3 全部落地，随 2.1.8 与 2.1.9 发布）
 - 日期：2026-10-13
 
 ## 背景
@@ -204,6 +204,30 @@ artifacts/characters/<novelId>/<角色>/
 3. **推进与展示**：`commitTurn` 后按场景进度幂等推进 `persona_arc_index`；
    会话页展示「当前时间点：中段（第 10-21 章）」；提供按章查看/手动切换时间点的入口。
    *验证*：连续推过多章后状态确实切换；重复提交不重复推进；手动切换后可回退。
+
+## 实施结果
+
+三步均已落地（B-1 随 2.1.8、B-2 随 2.1.8、B-3 随 2.1.9）。实际实现与最初设想有几处差异，记录如下：
+
+| 项 | 最初设想 | 实际做法 | 原因 |
+| --- | --- | --- | --- |
+| 章节对齐 | 改 `DistillExcerptBuilder` 记录字符区间，取不到时按比例估算 | 直接用 `NovelChapterIndexService` 的 `chapters[{index, start_char, end_char}]` 与单章正文 | 核查发现区间本就现成，`estimated` 兜底不再需要 |
+| 生成粒度 | 复用体积分块（前/中/后段，只有 3 个时间点） | **逐章**（用户决定，端侧也逐章） | 3 个时间点达不到「逐章发展」 |
+| 提示词位置 | 新增一份要三处同步的提示词文件 | 放进既有的 `distill/guidance.yaml` 与 `dialogue/turn_system.yaml` | 少一份同步副本，降低漂移风险 |
+| 时间点推进 | 「随场景进度推进」 | 由 `start_chapter` + `turn_count` **推导**（每 4 轮一章） | 会话里没有显式的「当前第几章」信号；推导让幂等成为**结构性**保证而非纪律要求 |
+
+代码位置：
+
+- `PersonaArcService`（`:server` services）：逐章抽取、`arc.json` 落盘、幂等续跑与单章重试；
+- `DistillPromptBuilder.buildPersonaArcMessages` + `persona_arc_instruction` / `persona_arc_output_format`；
+- `DialoguePayloadBuilder.buildPersonaContexts`（注入 `arc_state` / `arc_time_point`）+
+  `DialoguePromptBuilder.compactActivePersonaState`（活跃状态）+ `time_point_persona_rule`（不剧透）；
+- `DialogueService.applyPersonaTimePoint`（推进写回）+ `DialogueSessionDto.personaChapter`（界面展示）；
+- 回归测试 `PersonaArcTest`：白名单解析、同章替换不追加、续跑跳过、就近取段、
+  时间点推导与稳定性（同一 `turn_count` 反复推导结果一致）。
+
+**尚未验证**：真实的端到端蒸馏（真实小说 + 真实模型 → 产出 `arc.json`）不在自动化测试覆盖范围内，
+需要手动整理一本书卷，确认弧线章数与章节索引吻合、且不同起始章开局时角色人设确实不同。
 
 ## 相关
 

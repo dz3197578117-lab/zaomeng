@@ -399,6 +399,32 @@ internal fun readPersonaArc(
 }
 
 /**
+ * 每经过多少轮对话，时间点往后推进一章。
+ *
+ * 会话里没有「当前第几章」的显式信号，因此推进只能**推导**：
+ * 见 [derivePersonaChapter]。改成推导而非累加，是为了让幂等成为结构性保证——
+ * 同一 `turn_count` 永远算出同一个值，重复提交（同一 turnId）不会多推进一次。
+ */
+internal const val TURNS_PER_PERSONA_CHAPTER = 4
+
+/**
+ * 推导会话当前的时间点（章）。
+ *
+ * `start_chapter` 为起点，每 [TURNS_PER_PERSONA_CHAPTER] 轮推进一章。
+ * 不在这里夹到弧线长度：读取侧 [arcStateForChapter] 超出末尾时会取最后一段，
+ * 所以就算推导值超出弧线也不会出错。
+ *
+ * 纯推导（不读旧值、不累加），因此对同一份 manifest 反复调用结果一致。
+ */
+internal fun derivePersonaChapter(session: JsonObject?): Int {
+    val start = session?.get("start_chapter")?.jsonPrimitive?.intOrNull ?: 0
+    val base = if (start > 0) start else 1
+    val turnCount = session?.get("turn_count")?.jsonPrimitive?.intOrNull ?: 0
+    if (turnCount <= 0) return base
+    return base + turnCount / TURNS_PER_PERSONA_CHAPTER
+}
+
+/**
  * 解析会话的「当前时间点（章）」。
  *
  * 优先用随剧情推进写回的 `persona_chapter`（B-3），否则回退到会话起始章

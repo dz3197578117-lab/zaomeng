@@ -100,6 +100,16 @@ internal fun ChatContextStrip(session: DialogueSessionDto, onOpenTools: () -> Un
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                // 人物时间线位置：让用户知道角色此刻按哪一章的身份与认知在说话。
+                if (summary.timePoint.isNotBlank()) {
+                    Text(
+                        summary.timePoint,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 consistencyIssueCount?.let { count ->
                     Text(
                         "$count 项一致性提醒，点击查看工具与详情",

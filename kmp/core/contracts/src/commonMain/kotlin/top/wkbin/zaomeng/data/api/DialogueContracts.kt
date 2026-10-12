@@ -100,6 +100,13 @@ data class SessionManifest(
     @SerialName("start_chapter") val startChapter: Int = 0,
     /** 起始章节标题快照，便于列表/详情展示（原文重新分章后仍保留当时语义）。 */
     @SerialName("start_chapter_title") val startChapterTitle: String = "",
+    /**
+     * 当前时间点（章）：对话推进到的人物时间线位置，用于按时间点取用人设弧线。
+     *
+     * 由服务端在每轮提交后**推导**（`start_chapter` 起、每若干轮推进一章）并写回会话，
+     * 因此重复提交同一轮不会重复推进。0 表示尚未推导过，此时按 `start_chapter` 处理。
+     */
+    @SerialName("persona_chapter") val personaChapter: Int = 0,
     @SerialName("created_at") val createdAt: String = "",
     @SerialName("updated_at") val updatedAt: String = "",
     val title: String = "",
@@ -142,6 +149,15 @@ data class DialogueSessionDto(
     val status: String = "ready",
     @SerialName("turns") val turns: List<JsonObject> = emptyList(),
     @SerialName("turn_count") val turnCount: Int = 0,
+    /** 本会话从原文第几章开始（1 起，0 表示从头开始）。 */
+    @SerialName("start_chapter") val startChapter: Int = 0,
+    /** 起始章节标题快照（原文重新分章后仍保留当时语义）。 */
+    @SerialName("start_chapter_title") val startChapterTitle: String = "",
+    /**
+     * 当前时间点（章）：人物时间线位置，服务端每轮提交后推导并写回，
+     * 用于按时间点取用人设弧线。0 表示尚未推导过，此时按 [startChapter] 处理。
+     */
+    @SerialName("persona_chapter") val personaChapter: Int = 0,
     @SerialName("current_turn_id") val currentTurnId: String = "",
     @SerialName("created_at") val createdAt: String = "",
     @SerialName("updated_at") val updatedAt: String = "",
