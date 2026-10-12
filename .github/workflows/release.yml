@@ -129,13 +129,29 @@ jobs:
             exit 1
           fi
           build_tools="$(ls -d "${sdk}"/build-tools/* | sort -V | tail -n1)"
+          echo "build-tools: ${build_tools}"
 
           # 1) 产物签名必须等于配置的发布指纹，否则用户无法覆盖安装。
-          signer="$("${build_tools}/apksigner" verify --print-certs "${apk}" \
-            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1)"
+          #    提取不锚定行首、先统一小写，并把原始输出打进日志；
+          #    取不到指纹时**必须当失败处理**——绝不能把"解析失败"当成"校验通过"。
+          apksigner_bin="${build_tools}/apksigner"
+          certs_raw="$("${apksigner_bin}" verify --print-certs "${apk}" 2>&1 || true)"
+          echo "----- apksigner verify --print-certs (raw) -----"
+          printf '%s\n' "${certs_raw}"
+          echo "----- end raw -----"
+          signer="$(printf '%s\n' "${certs_raw}" | tr -d '\r' | tr 'A-Z' 'a-z' \
+            | sed -n 's/.*sha-256 digest:[[:space:]]*//p' \
+            | tr -d ':' | tr -d '[:space:]' | head -n1)"
+          if [ -z "${signer}" ]; then
+            {
+              echo "::error title=无法读取产物签名::apksigner 没有输出可解析的 SHA-256 指纹。"
+              echo "原始输出见上方；若显示 DOES NOT VERIFY，说明 keystore.properties 没生效。"
+            }
+            exit 1
+          fi
           if [ "${signer}" != "${EXPECTED_SIGNER_SHA256}" ]; then
             {
-              echo "::error title=产物签名不匹配::期望 ${EXPECTED_SIGNER_SHA256}，实际 ${signer:-<未签名>}。"
+              echo "::error title=产物签名不匹配::期望 ${EXPECTED_SIGNER_SHA256}，实际 ${signer}。"
               echo "通常是 keystore.properties 没生效（检查 storeFile 路径与别名）。"
             }
             exit 1

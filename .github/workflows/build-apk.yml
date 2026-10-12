@@ -102,12 +102,29 @@ jobs:
             exit 1
           fi
           build_tools="$(ls -d "${sdk}"/build-tools/* | sort -V | tail -n1)"
+          echo "build-tools: ${build_tools}"
 
           badging="$("${build_tools}/aapt2" dump badging "${apk}")"
           package_name="$(printf '%s\n' "${badging}" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n1)"
           version_name="$(printf '%s\n' "${badging}" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -n1)"
-          signer="$("${build_tools}/apksigner" verify --print-certs "${apk}" \
-            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1)"
+
+          # 签名提取：不锚定行首、先统一小写，并把原始输出打进日志。
+          # 之前用 's/^Signer #1 …/' 严格匹配，在 runner 上静默取到空值，
+          # 把已签名的包报成「未签名」——这类解析失败必须能在日志里直接看到原因。
+          signer=""
+          apksigner_bin="${build_tools}/apksigner"
+          if [ -x "${apksigner_bin}" ]; then
+            "${apksigner_bin}" --version 2>&1 | sed 's/^/apksigner version: /' || true
+            certs_raw="$("${apksigner_bin}" verify --print-certs "${apk}" 2>&1 || true)"
+            echo "----- apksigner verify --print-certs (raw) -----"
+            printf '%s\n' "${certs_raw}"
+            echo "----- end raw -----"
+            signer="$(printf '%s\n' "${certs_raw}" | tr -d '\r' | tr 'A-Z' 'a-z' \
+              | sed -n 's/.*sha-256 digest:[[:space:]]*//p' \
+              | tr -d ':' | tr -d '[:space:]' | head -n1)"
+          else
+            echo "::warning title=找不到 apksigner::${apksigner_bin} 不存在，无法报告签名指纹。"
+          fi
 
           # 更新检查依赖文件名里的 arm64-v8a（见 AppUpdateManager.parseLatestRelease）
           out="${RUNNER_TEMP}/zaomeng-${version_name}-arm64-v8a-debug.apk"
