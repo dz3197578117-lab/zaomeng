@@ -10,7 +10,13 @@
 #   kmp/app/shared/src/commonMain/composeResources/files/prompts/** ← Compose Resources 副本
 #
 # 只改其中一处就会出现「改了提示词但运行时不生效」这种极难排查的问题。
-# 这里逐字节比对，任何一处缺失或不一致都判失败。
+#
+# 检查是**双向**的：
+#   正向：prompts/** 的每个文件必须在两处副本里逐字节一致；
+#   反向：两处副本里不能有 prompts/** 没有的文件（孤儿）。
+# 反向检查来自一次真实事故：distill 下有 6 个被提示词实际引用的文件
+# （output_schema / style_differ / logic_constraint / validation_policy /
+#   distill_prompt / relation_prompt）只存在于打包副本里，没有可审阅的源。
 #
 # 不参与同步的：`prompts/AGENTS.md`、`prompts/README.md` 与 Python 文件（`*.py`）。
 #
@@ -57,8 +63,30 @@ while IFS= read -r file; do
   done
 done < <(find "${SRC}" -type f | sort)
 
+# 反向：副本里不能有 prompts/ 没有的文件（孤儿）。
+# 这类文件只能在副本里改、没有可审阅的源，两处副本还可能悄悄分叉。
+ORPHANS=0
+for pair in "assets:${DEST_ASSETS}" "compose:${DEST_COMPOSE}"; do
+  label="${pair%%:*}"
+  dest="${pair#*:}"
+  [ -d "${dest}" ] || continue
+  while IFS= read -r target; do
+    rel="${target#"${dest}/"}"
+    case "${rel}" in
+      AGENTS.md|README.md|*.py) continue ;;
+    esac
+    if [ ! -f "${SRC}/${rel}" ]; then
+      printf '  ❌ [%s] 孤儿文件（prompts/ 里没有对应源）：%s\n' \
+        "${label}" "${target#"${ROOT}/"}"
+      printf '        修法：cp 到 prompts/%s，让它成为可审阅的源\n' "${rel}"
+      ORPHANS=$((ORPHANS + 1))
+      FAIL=1
+    fi
+  done < <(find "${dest}" -type f | sort)
+done
+
 if [ "${FAIL}" -eq 0 ]; then
-  printf '  ✅ %d 个提示词文件在三处完全一致\n' "${CHECKED}"
+  printf '  ✅ %d 个提示词文件在三处完全一致，且副本中无孤儿\n' "${CHECKED}"
 else
   echo
   echo "     修法：以 prompts/** 为准，把内容同步到上面两处，例如"
