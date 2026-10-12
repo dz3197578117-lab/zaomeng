@@ -34,6 +34,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      # 每次推送都把「发版前必查」跑一遍：版本号唯一来源是否合法、对应版本有没有
+      # 发布说明、CHANGELOG 有没有条目、有没有人把版本号又写回源码。
+      # 这些以前都是发版当天才发现，现在提前挡在 main 上。
+      - name: Check release metadata consistency
+        shell: bash
+        run: bash scripts/check-release-ready.sh --ci
+
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:

@@ -196,11 +196,17 @@ jobs:
         run: |
           set -euo pipefail
           notes=".github/release-notes/${TAG}.md"
-          if [ -f "${notes}" ]; then
-            cp "${notes}" "${RUNNER_TEMP}/notes.md"
-          else
-            echo "发布 ${TAG}。" > "${RUNNER_TEMP}/notes.md"
+          # 缺发布说明就失败，不用占位文本糊过去：用户看不到「这版改了什么」，
+          # 而且这类遗漏应该在发布前被发现，而不是发出去之后。
+          if [ ! -f "${notes}" ]; then
+            {
+              echo "::error title=缺少发布说明::找不到 ${notes}"
+              echo "每个 tag 都必须有对应发布说明。参考 .github/release-notes/v2.1.5.md 新建，"
+              echo "并同步在 CHANGELOG.md 顶部加一节（scripts/check-release-ready.sh 会检查这些）。"
+            }
+            exit 1
           fi
+          cp "${notes}" "${RUNNER_TEMP}/notes.md"
           {
             echo ""
             echo "### 校验"

@@ -33,6 +33,21 @@
 
 逐文件的完整清单（相对上游：新增 35 / 修改 67 / 删除 2，含复核方法）见 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)。
 
+## 维护
+
+换机器或在新环境继续维护、发版，请看：
+
+- [`docs/maintainer-setup.md`](docs/maintainer-setup.md) —— 环境准备、**恢复发布签名密钥**、换机器清单、以及一堆实际踩过的环境坑（aapt2 架构、JVM 库污染、网络与 DNS 等）
+- [`docs/release-android.md`](docs/release-android.md) —— Android 发布流程与签名密钥管理
+
+自检与构建脚本（都在仓库根目录执行）：
+
+```bash
+./scripts/check-env.sh            # 环境自检：缺什么会明确告诉你
+./scripts/build-android-apk.sh    # 一条命令构建 APK
+./scripts/check-release-ready.sh  # 发版前自检
+```
+
 ## 项目构成
 
 | 目录 | 说明 | 维护状态 |

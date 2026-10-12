@@ -33,6 +33,21 @@ Two things were the focus: **it runs without any network**, and **Chinese model 
 
 A file-by-file manifest (35 added / 67 modified / 2 deleted against upstream, with a reproduction method) is in [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md).
 
+## Maintenance
+
+Moving to a new machine, or continuing maintenance and releases from a fresh environment:
+
+- [`docs/maintainer-setup.md`](docs/maintainer-setup.md) — environment setup, **restoring the release signing key**, a new-machine checklist, and the environment traps actually hit in practice (aapt2 architecture, JVM library pollution, network/DNS)
+- [`docs/release-android.md`](docs/release-android.md) — the Android release flow and signing-key management
+
+Scripts (run from the repository root):
+
+```bash
+./scripts/check-env.sh            # environment self-check
+./scripts/build-android-apk.sh    # one-command APK build
+./scripts/check-release-ready.sh  # pre-release self-check
+```
+
 ## Project layout
 
 | Path | Description | Status |

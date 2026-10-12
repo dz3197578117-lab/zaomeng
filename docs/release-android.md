@@ -3,6 +3,9 @@
 本文件说明如何发布 Android 版本、如何配置签名密钥，以及
 [`.github/workflows/release.yml`](../.github/workflows/release.yml) 的前置条件。
 
+> 换机器或在新环境搭环境（JDK / SDK / aapt2 / 恢复密钥）见
+> [`maintainer-setup.md`](maintainer-setup.md)；一条命令自检用 `scripts/check-env.sh`。
+
 ## 当前状态：2.1.4 是一次性重装版本
 
 2.1.2 / 2.1.3 用的是 Android SDK **自动生成的 debug 密钥**，它只存在于当时构建的
