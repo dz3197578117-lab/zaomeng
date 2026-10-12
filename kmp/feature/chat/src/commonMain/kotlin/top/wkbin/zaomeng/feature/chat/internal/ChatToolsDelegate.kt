@@ -88,7 +88,7 @@ internal class ChatToolsDelegate(
         invokePluginAction(action, selection = "", seedText = current.draft)
     }
 
-    fun requestDirectorOptions(goal: String, action: String = "advance") {
+    fun requestDirectorOptions(goal: String, action: String = "advance", force: Boolean = false) {
         val normalizedGoal = goal.trim()
         if (normalizedGoal.isBlank()) {
             updateState { it.copy(error = "请先写下希望剧情怎样发展。") }
@@ -100,10 +100,16 @@ internal class ChatToolsDelegate(
                 sessionId,
                 goal = normalizedGoal,
                 action = action,
+                force = force,
             ).extractDirectorOptions()
             updateState {
                 it.copy(
-                    toolOptionsTitle = if (action == "fourth_wall") "第四面墙方案" else "剧情导演方案",
+                    toolOptionsTitle = when {
+                        action == "fourth_wall" && force -> "第四面墙方案（强制执行）"
+                        action == "fourth_wall" -> "第四面墙方案"
+                        force -> "剧情导演方案（强制执行）"
+                        else -> "剧情导演方案"
+                    },
                     toolOptions = options,
                     notice = if (options.isEmpty()) "这次没有生成可用方案。" else "",
                 )

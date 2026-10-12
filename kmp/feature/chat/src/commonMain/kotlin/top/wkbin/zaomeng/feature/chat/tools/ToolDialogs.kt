@@ -59,9 +59,11 @@ internal fun DirectorToolDialog(
     visible: Boolean,
     goal: String,
     action: String,
+    force: Boolean,
     enabled: Boolean,
     onGoalChange: (String) -> Unit,
     onActionChange: (String) -> Unit,
+    onForceChange: (Boolean) -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -86,6 +88,15 @@ internal fun DirectorToolDialog(
                         }
                     }
                 }
+
+                // 强制执行：对所有导演动作（含第四面墙）都可用。
+                // 角色仍可保留情绪与抱怨，但必须在本回合落实指令，不得拒绝、弱化或推迟。
+                FilterChip(
+                    selected = force,
+                    onClick = { onForceChange(!force) },
+                    label = { Text("强制执行：角色必须落实，不得拒绝或推迟") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
 
                 Text(
                     text = "🎲 突发意外与灵感节拍：",

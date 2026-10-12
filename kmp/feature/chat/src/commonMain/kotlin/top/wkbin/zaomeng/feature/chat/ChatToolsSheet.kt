@@ -77,7 +77,7 @@ import kotlin.math.roundToInt
 fun ChatToolsSheet(
     state: ChatUiState,
     onDismiss: () -> Unit,
-    onDirector: (String, String) -> Unit,
+    onDirector: (String, String, Boolean) -> Unit,
     onCorrectLatest: () -> Unit,
     onDeepReviewLatest: () -> Unit,
     onBranchTurn: (String) -> Unit,
@@ -99,6 +99,7 @@ fun ChatToolsSheet(
     var directorDialog by remember { mutableStateOf(false) }
     var directorGoal by remember { mutableStateOf("") }
     var directorAction by remember { mutableStateOf("advance") }
+    var directorForce by remember { mutableStateOf(false) }
     var memoryDraft by remember { mutableStateOf<DialogueMemoryDto?>(null) }
     var memorySaveBaseline by remember { mutableStateOf<Long?>(null) }
     var pendingMemoryDeletion by remember { mutableStateOf<DialogueMemoryDto?>(null) }
@@ -134,12 +135,14 @@ fun ChatToolsSheet(
         visible = directorDialog,
         goal = directorGoal,
         action = directorAction,
+        force = directorForce,
         enabled = toolsEnabled,
         onGoalChange = { directorGoal = it },
         onActionChange = { directorAction = it },
+        onForceChange = { directorForce = it },
         onConfirm = {
             directorDialog = false
-            onDirector(directorGoal, directorAction)
+            onDirector(directorGoal, directorAction, directorForce)
         },
         onDismiss = { directorDialog = false },
     )

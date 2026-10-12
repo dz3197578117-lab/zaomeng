@@ -189,6 +189,7 @@ fun Route.dialogueAdvancedRoutes(service: DialogueAdvancedService) {
                 goal = request.goal,
                 action = request.action,
                 optionCount = request.optionCount,
+                forceExecute = request.forceExecute,
             )
         }
     }

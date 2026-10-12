@@ -644,6 +644,7 @@ class DialogueAdvancedService(
         goal: String,
         action: String,
         optionCount: Int,
+        forceExecute: Boolean = false,
     ): JsonObject {
         require(goal.isNotBlank() && goal.length <= 240) { "goal 需为 1-240 字" }
         val normalizedAction = action.trim().lowercase().ifBlank { "advance" }
@@ -659,6 +660,7 @@ class DialogueAdvancedService(
             goal = goal,
             action = normalizedAction,
             optionCount = count,
+            forceExecute = forceExecute,
         )
         val messages = DialoguePromptBuilder(loader).buildDialogueDirectorLlmMessages(
             payload = payload,

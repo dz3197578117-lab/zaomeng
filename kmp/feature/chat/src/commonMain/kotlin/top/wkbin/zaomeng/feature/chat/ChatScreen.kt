@@ -275,9 +275,9 @@ fun ChatScreen(
         DirectorDialog(
             enabled = state.canUseTools,
             onDismiss = { directorOpen = false },
-            onGenerate = { goal, action ->
+            onGenerate = { goal, action, force ->
                 directorOpen = false
-                viewModel.requestDirectorOptions(goal, action)
+                viewModel.requestDirectorOptions(goal, action, force)
             },
         )
     }

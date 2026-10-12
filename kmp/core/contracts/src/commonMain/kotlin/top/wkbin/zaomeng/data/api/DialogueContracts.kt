@@ -385,6 +385,13 @@ data class DialogueDirectorRequest(
     val goal: String,
     val action: String = "advance",
     @SerialName("option_count") val optionCount: Int = 3,
+    /**
+     * 强制执行：要求角色在本回合**必须落实**该指令，不得拒绝、弱化或推迟。
+     *
+     * 角色仍可保留情绪化语气（不满、抱怨、讨价还价），但结果必须发生。
+     * 对不发该字段的旧客户端行为完全不变（默认 false）。
+     */
+    @SerialName("force_execute") val forceExecute: Boolean = false,
 )
 
 @Serializable

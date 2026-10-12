@@ -681,8 +681,8 @@ class ChatViewModel(
 
     fun invokePluginAction(action: ChatPluginAction) = toolsDelegate.invokePluginAction(action)
 
-    fun requestDirectorOptions(goal: String, action: String = "advance") =
-        toolsDelegate.requestDirectorOptions(goal, action)
+    fun requestDirectorOptions(goal: String, action: String = "advance", force: Boolean = false) =
+        toolsDelegate.requestDirectorOptions(goal, action, force)
 
     fun chooseToolOption(option: ChatToolOption) = toolsDelegate.chooseToolOption(option)
 

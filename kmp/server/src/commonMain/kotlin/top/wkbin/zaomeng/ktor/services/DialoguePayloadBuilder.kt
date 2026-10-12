@@ -1168,6 +1168,7 @@ class DialoguePayloadBuilder(
         goal: String,
         action: String = "advance",
         optionCount: Int = 3,
+        forceExecute: Boolean = false,
     ): Map<String, Any?> {
         val normalizedGoal = DialoguePromptRules.trimSummaryText(goal.trim(), 240)
         if (normalizedGoal.isEmpty()) throw IllegalArgumentException("请先填写导演目标。")
@@ -1180,6 +1181,9 @@ class DialoguePayloadBuilder(
         payload["director_goal"] = normalizedGoal
         payload["director_action"] = normalizedAction
         payload["option_count"] = optionCount.coerceIn(2, 4)
+        // 强制执行：提示词据此追加「必须落实、不得拒绝/弱化/推迟」的约束。
+        // 旧客户端不发该字段时为 false，行为与之前完全一致。
+        payload["director_force"] = forceExecute
         payload["latest_exchange"] = buildLatestExchange(session)
         return payload
     }

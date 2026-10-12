@@ -343,8 +343,9 @@ class DialogueRepositoryImpl(
         sessionId: String,
         goal: String,
         action: String,
+        force: Boolean,
     ): JsonObject = repositoryRequest {
-        ktorDialogue.directorOptions(runId, sessionId, goal, action)
+        ktorDialogue.directorOptions(runId, sessionId, goal, action, force)
     }
 
     override suspend fun getSceneTension(runId: String, sessionId: String): SceneTensionDto = repositoryRequest {

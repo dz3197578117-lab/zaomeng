@@ -61,6 +61,7 @@ class PromptLoader(private val source: PromptSource) {
         optionCount: Int = 3,
         retry: Boolean = false,
         action: String = "advance",
+        force: Boolean = false,
     ): String {
         val config = loadPromptConfig("dialogue", "director")
         val parts = mutableListOf(
@@ -72,6 +73,11 @@ class PromptLoader(private val source: PromptSource) {
             parts.add(config.getString("fourth_wall_output_format"))
         } else {
             parts.add(config.getString("output_format"))
+        }
+        // 强制执行：追加约束，要求角色必须落实指令（仍可保留情绪，但不得拒绝/弱化/推迟）。
+        // 对所有导演动作（含第四面墙）都生效。
+        if (force) {
+            config["force_execute_instruction"]?.let { parts.add(it.toString()) }
         }
         if (retry) {
             parts.add(config.getString("retry_instruction"))

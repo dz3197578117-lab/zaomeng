@@ -121,10 +121,11 @@ internal fun ChatContextStrip(session: DialogueSessionDto, onOpenTools: () -> Un
 internal fun DirectorDialog(
     enabled: Boolean,
     onDismiss: () -> Unit,
-    onGenerate: (goal: String, action: String) -> Unit,
+    onGenerate: (goal: String, action: String, force: Boolean) -> Unit,
 ) {
     var goal by rememberSaveable { mutableStateOf("") }
     var action by rememberSaveable { mutableStateOf("advance") }
+    var force by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (action == "fourth_wall") "第四面墙" else "剧情导演") },
@@ -145,6 +146,14 @@ internal fun DirectorDialog(
                         }
                     }
                 }
+                // 强制执行：对所有导演动作（含第四面墙）都可用。
+                // 角色仍可保留情绪与抱怨，但必须在本回合落实指令，不得拒绝、弱化或推迟。
+                FilterChip(
+                    selected = force,
+                    onClick = { force = !force },
+                    label = { Text("强制执行：角色必须落实，不得拒绝或推迟") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 OutlinedTextField(
                     value = goal,
                     onValueChange = { goal = it },
@@ -156,7 +165,7 @@ internal fun DirectorDialog(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(
                         onDone = {
-                            if (enabled && goal.isNotBlank()) onGenerate(goal, action)
+                            if (enabled && goal.isNotBlank()) onGenerate(goal, action, force)
                         },
                     ),
                 )
@@ -164,7 +173,7 @@ internal fun DirectorDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onGenerate(goal, action) },
+                onClick = { onGenerate(goal, action, force) },
                 enabled = enabled && goal.isNotBlank(),
             ) { Text("生成方案") }
         },

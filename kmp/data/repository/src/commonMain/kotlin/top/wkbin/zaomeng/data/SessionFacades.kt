@@ -102,6 +102,7 @@ interface DialogueRepository {
         sessionId: String,
         goal: String,
         action: String = "advance",
+        force: Boolean = false,
     ): JsonObject
 
     suspend fun getSceneTension(runId: String, sessionId: String): top.wkbin.zaomeng.data.api.SceneTensionDto

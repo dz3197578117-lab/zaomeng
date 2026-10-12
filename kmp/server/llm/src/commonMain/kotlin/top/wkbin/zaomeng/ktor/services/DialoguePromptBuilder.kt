@@ -790,10 +790,17 @@ class DialoguePromptBuilder(
         retryOnEmpty: Boolean = false,
     ): List<LlmClient.ChatMessage> {
         val optionCount = (payload["option_count"] as? Number)?.toInt()?.coerceIn(2, 4) ?: 3
+        // 强制执行标记：服务端在 payload 里放布尔值；兼容字符串形式。
+        val forceExecute = when (val raw = payload["director_force"]) {
+            is Boolean -> raw
+            is String -> raw.equals("true", ignoreCase = true)
+            else -> false
+        }
         val systemPrompt = promptLoader.getDialogueDirectorPrompt(
             optionCount = optionCount,
             retry = retryOnEmpty,
             action = (payload["director_action"]?.toString()?.trim().orEmpty().ifBlank { "advance" }),
+            force = forceExecute,
         )
         val inputPayload = (payload["input"] as? Map<*, *>)?.mapKeys { it.key.toString() } ?: emptyMap()
         val userPayload = mapOf(

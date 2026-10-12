@@ -85,10 +85,16 @@ class KtorDialogueClient(
         },
     )
 
-    suspend fun directorOptions(runId: String, sessionId: String, goal: String, action: String): JsonObject = decodeObject(
+    suspend fun directorOptions(
+        runId: String,
+        sessionId: String,
+        goal: String,
+        action: String,
+        force: Boolean = false,
+    ): JsonObject = decodeObject(
         request { endpoint ->
             http.client.post("${endpoint.baseUrl.trimEnd('/')}/api/web/runs/$runId/dialogue/sessions/$sessionId/director-options") {
-                setBody(DialogueDirectorRequest(goal = goal, action = action))
+                setBody(DialogueDirectorRequest(goal = goal, action = action, forceExecute = force))
             }
         },
     )

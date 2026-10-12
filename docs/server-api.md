@@ -489,10 +489,20 @@ data: {"index":0,"speaker":"林黛玉","role":"character","field":"message","tex
 导演请求：
 
 ```json
-{"goal":"让两人发现共同线索","action":"advance","option_count":3}
+{"goal":"让两人发现共同线索","action":"advance","option_count":3,"force_execute":false}
 ```
 
 `action` 允许 `advance`、`slow_emotion`、`conflict`、`viewpoint`、`fourth_wall`。`fourth_wall` 响应中的 `message_kind` 为 `fourth_wall`，选项会额外包含可选的 `resistance` 与 `price` 字段。
+
+`force_execute`（可选，默认 `false`）为**强制执行**：要求角色在本回合必须落实该指令，
+不得拒绝、弱化或推迟。角色仍可保留情绪化表达（不满、抱怨、讲条件、带着怨气照做），
+但结果必须发生——不接受用闲聊、铺垫或泛泛接话把指令稀释掉，也不接受改写成别的走向。
+
+对**所有** `action` 都生效（含 `fourth_wall`）。开启后服务端会在导演提示词里追加
+`force_execute_instruction` 约束；第四面墙模式下角色可以表达不情愿，
+但不得以拒绝、讨价还价或反问收场。
+
+不发该字段的旧客户端行为**完全不变**。
 
 切换场景请求：
 

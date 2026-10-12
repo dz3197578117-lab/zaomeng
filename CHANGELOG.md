@@ -6,6 +6,26 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.1.7] - 未发布
+
+### 新增
+
+- **导演「强制执行」**：导演与第四面墙弹窗新增开关
+  「强制执行：角色必须落实，不得拒绝或推迟」，对**所有**导演动作
+  （推进剧情 / 放慢情绪 / 加强冲突 / 切换视角 / 第四面墙）都生效。
+  角色仍可保留情绪化表达（不满、抱怨、讲条件、带着怨气照做），但**结果必须发生**：
+  不接受用闲聊、铺垫或泛泛接话把指令稀释掉，也不接受改写成别的走向；
+  方案的 `beat` 必须写出「指令已经生效」的那一幕。
+  默认关闭，不开启时行为与此前完全一致；旧客户端不发 `force_execute` 也不受影响。
+  请求字段见 [`docs/server-api.md`](docs/server-api.md)。
+
+### 仓库加固
+
+- 新增提示词副本同步守卫 [`scripts/check-prompt-sync.sh`](scripts/check-prompt-sync.sh)：
+  提示词在 `prompts/`、`kmp/server/src/androidMain/assets/`、
+  `kmp/app/shared/.../composeResources/files/prompts/` 三处必须逐字节一致，
+  只改一处会导致「改了提示词但运行时不生效」。已接入 CI 每次推送执行。
+
 ## [2.1.6] - 2026-10-13
 
 ### 修复
@@ -181,7 +201,8 @@
 早期版本（含从上游造梦 2.0 继续改动的部分）逐文件清单见
 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)。
 
-[2.1.6]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.5...HEAD
+[2.1.7]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.6...HEAD
+[2.1.6]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.5...v2.1.6
 [2.1.5]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.4...v2.1.5
 [2.1.4]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.3...v2.1.4
 [2.1.3]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.2...v2.1.3
