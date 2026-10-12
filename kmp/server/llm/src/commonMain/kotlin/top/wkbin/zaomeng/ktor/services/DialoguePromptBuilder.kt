@@ -559,11 +559,21 @@ class DialoguePromptBuilder(
             listOf(mapOf("speaker" to "角色名", "message" to "回复内容"))
         }
         val expectedOutput = mapOf("responses" to expectedResponses)
-        val userPayload = mapOf(
+        val directorInput = messageKind in setOf("plot", "fourth_wall", "narration")
+        val userPayload = linkedMapOf<String, Any?>(
             "mode" to sessionMode,
             "message_kind" to messageKind,
             "speaker" to (inputBlock["speaker"]?.toString()?.trim().orEmpty()),
             "message" to (inputBlock["message"]?.toString()?.trim().orEmpty()),
+        )
+        if (directorInput) {
+            // 导演输入不是「某人说的话」，而是必须在本轮落实的舞台指示。
+            // 显式标出字段与硬约束，避免模型按普通发言处理、把指令当聊天内容。
+            userPayload["director_directive"] = (inputBlock["message"]?.toString()?.trim().orEmpty())
+            userPayload["director_directive_binding"] =
+                "This directive must be realized in this turn: it may not be softened, paraphrased, delayed, or ignored."
+        }
+        userPayload += mapOf(
             "participants" to participants,
             "active_participants" to activeParticipants,
             "allowed_responders" to (inputBlock["allowed_responders"] as? List<*> ?: emptyList<Any?>()),

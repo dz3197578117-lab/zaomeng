@@ -17,11 +17,19 @@ import top.wkbin.zaomeng.platform.systemProperty
 /**
  * 诊断服务
  *
- * 生成系统诊断报告，对应 Python 的 DiagnosticsServiceMixin
+ * 生成系统诊断报告，对应 Python 的 DiagnosticsServiceMixin。
+ *
+ * 导出内容是自包含的：既有环境/存储/模型配置摘要，也有 [DiagnosticsEventLog] 里
+ * 记录的关键事件（对话解析失败含模型输出摘录、插件动作失败、端侧推理状态变迁），
+ * 以及端侧 llama-server 的日志尾部——排查时不需要再去掏 logcat。
+ *
+ * 每一节都独立容错：单节失败只降级为空，绝不让整个导出 500。
  */
 class DiagnosticsService(
     private val storageRoot: Path,
-    private val storageService: StorageService
+    private val storageService: StorageService,
+    private val eventLog: DiagnosticsEventLog? = null,
+    private val onDeviceSnapshot: (() -> Map<String, String>)? = null,
 ) {
     private val json = Json {
         prettyPrint = true
@@ -33,15 +41,17 @@ class DiagnosticsService(
      * 构建诊断报告
      */
     fun buildDiagnosticsReport(): DiagnosticsReport {
-        val modelSettings = storageService.readModelSettings()
+        val modelSettings = runCatching { storageService.readModelSettings() }.getOrNull()
         val diskUsage = getDiskUsage()
-        val runs = buildRunsSummary()
-        val profiles = buildProfilesSummary(modelSettings)
-        val startupReport = loadStartupReport()
+        val runs = runCatching { buildRunsSummary() }.getOrDefault(emptyList())
+        val profiles = runCatching { buildProfilesSummary(modelSettings) }.getOrDefault(emptyList())
+        val startupReport = runCatching { loadStartupReport() }.getOrDefault(emptyMap())
+        val recentEvents = runCatching { eventLog?.recent() ?: emptyList() }.getOrDefault(emptyList())
+        val onDevice = runCatching { onDeviceSnapshot?.invoke().orEmpty() }.getOrDefault(emptyMap())
 
         return DiagnosticsReport(
             kind = "zaomeng_diagnostics",
-            schemaVersion = 1,
+            schemaVersion = 2,
             generatedAt = nowIsoString(),
             runtime = RuntimeInfo(
                 kotlin = systemProperty("java.version") ?: "unknown",
@@ -58,7 +68,9 @@ class DiagnosticsService(
                 profiles = profiles
             ),
             startup = startupReport,
-            runs = runs
+            runs = runs,
+            recentEvents = recentEvents,
+            onDevice = onDevice
         )
     }
 
@@ -205,7 +217,11 @@ data class DiagnosticsReport(
     val storage: StorageInfo,
     val model: ModelInfo,
     val startup: Map<String, JsonElement>,
-    val runs: List<RunSummary>
+    val runs: List<RunSummary>,
+    /** 关键事件（对话解析失败/插件动作/端侧推理状态变迁），倒序无关、按时间正序。 */
+    val recentEvents: List<DiagnosticsEvent> = emptyList(),
+    /** 端侧推理快照：状态、模型、端口、llama-server 日志尾部（无端侧时为空）。 */
+    val onDevice: Map<String, String> = emptyMap(),
 )
 
 @Serializable

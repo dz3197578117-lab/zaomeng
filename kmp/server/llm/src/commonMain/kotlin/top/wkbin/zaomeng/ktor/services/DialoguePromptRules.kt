@@ -165,21 +165,56 @@ object DialoguePromptRules {
         return bits.joinToString(" ")
     }
 
+    /**
+     * 导演指令契约（覆盖 plot / fourth_wall / narration 三种导演输入）。
+     *
+     * 之前这里只对 `plot` 生效，`fourth_wall` 与 `narration` 直接返回空串，
+     * 导演模式完全没有约束；而且契约只要求"出现场景级变化"，没有一条要求
+     * "导演选中的方案必须在本轮落实"，模型于是自由发挥、把指令稀释掉。
+     *
+     * 现在统一为：指令即本轮必须发生的事实，不得改写、不得弱化、不得推迟；
+     * 人物仍可保留性格化抗拒（质疑/谈判/附加条件），但必须给出可执行的回应，
+     * 且该回合内要产生可指认的剧情变化。
+     */
     fun plotProgressionContract(messageKind: String, sceneProgress: Map<String, Any?>): String {
-        if (messageKind.trim() != "plot") return ""
+        val kind = messageKind.trim()
+        if (kind !in setOf("plot", "fourth_wall", "narration")) return ""
         val state = sceneProgress
         val beatMaturity = (state["beat_maturity"] as? Number)?.toInt() ?: 0
         val turnsInScene = (state["turns_in_current_scene"] as? Number)?.toInt() ?: 0
         val contract = mutableListOf(
-            "PLOT_PROGRESSION_CONTRACT is mandatory for this turn.",
-            "The first output item must use speaker 场景提示 or 旁白 and establish one concrete scene-level change that happens now.",
-            "The change must introduce at least one of: a new event, interruption, revealed information, escalating conflict, consequential decision, entrance or exit, time advance, location transition, or a completed objective that opens the next beat.",
-            "Do not merely paraphrase the user's cue, repeat the current banter, or add only gestures and emotional reactions.",
-            "After the scene beat, let the present cast react in character and end with a clear consequence, choice, question, or unresolved hook that can drive the next turn.",
-            "Treat the user's text as a desired direction, not as a cast member's spoken line, even when it is phrased in first person or resembles dialogue.",
+            "DIRECTOR_DIRECTIVE is binding for this turn: the scenario in the input was chosen by the director and MUST be realized on screen now.",
+            "Never paraphrase it into something milder, never defer it to a later turn, and never replace it with generic banter, filler or small talk.",
+            "It is a stage direction, not a spoken line: do not echo it as any character's dialogue.",
         )
+        when (kind) {
+            "fourth_wall" -> {
+                contract += listOf(
+                    "The first output item must use speaker 场景提示 or 旁白 and show the author's directive actually taking effect in the scene.",
+                    "In-character resistance is allowed (question, bargain, attach a condition), but the character must still answer the directive concretely and the scene must visibly change because of it.",
+                    "A character may never ignore the directive, and the reply must not end with only preparation, hesitation or a promise to act later.",
+                )
+            }
+            "narration" -> {
+                contract += listOf(
+                    "The first output item must use speaker 场景提示 or 旁白 and establish one concrete scene-level change that happens now.",
+                    "The change must introduce at least one of: a new event, interruption, revealed information, escalating conflict, consequential decision, entrance or exit, time advance, location transition, or a completed objective that opens the next beat.",
+                )
+            }
+            else -> {
+                contract += listOf(
+                    "The first output item must use speaker 场景提示 or 旁白 and establish one concrete scene-level change that happens now.",
+                    "The change must introduce at least one of: a new event, interruption, revealed information, escalating conflict, consequential decision, entrance or exit, time advance, location transition, or a completed objective that opens the next beat.",
+                    "Do not merely paraphrase the director's cue, repeat the current banter, or add only gestures and emotional reactions.",
+                )
+            }
+        }
+        contract += "After the scene beat, let the present cast react in character and end with a clear consequence, choice, question, or unresolved hook that can drive the next turn."
+        if (kind != "fourth_wall") {
+            contract += "Treat the director's text as a desired direction, not as a cast member's spoken line, even when it is phrased in first person or resembles dialogue."
+        }
         if (beatMaturity >= 70 || turnsInScene >= 8) {
-            contract.add("The current beat is already mature or long-running; prefer turning into the next beat over extending the same conversational topic.")
+            contract += "The current beat is already mature or long-running; prefer turning into the next beat over extending the same conversational topic."
         }
         return contract.joinToString(" ")
     }

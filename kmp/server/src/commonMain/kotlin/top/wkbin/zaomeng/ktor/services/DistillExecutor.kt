@@ -216,7 +216,10 @@ class DistillExecutor(
                 .mapNotNull { it.jsonPrimitive.contentOrNull }
         }.getOrNull()
         if (!fromJson.isNullOrEmpty()) {
-            return fromJson.map(String::trim).filter(String::isNotBlank).distinct().take(limit)
+            // JSON 路径同样要剥包裹引号：模型常返回 ["\"李慧英\"", ...] 这种字符串内嵌引号的元素。
+            return PersonaProfileNormalizer.normalizeCharacterNames(fromJson, limit)
+                .filter(PersonaProfileNormalizer::isPlausibleCharacterName)
+                .take(limit)
         }
         // 回退：按常见分隔符拆分，去掉序号、引号与书名号。
         val trimmed = clean
@@ -224,13 +227,8 @@ class DistillExecutor(
             .map(String::trim)
             .filter(String::isNotBlank)
         return trimmed.mapNotNull { raw ->
-            raw.trim('"', '\'', '“', '”', '「', '」', '【', '】', '《', '》', '[', ']', '(', ')', '（', '）')
-                .trim()
-                .replace(Regex("^\\d+\\s*[.、)）]\\s*"), "")
-                .takeIf { it.isNotBlank() && it.length in 1..20 }
-        }.filter { name ->
-            !name.contains("：") && !name.contains(":") &&
-                !name.contains("主角") && !name.contains("人物") && !name.contains("角色")
+            PersonaProfileNormalizer.normalizeCharacterName(raw)
+                .takeIf(PersonaProfileNormalizer::isPlausibleCharacterName)
         }.distinct().take(limit)
     }
 

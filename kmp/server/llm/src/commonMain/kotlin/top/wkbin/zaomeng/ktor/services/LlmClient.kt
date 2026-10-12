@@ -8,6 +8,7 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -21,6 +22,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import top.wkbin.zaomeng.data.api.ModelCapabilityReportDto
 import top.wkbin.zaomeng.platform.PlatformLog
+import top.wkbin.zaomeng.platform.PlatformStreamingResponse
 import top.wkbin.zaomeng.platform.createHttpClientEngine
 import top.wkbin.zaomeng.platform.openStreamingHttpPost
 import kotlin.time.Duration.Companion.seconds
@@ -384,7 +386,6 @@ class LlmClient(
         val profile = getActiveProfile()
         val resolvedModel = model ?: profile["model"] ?: throw IllegalStateException("No model configured")
         val baseUrl = profile["base_url"] ?: "https://api.openai.com/v1"
-        val profileId = profile["profile_id"] ?: "default"
 
         val apiKey = resolveApiKey(profile)
 
@@ -1304,16 +1305,8 @@ class LlmClient(
             tokenParameter = tokenParameter,
         )
 
-        val response = openStreamingHttpPost(
-            url = spec.url,
-            headers = spec.headers,
-            body = spec.body,
-        )
+        val response = openStreamWithRetry(spec)
         try {
-            if (response.statusCode !in 200..299) {
-                throw modelApiError(response.statusCode, response.statusDescription, response.readRemainingText())
-            }
-
             val contentBuilder = StringBuilder()
             var finishReason: String? = null
             var responseModel = resolvedModel
@@ -1368,7 +1361,6 @@ class LlmClient(
         val profile = getActiveProfile()
         val resolvedModel = model ?: profile["model"] ?: throw IllegalStateException("No model configured")
         val baseUrl = profile["base_url"] ?: "https://api.openai.com/v1"
-        val profileId = profile["profile_id"] ?: "default"
 
         val apiKey = resolveApiKey(profile)
 
@@ -1388,15 +1380,8 @@ class LlmClient(
             tokenParameter = tokenParameter,
         )
 
-        val response = openStreamingHttpPost(
-            url = spec.url,
-            headers = spec.headers,
-            body = spec.body,
-        )
+        val response = openStreamWithRetry(spec)
         try {
-            if (response.statusCode !in 200..299) {
-                throw modelApiError(response.statusCode, response.statusDescription, response.readRemainingText())
-            }
             while (true) {
                 val data = sseData(response.readUtf8Line() ?: break) ?: continue
                 if (data == "[DONE]") continue
@@ -1424,6 +1409,37 @@ class LlmClient(
             .joinToString(" ")
         return IllegalStateException("API error ($status): $message")
     }
+
+    /**
+     * 打开流式响应，并在**读到任何正文字节之前**对瞬错重试：
+     * 连接失败、408/429/5xx（[RETRYABLE_STATUS_CODES]）按指数退避重试，429 走限流退避起点。
+     *
+     * 首字节之后绝不重试——响应体一旦开始消费，重试会造成重复输出与重复计费，
+     * 那一阶段的故障交由调用方（对话轮次的幂等恢复）处理。
+     */
+    private suspend fun openStreamWithRetry(spec: StreamSpec): PlatformStreamingResponse =
+        retryWithBackoff(maxRetries = DEFAULT_MAX_RETRIES) {
+            val response = try {
+                openStreamingHttpPost(url = spec.url, headers = spec.headers, body = spec.body)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                // 连接尚未建立（DNS/超时/重置），瞬断可安全重试
+                throw RetryableException("Streaming connection failed: ${error.message}", 0)
+            }
+            if (response.statusCode in 200..299) {
+                response
+            } else {
+                val status = response.statusCode
+                val description = response.statusDescription
+                val body = response.readRemainingText()
+                response.close()
+                if (status in RETRYABLE_STATUS_CODES) {
+                    throw RetryableException("API returned $status", status)
+                }
+                throw modelApiError(status, description, body)
+            }
+        }
 
     /**
      * Retry logic with exponential backoff.

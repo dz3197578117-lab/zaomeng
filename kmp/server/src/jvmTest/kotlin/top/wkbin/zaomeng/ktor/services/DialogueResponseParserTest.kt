@@ -104,4 +104,50 @@ class DialogueResponseParserTest {
 
         assertNull(parsed)
     }
+
+    /**
+     * 线上回归：人物名带字面引号（模型提取主角时返回 ["\"李慧英\""] 这类元素），
+     * 而模型输出的是干净名字 → 全部条目被过滤 → "did not contain usable character responses"。
+     * 名字在 run manifest / 会话参与者里已经存了带引号的版本，这里确保历史数据也能继续对话。
+     */
+    @Test
+    fun `speaker matches allowed names that carry wrapping quotes`() {
+        val content = "{\"speaker\":\"李慧英\",\"message\":\"批文的事，你帮不帮？\"}"
+        val parsed = DialogueResponseParser.parse(
+            content,
+            allowedSpeakers = listOf("\"李慧英\"", "\"陆城\"", "旁白", "场景提示"),
+            forbiddenSpeakers = listOf("陆城"),
+        )
+
+        assertEquals(1, parsed.size)
+        assertEquals("\"李慧英\"", parsed.single().speaker)
+        assertEquals("批文的事，你帮不帮？", parsed.single().message)
+    }
+
+    @Test
+    fun `speaker with wrapping quotes is matched against clean allowed names`() {
+        val content = "{\"speaker\":\"「陆城」\",\"message\":\"这事我不掺和。\"}"
+        val parsed = DialogueResponseParser.parse(
+            content,
+            allowedSpeakers = listOf("李慧英", "陆城", "旁白"),
+        )
+
+        assertEquals(listOf("陆城"), parsed.map { it.speaker })
+    }
+
+    @Test
+    fun `quoted and unquoted spellings of the same name do not duplicate`() {
+        val content = """
+            [{"speaker":"陆城","message":"第一句。"},
+             {"speaker":"\"陆城\"","message":"第二句。"}]
+        """.trimIndent()
+        val parsed = DialogueResponseParser.parse(
+            content,
+            allowedSpeakers = listOf("陆城", "李慧英"),
+        )
+
+        // 归一后视为同一发言人：连续同发言人只保留第一句，不应出现两条
+        assertEquals(1, parsed.size)
+        assertEquals("陆城", parsed.single().speaker)
+    }
 }

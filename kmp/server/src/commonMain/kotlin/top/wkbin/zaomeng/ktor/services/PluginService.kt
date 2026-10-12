@@ -15,6 +15,7 @@ import top.wkbin.zaomeng.platform.nowIsoString
 class PluginService(
     private val storage: StorageService,
     private val builtins: List<Plugin> = emptyList(),
+    private val eventLog: DiagnosticsEventLog? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true; prettyPrint = true }
     // 日志 jsonl 需要单行完整 JSON，不能用 prettyPrint（否则逐行解析失败）
@@ -195,6 +196,16 @@ class PluginService(
         storage.writeTextAtomically(stateFile, json.encodeToString(JsonObject.serializer(), buildJsonObject {
             put("enabled", buildJsonArray { enabled.sorted().forEach { add(JsonPrimitive(it)) } })
         }))
+        eventLog?.record(
+            category = if (value) "plugin.enabled" else "plugin.disabled",
+            message = "插件${if (value) "已启用" else "已停用"}：$normalized",
+            details = mapOf(
+                "plugin_id" to normalized,
+                "enabled" to value.toString(),
+                "builtin" to isBuiltin(normalized).toString(),
+                "enabled_count" to enabled.size.toString(),
+            ),
+        )
         // 返回完整插件对象（App 端用它整体替换列表项，缺字段会导致名称/来源丢失）
         return itemFor(normalized, enabled)
             ?: throw NoSuchElementException("Plugin not found: $normalized")

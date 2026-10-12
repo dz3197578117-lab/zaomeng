@@ -14,6 +14,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.concurrent.Volatile
 import okio.FileSystem
 import okio.Path
 import okio.buffer
@@ -67,6 +68,40 @@ class OnDeviceModelService private constructor(
     private var process: NativeProcessHandle? = null
 
     private var downloadJob: Job? = null
+
+    /**
+     * 诊断事件日志。由服务装配图在构造后挂载（本类是进程内单例，构造时图尚未装配完成）。
+     */
+    @Volatile
+    private var eventLog: DiagnosticsEventLog? = null
+
+    fun attachEventLog(log: DiagnosticsEventLog) {
+        eventLog = log
+    }
+
+    /**
+     * 诊断快照：端侧推理状态 + llama-server 日志尾部。
+     * 非挂起且不做目录扫描，只读内存状态与单个日志文件，导出诊断时直接可用。
+     */
+    fun diagnosticsSnapshot(logChars: Int = 4_000): Map<String, String> {
+        val state = stateFlow.value
+        return linkedMapOf(
+            "supported" to (runtime != null).toString(),
+            "available" to (runtime?.serverExecutable != null).toString(),
+            "unavailable_reason" to runtime?.unavailableReason.orEmpty(),
+            "state" to state.phase,
+            "model_file" to state.modelFile,
+            "port" to state.port.toString(),
+            "pid" to state.pid.toString(),
+            "started_at" to state.startedAt.toString(),
+            "context_size" to state.contextSize.toString(),
+            "threads" to state.threads.toString(),
+            "gpu_layers" to state.gpuLayers.toString(),
+            "message" to state.message,
+            "download_active" to state.download.active.toString(),
+            "log_tail" to readLogTailText(logChars),
+        )
+    }
 
     private val httpClient: HttpClient by lazy {
         HttpClient(createHttpClientEngine()) { expectSuccess = false }
@@ -208,6 +243,18 @@ class OnDeviceModelService private constructor(
             }
 
             val args = buildServerArgs(executable, modelPath, port, alias, contextSize, request)
+            eventLog?.record(
+                category = "ondevice.starting",
+                message = "正在启动端侧推理：$fileName",
+                details = mapOf(
+                    "model_file" to fileName,
+                    "port" to port.toString(),
+                    "context_size" to contextSize.toString(),
+                    "threads" to request.threads.toString(),
+                    "gpu_layers" to request.gpuLayers.toString(),
+                    "disable_thinking" to request.disableThinking.toString(),
+                ),
+            )
             val handle = runtime.spawn(args, logPath)
                 ?: throw IllegalStateException("无法启动端侧推理进程（可执行文件可能缺少执行权限）。")
             process = handle
@@ -218,7 +265,15 @@ class OnDeviceModelService private constructor(
     }
 
     suspend fun stop(): OnDeviceStatusDto {
+        val previousModel = stateFlow.value.modelFile
         lifecycleMutex.withLock { stopLocked() }
+        if (previousModel.isNotBlank()) {
+            eventLog?.record(
+                category = "ondevice.stopped",
+                message = "端侧推理已停止：$previousModel",
+                details = mapOf("model_file" to previousModel),
+            )
+        }
         return status()
     }
 
@@ -264,6 +319,12 @@ class OnDeviceModelService private constructor(
                 return
             }
             if (probeHealth(port)) {
+                val readyModel = stateFlow.value.modelFile
+                eventLog?.record(
+                    category = "ondevice.running",
+                    message = "端侧推理已就绪：$readyModel",
+                    details = mapOf("model_file" to readyModel, "port" to port.toString()),
+                )
                 stateFlow.update {
                     it.copy(phase = OnDeviceStatusDto.STATE_RUNNING, port = port, message = "")
                 }
@@ -294,6 +355,14 @@ class OnDeviceModelService private constructor(
         runCatching { handle?.destroy() }
         if (process === handle) process = null
         val tail = readLogTailText(FAILURE_LOG_CHARS)
+        eventLog?.record(
+            category = "ondevice.failed",
+            message = message,
+            details = mapOf(
+                "model_file" to stateFlow.value.modelFile,
+                "log_tail" to tail.ifBlank { "(日志为空)" },
+            ),
+        )
         stateFlow.update {
             it.copy(
                 phase = OnDeviceStatusDto.STATE_FAILED,
@@ -404,9 +473,20 @@ class OnDeviceModelService private constructor(
                     )
                 }
             } catch (error: Throwable) {
-                runCatching { fileSystem.delete(target, mustExist = false) }
+                // 只清理 .part 半成品：下载始终写 part、成功后才 rename 成 target。
+                // 失败时 target 要么不存在，要么是 overwrite 前的旧模型——删 target 会把好模型一起毁掉。
                 runCatching { fileSystem.delete(runtime.modelsDir / "$fileName$PART_SUFFIX", mustExist = false) }
                 val cancelled = cancelDownloadFlag.value
+                eventLog?.record(
+                    category = "ondevice.download_failed",
+                    message = if (cancelled) "模型下载已取消：$fileName" else "模型下载失败：$fileName",
+                    details = mapOf(
+                        "file_name" to fileName,
+                        "cancelled" to cancelled.toString(),
+                        "error_type" to error::class.simpleName.orEmpty(),
+                        "error" to (error.message ?: ""),
+                    ),
+                )
                 stateFlow.update {
                     it.copy(
                         download = OnDeviceDownloadDto(

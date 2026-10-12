@@ -1,8 +1,8 @@
 package top.wkbin.zaomeng.data.api
 
-import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsBytes
 import io.ktor.client.statement.bodyAsText
 import okio.Sink
 import okio.buffer
@@ -14,12 +14,22 @@ class KtorDiagnosticsClient(
     private val http: KtorHttpClientProvider,
     private val endpointProvider: BackendEndpointProvider,
 ) {
+    /**
+     * 拉取诊断报告并写入 [destination]。
+     *
+     * 用 bodyAsBytes() 而不是泛型 body<ByteArray>()：前者明确是「读原始字节」，
+     * 不受 ContentNegotiation 影响。读到空 body 时直接失败——否则用户只会拿到
+     * 一个空白 JSON 文件，完全看不出哪里出了问题。
+     */
     suspend fun export(destination: Sink): Long {
         val response = request { endpoint ->
             http.client.get("${endpoint.baseUrl.trimEnd('/')}/api/web/diagnostics/export") {
             }
         }
-        val bytes: ByteArray = response.body()
+        val bytes = response.bodyAsBytes()
+        if (bytes.isEmpty()) {
+            throw IllegalStateException("诊断报告为空（响应体 0 字节），导出未完成。")
+        }
         destination.buffer().use { it.write(bytes) }
         return bytes.size.toLong()
     }

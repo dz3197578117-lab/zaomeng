@@ -33,6 +33,7 @@ class PluginOperationsService(
     private val storage: StorageService,
     private val pluginService: PluginService,
     private val host: top.wkbin.zaomeng.plugins.api.PluginHost? = null,
+    private val eventLog: DiagnosticsEventLog? = null,
 ) {
     companion object {
         private const val MAX_PACKAGE_BYTES = 10 * 1024 * 1024
@@ -142,6 +143,16 @@ class PluginOperationsService(
         if (storage.exists(staging)) storage.deleteRecursively(staging)
         if (backupCreated && storage.exists(backup)) storage.deleteRecursively(backup)
         val dto = buildPluginDto(id, manifest, evaluation)
+        eventLog?.record(
+            category = "plugin.installed",
+            message = "插件包已安装：$id v$version",
+            details = mapOf(
+                "plugin_id" to id,
+                "version" to version,
+                "executable" to evaluation.executable.toString(),
+                "operation" to if (updating) "update" else "install",
+            ),
+        )
         return buildJsonObject {
             dto.forEach { (key, value) -> put(key, value) }
             put("version", version)
@@ -215,7 +226,38 @@ class PluginOperationsService(
             selection = selection,
             config = configMap(pluginService.getConfig(pluginId)),
         )
-        val result = plugin.executeChatAction(actionId, request, pluginHost)
+        val result = try {
+            plugin.executeChatAction(actionId, request, pluginHost)
+        } catch (error: Throwable) {
+            // 插件动作失败是排查「插件一用就崩」的第一手证据：连请求参数带错误摘要一起落事件日志。
+            eventLog?.record(
+                category = "plugin.action_failed",
+                message = error.message ?: error::class.simpleName.orEmpty(),
+                details = mapOf(
+                    "error_type" to error::class.simpleName.orEmpty(),
+                    "plugin_id" to pluginId,
+                    "action_id" to actionId,
+                    "run_id" to runId,
+                    "session_id" to sessionId,
+                    "selection" to selection.take(120),
+                    "seed_text" to seedText.take(200),
+                ),
+            )
+            throw error
+        }
+        eventLog?.record(
+            category = "plugin.action",
+            message = "插件动作完成：$pluginId/$actionId",
+            details = mapOf(
+                "plugin_id" to pluginId,
+                "action_id" to actionId,
+                "has_suggestion" to result.suggestion.isNotBlank().toString(),
+                "suggestion_chars" to result.suggestion.length.toString(),
+                "choices" to result.choices.size.toString(),
+                "run_id" to runId,
+                "session_id" to sessionId,
+            ),
+        )
         return buildJsonObject {
             put("suggestion", JsonPrimitive(result.suggestion))
             put("suggestions", buildJsonArray {
@@ -255,7 +297,23 @@ class PluginOperationsService(
             direction = direction,
             config = configMap(pluginService.getConfig(pluginId)),
         )
-        val result = plugin.generateTemporaryNpc(generatorId, request, pluginHost)
+        val result = try {
+            plugin.generateTemporaryNpc(generatorId, request, pluginHost)
+        } catch (error: Throwable) {
+            eventLog?.record(
+                category = "plugin.action_failed",
+                message = error.message ?: error::class.simpleName.orEmpty(),
+                details = mapOf(
+                    "error_type" to error::class.simpleName.orEmpty(),
+                    "plugin_id" to pluginId,
+                    "generator_id" to generatorId,
+                    "run_id" to runId,
+                    "session_id" to sessionId,
+                    "direction" to direction.take(200),
+                ),
+            )
+            throw error
+        }
         val session = loadSession(runId, sessionId) // host 已写入 temporary_npcs，重新加载返回
         val name = result.npc["name"]?.jsonPrimitive?.contentOrNull.orEmpty()
         return buildJsonObject {

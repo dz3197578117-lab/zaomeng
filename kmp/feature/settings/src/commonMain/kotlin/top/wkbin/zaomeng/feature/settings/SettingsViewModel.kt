@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import top.wkbin.zaomeng.platform.platformIoDispatcher
 
 data class ModelChoice(
     val id: String,
@@ -391,21 +393,32 @@ class SettingsViewModel(
         ) { modelSettings.deleteModelProfile(current.selectedProfileId) }
     }
 
-    fun exportDiagnostics(destination: Sink) {
-        if (state.value.exportingDiagnostics) return
-        viewModelScope.launch {
-            mutableState.update { it.copy(exportingDiagnostics = true, error = "", message = "") }
-            try {
-                diagnostics.exportDiagnostics(destination)
-                mutableState.update {
-                    it.copy(exportingDiagnostics = false, message = "脱敏诊断信息已导出。")
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                mutableState.update {
-                    it.copy(exportingDiagnostics = false, error = error.message ?: "诊断信息导出失败。")
-                }
+    /**
+     * 导出诊断信息。
+     *
+     * 必须是 suspend 并在此处直接写完 sink：FileKit 的 onSave 是挂起回调，
+     * 回调返回后目标流即被收尾关闭。之前这里用 viewModelScope.launch 异步写，
+     * 回调先返回 → 往已关闭的流里写 → 导出文件是空白的。
+     */
+    suspend fun exportDiagnostics(destination: Sink) {
+        mutableState.update { it.copy(exportingDiagnostics = true, error = "", message = "") }
+        try {
+            val written = withContext(platformIoDispatcher) { diagnostics.exportDiagnostics(destination) }
+            mutableState.update {
+                it.copy(
+                    exportingDiagnostics = false,
+                    message = "脱敏诊断信息已导出（${written / 1024} KiB）。",
+                )
+            }
+        } catch (cancelled: CancellationException) {
+            mutableState.update { it.copy(exportingDiagnostics = false) }
+            throw cancelled
+        } catch (error: Throwable) {
+            mutableState.update {
+                it.copy(
+                    exportingDiagnostics = false,
+                    error = error.message?.takeIf(String::isNotBlank) ?: "诊断信息导出失败。",
+                )
             }
         }
     }

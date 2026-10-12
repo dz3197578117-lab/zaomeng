@@ -55,6 +55,12 @@ class RunManagementService(
         if (characters.isEmpty()) {
             throw IllegalArgumentException("Characters list cannot be empty")
         }
+        // 人物名统一清洗：模型提取或手输都可能带包裹引号，存进 manifest 后
+        // 会污染会话参与者列表，导致 speaker 匹配失败（整轮回复被过滤成空）。
+        val characterNames = PersonaProfileNormalizer.normalizeCharacterNames(characters)
+        if (characterNames.isEmpty()) {
+            throw IllegalArgumentException("人物名单清洗后为空，请检查是否只包含引号或符号。")
+        }
         if (maxSentences !in 20..300) {
             throw IllegalArgumentException("maxSentences must be between 20 and 300")
         }
@@ -106,8 +112,8 @@ class RunManagementService(
                     put("char_count", novelContent.length)
                 })
             })
-            put("characters", buildJsonArray { characters.forEach { add(JsonPrimitive(it)) } })
-            put("locked_characters", buildJsonArray { characters.forEach { add(JsonPrimitive(it)) } })
+            put("characters", buildJsonArray { characterNames.forEach { add(JsonPrimitive(it)) } })
+            put("locked_characters", buildJsonArray { characterNames.forEach { add(JsonPrimitive(it)) } })
             put("max_sentences", maxSentences)
             put("max_chars", maxChars)
             put("created_at", timestamp)
@@ -124,15 +130,15 @@ class RunManagementService(
 
         // 对齐 Python create_run(auto_run=True) 的 _start_background_run：自动启动蒸馏执行
         if (autoRun && !deferRun) {
-            distillExecutor?.start(runId, characters)
+            distillExecutor?.start(runId, characterNames)
         }
 
-        PlatformLog.d(TAG, "Created run: $runId with ${characters.size} characters")
+        PlatformLog.d(TAG, "Created run: $runId with ${characterNames.size} characters")
 
         return buildJsonObject {
             put("run_id", runId)
             put("novel_name", novelName)
-            put("characters", buildJsonArray { characters.forEach { add(JsonPrimitive(it)) } })
+            put("characters", buildJsonArray { characterNames.forEach { add(JsonPrimitive(it)) } })
             put("created_at", timestamp)
             put("status", manifest["status"]?.jsonPrimitive?.contentOrNull ?: "running")
         }

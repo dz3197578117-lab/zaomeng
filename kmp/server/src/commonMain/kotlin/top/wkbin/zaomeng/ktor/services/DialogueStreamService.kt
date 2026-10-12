@@ -20,9 +20,11 @@ class DialogueStreamService(
     private val llmClient: LlmClient,
     private val promptLoader: PromptLoader,
     private val dialogue: DialogueService,
+    private val eventLog: DiagnosticsEventLog? = null,
 ) {
     companion object {
         private const val TAG = "DialogueStreamService"
+        private const val OUTPUT_EXCERPT_CHARS = 800
     }
 
     /**
@@ -147,6 +149,14 @@ class DialogueStreamService(
             try {
                 responses = DialogueResponseParser.parse(full, participants, forbidden)
             } catch (e: IllegalArgumentException) {
+                recordDialogueParseFailure(
+                    attempt = 1,
+                    error = e,
+                    output = full,
+                    participants = participants,
+                    forbidden = forbidden,
+                    modelSettings = modelSettings,
+                )
                 val plainTextFallback = DialogueResponseParser.parseSingleSpeakerPlainText(
                     full,
                     participants,
@@ -217,7 +227,31 @@ class DialogueStreamService(
                         "Streaming reply retry (attempt 2/2) returned in ${nowEpochMillis() - retryStartedAt}ms " +
                             "(ttft_ms=${retryFirstContentAt?.minus(retryStartedAt) ?: -1}): ${retryFull.take(200)}",
                     )
-                    responses = DialogueResponseParser.parse(retryFull, participants, forbidden)
+                    responses = try {
+                        DialogueResponseParser.parse(retryFull, participants, forbidden).also {
+                            eventLog?.record(
+                                category = "dialogue.parse_retry_ok",
+                                message = "第一次解析失败，重试后成功。",
+                                details = dialogueFailureDetails(
+                                    attempt = 2,
+                                    output = retryFull,
+                                    participants = participants,
+                                    forbidden = forbidden,
+                                    modelSettings = modelSettings,
+                                ),
+                            )
+                        }
+                    } catch (e: IllegalArgumentException) {
+                        recordDialogueParseFailure(
+                            attempt = 2,
+                            error = e,
+                            output = retryFull,
+                            participants = participants,
+                            forbidden = forbidden,
+                            modelSettings = modelSettings,
+                        )
+                        throw e
+                    }
                 }
             }
             val parsedAt = nowEpochMillis()
@@ -244,9 +278,78 @@ class DialogueStreamService(
                     "commit_ms=${committedAt - parsedAt}, prompt_chars=$promptChars",
             )
         } catch (e: Exception) {
+            eventLog?.record(
+                category = "dialogue.stream_error",
+                message = e.message ?: e::class.simpleName.orEmpty(),
+                details = buildMap {
+                    put("error_type", e::class.simpleName.orEmpty())
+                    put("run_id", runId)
+                    put("session_id", sessionId)
+                    put("message_kind", messageKind)
+                },
+            )
             PlatformLog.e(TAG, "Error during streaming dialogue reply after ${nowEpochMillis() - startedAt}ms", e)
             throw e
         }
+    }
+
+    /** 记录一次对话解析失败：模型输出摘录 + 允许/禁言名单 + 脱敏后的模型信息。 */
+    private fun recordDialogueParseFailure(
+        attempt: Int,
+        error: IllegalArgumentException,
+        output: String,
+        participants: List<String>,
+        forbidden: List<String>,
+        modelSettings: Map<String, Any?>,
+    ) {
+        eventLog?.record(
+            category = "dialogue.parse_failed",
+            message = error.message ?: "parse failed",
+            details = dialogueFailureDetails(
+                attempt = attempt,
+                output = output,
+                participants = participants,
+                forbidden = forbidden,
+                modelSettings = modelSettings,
+            ),
+        )
+    }
+
+    private fun dialogueFailureDetails(
+        attempt: Int,
+        output: String,
+        participants: List<String>,
+        forbidden: List<String>,
+        modelSettings: Map<String, Any?>,
+    ): Map<String, String> = buildMap {
+        put("attempt", attempt.toString())
+        (modelSettings["provider"] as? String)?.let { put("provider", it) }
+        (modelSettings["model"] as? String)?.let { put("model", it) }
+        (modelSettings["base_url"] as? String)?.let { put("base_url", sanitizeEndpoint(it)) }
+        (modelSettings["reasoning_effort"] as? String)?.let { put("reasoning_effort", it) }
+        put("allowed_responders", participants.joinToString("、").ifBlank { "(空)" })
+        put("forbidden_responders", forbidden.joinToString("、").ifBlank { "(空)" })
+        put("output_chars", output.length.toString())
+        put("output_excerpt", output.take(OUTPUT_EXCERPT_CHARS).ifBlank { "(空输出)" })
+    }
+
+    /** 去掉 query/fragment，避免把可能带 key 的 URL 原文写进诊断文件。 */
+    private fun sanitizeEndpoint(value: String): String {
+        val trimmed = value.trim()
+        if (trimmed.isEmpty()) return ""
+        val schemeEnd = trimmed.indexOf("://")
+        if (schemeEnd < 0) return trimmed.substringBefore('?').substringBefore('#')
+        // 权威段从 "://" 之后开始找分隔符——不能从整串找第一个 '/'，那会落在 "https://" 里。
+        val authorityStart = schemeEnd + 3
+        var authorityEnd = trimmed.length
+        for (index in authorityStart until trimmed.length) {
+            val char = trimmed[index]
+            if (char == '/' || char == '?' || char == '#') {
+                authorityEnd = index
+                break
+            }
+        }
+        return trimmed.substring(0, authorityEnd)
     }
 }
 
@@ -272,4 +375,11 @@ internal fun filterDialogueStreamEvents(
 }
 
 private fun normalizeDialogueSpeaker(value: String): String =
-    value.filterNot(Char::isWhitespace).lowercase()
+    // 与 DialogueResponseParser.normalizeSpeakerName 保持一致：
+    // 忽略空白与包裹引号，人物名带引号时也能匹配上。
+    value.filterNot { it.isWhitespace() || it in SPEAKER_NAME_WRAPPERS }.lowercase()
+
+private val SPEAKER_NAME_WRAPPERS = charArrayOf(
+    '"', '\'', '“', '”', '‘', '’', '「', '」', '『', '』',
+    '【', '】', '《', '》', '[', ']', '(', ')', '（', '）', '`',
+)

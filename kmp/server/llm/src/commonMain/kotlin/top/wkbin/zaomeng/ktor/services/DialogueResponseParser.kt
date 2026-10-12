@@ -235,10 +235,26 @@ object DialogueResponseParser {
 
     private fun canonicalSpeaker(speaker: String, allowed: Set<String>): String? {
         if (speaker in allowed) return speaker
-        val normalized = speaker.replace(" ", "").lowercase()
+        val normalized = normalizeSpeakerName(speaker)
         for (name in allowed) {
-            if (name.replace(" ", "").lowercase() == normalized) return name
+            if (normalizeSpeakerName(name) == normalized) return name
         }
         return null
     }
+
+    private val NAME_WRAPPERS = charArrayOf(
+        '"', '\'', '“', '”', '‘', '’', '「', '」', '『', '』',
+        '【', '】', '《', '》', '[', ']', '(', ')', '（', '）', '`',
+    )
+
+    /**
+     * speaker 归一化：忽略空白与包裹引号。
+     *
+     * 人物名可能带着引号存进会话参与者列表（模型提取主角时经常返回
+     * `["\"李慧英\""]` 这类元素），而模型输出的是干净名字；不剥掉包裹字符就会
+     * 匹配失败，整轮回复被过滤成「没有可用回复」。这里两侧都归一化，
+     * 让历史书卷里的脏名字也能继续用。
+     */
+    internal fun normalizeSpeakerName(value: String): String =
+        value.filterNot { it.isWhitespace() || it in NAME_WRAPPERS }.lowercase()
 }
