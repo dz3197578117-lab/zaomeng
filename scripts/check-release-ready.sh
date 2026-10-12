@@ -192,8 +192,12 @@ if [ "${FAIL}" -eq 0 ]; then
   if [ "${CI_MODE}" -eq 1 ]; then
     echo "结论：内容一致性检查通过。"
   else
-    echo "结论：可以发布。打 tag 后 CI 会自动构建、校验并上传 Release 附件："
-    echo "  git tag -a v${VERSION} -m \"造梦 ${VERSION}\" && git push origin v${VERSION}"
+    if [ -n "${VERSION}" ] && git -C "${ROOT}" rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null 2>&1; then
+      echo "结论：${VERSION} 已发布（tag v${VERSION} 已存在），四者一致。"
+    else
+      echo "结论：可以发布。打 tag 后 CI 会自动构建、校验并上传 Release 附件："
+      echo "  git tag -a v${VERSION} -m \"造梦 ${VERSION}\" && git push origin v${VERSION}"
+    fi
   fi
 else
   echo "结论：有未就绪项（见上面的 ❌），修好再发。"
