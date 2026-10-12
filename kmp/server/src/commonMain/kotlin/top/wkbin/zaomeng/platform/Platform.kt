@@ -75,6 +75,14 @@ interface ServerPlatform {
      * 上层表现为「当前环境不支持端侧推理」，其余功能不受影响。
      */
     fun onDeviceRuntime(): OnDeviceRuntime? = null
+
+    /**
+     * 运行期日志来源；平台没有采集能力时返回 null。
+     *
+     * Android 返回 [AndroidRuntimeLog]（持续采集本进程 logcat），JVM 返回进程内缓冲实现。
+     * 返回 null 时诊断报告与「运行日志」页退化为「不可用」，不影响其余诊断字段。
+     */
+    fun runtimeLogSource(): RuntimeLogSource? = null
 }
 
 /** 当前 UTC 时间的 ISO-8601 字符串（等价 Instant.now().toString()）。 */

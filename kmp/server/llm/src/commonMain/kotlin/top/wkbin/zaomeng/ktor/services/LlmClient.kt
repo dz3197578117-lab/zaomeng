@@ -44,7 +44,21 @@ class LlmClient(
 ) {
     companion object {
         private const val TAG = "LlmClient"
+        /** 控制面请求（列模型、能力探测、测试配置）超时：这些请求应当快速失败。 */
         private const val DEFAULT_TIMEOUT_SECONDS = 60L
+        /** 连接超时（毫秒）。per-request 超时覆盖时也必须显式带上，否则该项回落 Ktor 默认 10s。 */
+        private const val CONNECT_TIMEOUT_MS = 30_000L
+        /**
+         * 生成类请求（蒸馏、非流式 chatCompletion）的默认超时秒数。
+         *
+         * 非流式调用要等模型产出完整正文才会回字节，60 秒的旧默认会让蒸馏在中途被切断，
+         * 表象是 "Software caused connection abort"（真因是 request_timeout 到期）。
+         * 取 300 秒，与流式链路的读超时（core/runtime 的 HttpStreaming 实现，5 分钟）对齐。
+         */
+        private const val GENERATION_TIMEOUT_SECONDS = 300L
+        /** 生成类超时秒数的可调下限/上限；越界配置视为非法，忽略并回退默认。 */
+        internal const val MIN_TIMEOUT_SECONDS = 30L
+        internal const val MAX_TIMEOUT_SECONDS = 3600L
         private const val DEFAULT_MAX_RETRIES = 3
         private const val DEFAULT_TEMPERATURE = 0.7
         /** 能力探测请求之间的间隔，避免连发触发限流（429）造成"不支持"误报。 */
@@ -54,6 +68,16 @@ class LlmClient(
         private const val RATE_LIMIT_MAX_DELAY_MS = 30_000L
         // Retry-able HTTP status codes
         private val RETRYABLE_STATUS_CODES = setOf(408, 429, 500, 502, 503, 504)
+
+        /**
+         * 解析生成类请求超时（秒）：profile 的 timeout_seconds 优先，
+         * 缺省/非法/越界一律回退默认，避免一个坏配置把请求卡死或几秒就被切断。
+         */
+        internal fun generationTimeoutSeconds(configuredSeconds: String?): Long {
+            val parsed = configuredSeconds?.trim()?.toLongOrNull()
+            val seconds = if (parsed != null && parsed > 0) parsed else GENERATION_TIMEOUT_SECONDS
+            return seconds.coerceIn(MIN_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS)
+        }
 
         /**
          * 对齐 Python _apply_reasoning_controls（llm_client.py:67-115）：请求的 thinking / reasoning_effort 参数
@@ -127,9 +151,11 @@ class LlmClient(
             json(json)
         }
 
+        // 控制面（列模型/能力探测/测试配置）的默认值；生成类请求在调用点用
+        // withGenerationTimeout 单独放宽，见 chatCompletion。
         install(HttpTimeout) {
             requestTimeoutMillis = DEFAULT_TIMEOUT_SECONDS * 1000
-            connectTimeoutMillis = 30_000
+            connectTimeoutMillis = CONNECT_TIMEOUT_MS
             socketTimeoutMillis = DEFAULT_TIMEOUT_SECONDS * 1000
         }
 
@@ -322,7 +348,9 @@ class LlmClient(
                 "reasoning_effort" to (profile.reasoningEffort ?: "off"),
                 "token_parameter" to (profile.tokenParameter ?: "auto"),
                 "response_format_mode" to (profile.responseFormatMode ?: "auto"),
-                "api_key_required" to if (profile.apiKeyRequired == false) "false" else "true"
+                "api_key_required" to if (profile.apiKeyRequired == false) "false" else "true",
+                // 生成类请求超时（秒）；留空走默认 300 秒，越界值回退默认，见 generationTimeoutSeconds。
+                "timeout_seconds" to (profile.timeoutSeconds?.toString().orEmpty())
             )
         } catch (e: Exception) {
             PlatformLog.e(TAG, "Failed to parse model settings", e)
@@ -348,6 +376,28 @@ class LlmClient(
     /** profile 是否要求 API Key（缺省视为要求，保持对旧配置的兼容）。 */
     private fun Map<String, String>.requiresApiKey(): Boolean =
         this["api_key_required"]?.equals("false", ignoreCase = true) != true
+
+    /** 生效的生成类超时（秒）：profile.timeout_seconds 优先，缺省回退默认。 */
+    private fun resolveGenerationTimeoutSeconds(profile: Map<String, String>): Long =
+        LlmClient.generationTimeoutSeconds(profile["timeout_seconds"])
+
+    /**
+     * 生成类请求的 per-request 超时。
+     *
+     * Ktor 的 per-request [timeout] 会新建一份**空白** HttpTimeoutConfig 再应用配置块，
+     * 只要其中任一项非空就会整体取代客户端级配置，所以三项都必须显式写全，
+     * 否则未写项回落 Ktor 内置默认（connect 10s / request 60s / socket 30s）。
+     * 请求总时长与字节间隔超时取同一档——非流式响应在产出期间完全静默，
+     * socketTimeout 若更小会先触发，变成"超时设了 5 分钟却 1 分钟被切断"。
+     */
+    private fun HttpRequestBuilder.withGenerationTimeout(profile: Map<String, String>) {
+        val seconds = resolveGenerationTimeoutSeconds(profile)
+        timeout {
+            connectTimeoutMillis = CONNECT_TIMEOUT_MS
+            requestTimeoutMillis = seconds * 1000
+            socketTimeoutMillis = seconds * 1000
+        }
+    }
 
     /** 鉴权头：无 Key 时返回空 Map，避免发出空 Bearer。 */
     private fun authHeaders(kind: ProviderKind, apiKey: String): Map<String, String> = when {
@@ -395,13 +445,18 @@ class LlmClient(
         val base = baseUrl.trimEnd('/')
         val temp = temperature ?: DEFAULT_TEMPERATURE
 
-        return retryWithBackoff(maxRetries = DEFAULT_MAX_RETRIES) {
+        return retryWithBackoff(
+            maxRetries = DEFAULT_MAX_RETRIES,
+            timeoutSeconds = resolveGenerationTimeoutSeconds(profile),
+            retryNetworkErrors = true,
+        ) {
             when (kind) {
                 ProviderKind.ANTHROPIC -> {
                     val (system, rest) = splitSystem(messages)
                     val amsgs = rest.map { AnthropicMessage(it.role, it.content.orEmpty()) }
                         .ifEmpty { listOf(AnthropicMessage("user", system)) }
                     val response: HttpResponse = httpClient.post("$base/messages") {
+                        withGenerationTimeout(profile)
                         contentType(ContentType.Application.Json)
                         header("x-api-key", apiKey)
                         header("anthropic-version", "2023-06-01")
@@ -433,6 +488,7 @@ class LlmClient(
                         )
                     }.ifEmpty { listOf(GeminiContent("user", listOf(GeminiPart(system)))) }
                     val response: HttpResponse = httpClient.post("$base/models/$resolvedModel:generateContent?key=$apiKey") {
+                        withGenerationTimeout(profile)
                         contentType(ContentType.Application.Json)
                         setBody(
                             GeminiRequest(
@@ -464,6 +520,7 @@ class LlmClient(
                     val response: HttpResponse = httpClient.post(
                         if (kind == ProviderKind.AZURE) "$base/chat/completions?api-version=2024-02-15-preview" else "$base/chat/completions",
                     ) {
+                        withGenerationTimeout(profile)
                         contentType(ContentType.Application.Json)
                         authHeaders(kind, apiKey).forEach { (name, value) -> header(name, value) }
                         setBody(request)
@@ -1443,35 +1500,71 @@ class LlmClient(
 
     /**
      * Retry logic with exponential backoff.
+     *
+     * timeoutSeconds 非空时，把超时/断连翻译成用户能落地的提示（见 [translateTimeoutError]）；
+     * retryNetworkErrors=true 时，本端超时与服务端主动断连也按瞬错重试。
+     * 蒸馏的失败现场里两种形态都出现过，业务错误（4xx/5xx）仍走 [RetryableException] 不变。
      */
     private suspend fun <T> retryWithBackoff(
         maxRetries: Int,
         initialDelayMs: Long = 1000,
         maxDelayMs: Long = 10000,
         factor: Double = 2.0,
+        timeoutSeconds: Long? = null,
+        retryNetworkErrors: Boolean = false,
+        block: suspend () -> T
+    ): T {
+        return try {
+            retryWithBackoffCore(maxRetries, initialDelayMs, maxDelayMs, factor, retryNetworkErrors, block)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            throw translateTimeoutError(e, timeoutSeconds)
+        }
+    }
+
+    /**
+     * 重试主体：只识别"值得重试"的错误（[RetryableException] 的可重试状态码，
+     * 以及开启 retryNetworkErrors 时的网络瞬错），其余异常直接上抛由调用方决定。
+     */
+    private suspend fun <T> retryWithBackoffCore(
+        maxRetries: Int,
+        initialDelayMs: Long = 1000,
+        maxDelayMs: Long = 10000,
+        factor: Double = 2.0,
+        retryNetworkErrors: Boolean,
         block: suspend () -> T
     ): T {
         var currentDelay = initialDelayMs
         repeat(maxRetries) { attempt ->
             try {
                 return block()
-            } catch (e: RetryableException) {
-                if (attempt == maxRetries - 1) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val status = retryableStatus(e, retryNetworkErrors)
+                if (status == null || attempt == maxRetries - 1) {
                     throw e
                 }
                 // 限流（429）按 SenseNova 官方建议做指数退避：秒级重试会被再次拒绝，
                 // 故对 429 使用更长的起点（3s、6s…），其余错误沿用原退避。
-                val effectiveDelay = if (e.statusCode == 429) {
+                val effectiveDelay = if (status == 429) {
                     (RATE_LIMIT_BASE_DELAY_MS * (attempt + 1)).coerceAtMost(RATE_LIMIT_MAX_DELAY_MS)
                 } else {
                     currentDelay
                 }
-                PlatformLog.w(TAG, "Retry attempt ${attempt + 1}/$maxRetries (status=${e.statusCode}) after ${effectiveDelay}ms", e)
+                PlatformLog.w(TAG, "Retry attempt ${attempt + 1}/$maxRetries (status=$status) after ${effectiveDelay}ms", e)
                 delay(effectiveDelay)
                 currentDelay = (currentDelay * factor).toLong().coerceAtMost(maxDelayMs)
             }
         }
         return block() // Final attempt
+    }
+
+    /** 可重试的状态码；不可重试返回 null。0 表示网络瞬错，同样值得重试。 */
+    private fun retryableStatus(error: Exception, retryNetworkErrors: Boolean): Int? = when (error) {
+        is RetryableException -> error.statusCode
+        else -> if (retryNetworkErrors && error.isTransientNetworkError()) 0 else null
     }
 
     /**
@@ -1532,4 +1625,59 @@ internal fun normalizeSystemMessages(messages: List<LlmClient.ChatMessage>): Lis
     val conversation = messages.filter { it.role != "system" }
     if (system.isBlank()) return conversation
     return listOf(LlmClient.ChatMessage(role = "system", content = system)) + conversation
+}
+
+// ---------- 生成类请求的超时识别与错误翻译 ----------
+// 顶层 internal：LlmClient 类体内与 commonTest 均可直接调用，无需 companion 限定。
+
+/** 网络瞬错的识别标记（commonMain 无法引用 java.net.SocketException 类型，只能看消息）。 */
+internal val TRANSIENT_NETWORK_MARKERS = listOf(
+    "Software caused connection abort",
+    "Connection reset by peer",
+    "Connection reset",
+    "Read timed out",
+    "socket closed",
+)
+
+/**
+ * 异常链（含 suppressed）里是否有一次 Ktor 请求超时。
+ *
+ * 超时时的主异常常是 ClosedByteChannelException / java.net.SocketException，
+ * 真正的 HttpRequestTimeoutException 挂在 suppressed 上，所以两边都要递归看。
+ */
+internal fun Throwable.containsTimeout(): Boolean {
+    if (this is HttpRequestTimeoutException) return true
+    if (this.suppressed.any { it.containsTimeout() }) return true
+    val cause = this.cause
+    return cause != null && cause !== this && cause.containsTimeout()
+}
+
+/**
+ * 是否为可重试的网络瞬错（本端超时，或服务端/网关主动掐掉连接）。
+ * 只能用消息匹配：commonMain 拿不到 java.net.SocketException 类型。
+ */
+internal fun Throwable.isTransientNetworkError(): Boolean {
+    if (containsTimeout()) return true
+    val message = this.message.orEmpty()
+    if (TRANSIENT_NETWORK_MARKERS.any { message.contains(it, ignoreCase = true) }) return true
+    if (this.suppressed.any { it.isTransientNetworkError() }) return true
+    val cause = this.cause
+    return cause != null && cause !== this && cause.isTransientNetworkError()
+}
+
+/**
+ * 把超时/断连翻译成用户能落地的提示。
+ *
+ * 现场的主异常消息是 "Software caused connection abort"，用户看不出是超时；
+ * 只有沿异常链/suppressed 才能找到 HttpRequestTimeoutException。
+ * timeoutSeconds 为 null（非生成类调用）时原样返回，保持既有语义。
+ */
+internal fun translateTimeoutError(error: Exception, timeoutSeconds: Long?): Exception {
+    if (timeoutSeconds == null || !error.isTransientNetworkError()) return error
+    val message = if (error.containsTimeout()) {
+        "模型响应超时：${timeoutSeconds} 秒内模型未返回结果"
+    } else {
+        "与模型服务的连接被中断（网关或网络断开，${timeoutSeconds} 秒内未返回结果）"
+    }
+    return IllegalStateException(message, error)
 }

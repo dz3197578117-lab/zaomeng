@@ -103,7 +103,8 @@ class DiagnosticsEventLogTest {
         )
 
         val report = service.buildDiagnosticsReport()
-        assertEquals(2, report.schemaVersion)
+        // schemaVersion 3 起报告内嵌 runtimeLog 段（本用例不注入日志来源，该段为「不可用」）
+        assertEquals(3, report.schemaVersion)
         assertEquals(1, report.recentEvents.size)
         assertEquals("ondevice.failed", report.recentEvents.single().category)
         assertEquals("failed", report.onDevice["state"])

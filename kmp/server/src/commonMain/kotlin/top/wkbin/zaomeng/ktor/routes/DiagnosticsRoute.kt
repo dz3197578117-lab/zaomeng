@@ -7,6 +7,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import top.wkbin.zaomeng.ktor.services.DiagnosticsService
 import top.wkbin.zaomeng.ktor.services.StorageService
+import top.wkbin.zaomeng.platform.RuntimeLogSource
 
 /**
  * 诊断 API 路由
@@ -31,6 +32,17 @@ fun Route.diagnosticsRoute(
                 call.respond(HttpStatusCode.OK, report)
             } catch (e: Exception) {
                 call.respondError(HttpStatusCode.InternalServerError, (e.message ?: "Failed to build diagnostics report"))
+            }
+        }
+
+        // GET /api/web/diagnostics/runtime-log?lines=N - 拉取运行日志（已脱敏，供应用内「运行日志」页）
+        get("/runtime-log") {
+            try {
+                val requested = call.request.queryParameters["lines"]?.toIntOrNull()
+                    ?: RuntimeLogSource.DEFAULT_SNAPSHOT_LINES
+                call.respond(HttpStatusCode.OK, diagnosticsService.buildRuntimeLogSnapshot(requested))
+            } catch (e: Exception) {
+                call.respondError(HttpStatusCode.InternalServerError, (e.message ?: "Failed to read runtime log"))
             }
         }
     }

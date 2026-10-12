@@ -1,6 +1,8 @@
 package top.wkbin.zaomeng.data.api
 
+import io.ktor.client.call.body
 import io.ktor.client.request.get
+import io.ktor.client.request.parameter
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsBytes
 import io.ktor.client.statement.bodyAsText
@@ -9,6 +11,7 @@ import okio.buffer
 import okio.use
 import top.wkbin.zaomeng.backend.BackendEndpointProvider
 import top.wkbin.zaomeng.backend.BackendEndpoint
+import top.wkbin.zaomeng.data.api.RuntimeLogDto
 
 class KtorDiagnosticsClient(
     private val http: KtorHttpClientProvider,
@@ -32,6 +35,20 @@ class KtorDiagnosticsClient(
         }
         destination.buffer().use { it.write(bytes) }
         return bytes.size.toLong()
+    }
+
+    /**
+     * 拉取运行日志快照（服务端已脱敏）。
+     *
+     * 行数上限由服务端夹紧，这里只表达诉求；返回的标准 JSON 契约走 ContentNegotiation 解码。
+     */
+    suspend fun runtimeLog(maxLines: Int): RuntimeLogDto {
+        val response = request { endpoint ->
+            http.client.get("${endpoint.baseUrl.trimEnd('/')}/api/web/diagnostics/runtime-log") {
+                parameter("lines", maxLines)
+            }
+        }
+        return response.body()
     }
 
     private suspend fun request(block: suspend (BackendEndpoint) -> HttpResponse): HttpResponse {

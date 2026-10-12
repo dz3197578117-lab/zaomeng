@@ -22,6 +22,7 @@ import top.wkbin.zaomeng.data.api.PluginPackageInspectionDto
 import top.wkbin.zaomeng.data.api.PluginBuilderValidationDto
 import top.wkbin.zaomeng.data.api.PluginDraft
 import top.wkbin.zaomeng.data.api.PluginTemporaryNpcGeneratorResponse
+import top.wkbin.zaomeng.data.api.RuntimeLogDto
 import top.wkbin.zaomeng.data.api.SaveModelSettingsRequest
 import top.wkbin.zaomeng.data.api.TestModelSettingsRequest
 import top.wkbin.zaomeng.data.api.UninstallPluginResponse
@@ -66,6 +67,13 @@ interface ModelSettingsRepository {
 
 interface DiagnosticsRepository {
     suspend fun exportDiagnostics(destination: Sink): Long
+
+    /**
+     * 拉取运行日志快照（服务端已脱敏），供应用内「运行日志」页展示与单独导出。
+     *
+     * @param maxLines 期望行数，服务端会夹紧到自己的上限。
+     */
+    suspend fun runtimeLog(maxLines: Int): RuntimeLogDto
 }
 
 interface PluginRepository {

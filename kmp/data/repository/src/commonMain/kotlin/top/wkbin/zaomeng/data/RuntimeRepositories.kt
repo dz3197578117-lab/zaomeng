@@ -36,6 +36,7 @@ import top.wkbin.zaomeng.data.api.PackagePluginDraftRequest
 import top.wkbin.zaomeng.data.api.ValidatePluginDraftRequest
 import top.wkbin.zaomeng.data.api.PluginTemporaryNpcGeneratorRequest
 import top.wkbin.zaomeng.data.api.PluginTemporaryNpcGeneratorResponse
+import top.wkbin.zaomeng.data.api.RuntimeLogDto
 import top.wkbin.zaomeng.data.api.SaveModelSettingsRequest
 import top.wkbin.zaomeng.data.api.TestModelSettingsRequest
 import top.wkbin.zaomeng.data.api.UninstallPluginResponse
@@ -129,6 +130,10 @@ class DiagnosticsRepositoryImpl(
 ) : DiagnosticsRepository {
     override suspend fun exportDiagnostics(destination: Sink): Long = repositoryRequest {
         ktorDiagnostics.export(destination)
+    }
+
+    override suspend fun runtimeLog(maxLines: Int): RuntimeLogDto = repositoryRequest {
+        ktorDiagnostics.runtimeLog(maxLines)
     }
 }
 

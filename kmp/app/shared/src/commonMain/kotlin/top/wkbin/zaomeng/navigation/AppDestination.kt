@@ -46,6 +46,10 @@ data object StartupRecoverySettingsDestination : NavKey
 @Serializable
 data object AppSupportSettingsDestination : NavKey
 
+/** 运行日志页：展示整个应用的运行时日志（Android 为本进程 logcat 采集）。 */
+@Serializable
+data object RuntimeLogDestination : NavKey
+
 @Serializable
 data object AppUpdateDestination : NavKey
 

@@ -18,14 +18,19 @@ class KtorServiceGraph(platform: ServerPlatform) {
     // 诊断事件日志：跨重启保留的关键事件（对话解析失败/插件动作/端侧推理状态），
     // 随诊断导出一起交给排查者，避免只能靠 logcat 猜。
     val diagnosticsLog = DiagnosticsEventLog(storage.getStorageRoot() / "diagnostics-events.jsonl")
-    // onDeviceSnapshot 用 lambda 延迟绑定：端侧服务在下方才创建，导出时才求值。
+    val modelApiKeys = ModelApiKeyService(platform.secureStore())
+    // onDeviceSnapshot / apiKeyConfiguredOf 用 lambda 延迟绑定：被调对象在下方才创建，导出时才求值。
     val diagnostics = DiagnosticsService(
         storageRoot = storage.getStorageRoot(),
         storageService = storage,
         eventLog = diagnosticsLog,
         onDeviceSnapshot = { onDeviceModels.diagnosticsSnapshot() },
+        // 运行日志来源：Android 抓本进程 logcat，桌面端读进程内缓冲（见 ServerPlatform）。
+        runtimeLogSource = platform.runtimeLogSource(),
+        // 以安全存储的实际结果判断"是否配了 Key"：ModelProfile.apiKeyConfigured 从不被写入，
+        // 直接读它会让已配 Key 的档案在诊断里永远显示未配置（最常见的假阴性）。
+        apiKeyConfiguredOf = { profileId -> modelApiKeys.getApiKey(profileId)?.isNotBlank() },
     )
-    val modelApiKeys = ModelApiKeyService(platform.secureStore())
     val promptLoader = PromptLoader(platform.promptSource)
     val llm = LlmClient(modelApiKeys, storage)
     val worldMemory = WorldMemoryService(storage)

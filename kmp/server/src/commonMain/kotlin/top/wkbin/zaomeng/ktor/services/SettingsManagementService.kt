@@ -104,7 +104,10 @@ class SettingsManagementService(
             else -> existingSettings?.activeProfileId ?: profiles.first().profileId ?: generateId()
         }
 
-        // 创建或更新 profile
+        // 创建或更新 profile。
+        // timeout_seconds 不经由 UI 写入（见 ModelProfile.timeoutSeconds），
+        // 但它是排查/调优用的逃生口，保存常规设置时必须原样保留，不能被一次保存抹掉。
+        val existingProfile = profiles.firstOrNull { it.profileId == targetProfileId }
         val targetProfile = ModelProfile(
             profileId = targetProfileId,
             profileName = profileName.ifBlank { "Default" },
@@ -116,6 +119,7 @@ class SettingsManagementService(
             tokenParameter = tokenParameter,
             responseFormatMode = responseFormatMode,
             apiKeyRequired = apiKeyRequired,
+            timeoutSeconds = existingProfile?.timeoutSeconds,
         )
 
         // 更新 profiles 列表

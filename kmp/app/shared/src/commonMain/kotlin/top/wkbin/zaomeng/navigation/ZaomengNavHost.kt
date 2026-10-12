@@ -1,4 +1,4 @@
-﻿package top.wkbin.zaomeng.navigation
+package top.wkbin.zaomeng.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -50,6 +50,8 @@ import top.wkbin.zaomeng.feature.settings.OnDeviceModelsScreen
 import top.wkbin.zaomeng.feature.settings.OnDeviceModelsViewModel
 import top.wkbin.zaomeng.feature.settings.PluginsScreen
 import top.wkbin.zaomeng.feature.pluginbuilder.PluginBuilderScreen
+import top.wkbin.zaomeng.feature.settings.RuntimeLogScreen
+import top.wkbin.zaomeng.feature.settings.RuntimeLogViewModel
 import top.wkbin.zaomeng.feature.settings.SettingsViewModel
 import top.wkbin.zaomeng.feature.settings.SettingsHomeScreen
 import top.wkbin.zaomeng.feature.settings.StartupRecoverySettingsScreen
@@ -228,6 +230,14 @@ fun ZaomengNavHost(
             entry(AppSupportSettingsDestination) {
                 val viewModel: SettingsViewModel = koinViewModel()
                 AppSupportSettingsScreen(
+                    viewModel = viewModel,
+                    onBack = popBack,
+                    onOpenRuntimeLog = { backStack.add(RuntimeLogDestination) },
+                )
+            }
+            entry(RuntimeLogDestination) {
+                val viewModel: RuntimeLogViewModel = koinViewModel()
+                RuntimeLogScreen(
                     viewModel = viewModel,
                     onBack = popBack,
                 )

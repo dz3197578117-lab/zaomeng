@@ -29,6 +29,15 @@ class AndroidServerPlatform(
         getDatabaseBuilder(appContext)
 
     override fun onDeviceRuntime(): OnDeviceRuntime = onDeviceRuntime
+
+    /**
+     * 运行日志采集器。
+     *
+     * 采集本身在 Application.onCreate 里由 [AndroidRuntimeLog.install] 启动（要尽早，
+     * 否则漏掉启动阶段日志）；这里只把它作为日志来源暴露给诊断导出与「运行日志」页。
+     * 即便 install 还没跑到，[AndroidRuntimeLog.snapshot] 也会走一次性 logcat 兜底。
+     */
+    override fun runtimeLogSource(): RuntimeLogSource = AndroidRuntimeLog
 }
 
 internal fun File.toOkioPath(): Path = absolutePath.toPath()

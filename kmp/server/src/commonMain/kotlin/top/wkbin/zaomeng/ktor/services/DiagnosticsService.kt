@@ -9,7 +9,10 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.decodeFromString
 import okio.Path
+import top.wkbin.zaomeng.ktor.models.ModelProfile
 import top.wkbin.zaomeng.ktor.models.ModelSettings
+import top.wkbin.zaomeng.data.api.RuntimeLogDto
+import top.wkbin.zaomeng.platform.RuntimeLogSource
 import top.wkbin.zaomeng.platform.diskSpaceOf
 import top.wkbin.zaomeng.platform.nowIsoString
 import top.wkbin.zaomeng.platform.systemProperty
@@ -20,9 +23,11 @@ import top.wkbin.zaomeng.platform.systemProperty
  * 生成系统诊断报告，对应 Python 的 DiagnosticsServiceMixin。
  *
  * 导出内容是自包含的：既有环境/存储/模型配置摘要，也有 [DiagnosticsEventLog] 里
- * 记录的关键事件（对话解析失败含模型输出摘录、插件动作失败、端侧推理状态变迁），
- * 以及端侧 llama-server 的日志尾部——排查时不需要再去掏 logcat。
+ * 记录的关键事件（对话解析失败含模型输出摘录、插件动作失败、端侧推理状态变迁）、
+ * 端侧 llama-server 的日志尾部，以及**整个应用的运行时日志**（[RuntimeLogDto]：
+ * Android 为本进程 logcat 采集，含 native / 第三方库 / 崩溃），排查时不必再去掏 logcat。
  *
+ * 日志与崩溃记录在进入报告前统一过 [LogRedactor]（密钥/令牌/Authorization 一律遮蔽）。
  * 每一节都独立容错：单节失败只降级为空，绝不让整个导出 500。
  */
 class DiagnosticsService(
@@ -30,6 +35,15 @@ class DiagnosticsService(
     private val storageService: StorageService,
     private val eventLog: DiagnosticsEventLog? = null,
     private val onDeviceSnapshot: (() -> Map<String, String>)? = null,
+    private val runtimeLogSource: RuntimeLogSource? = null,
+    /**
+     * 某 profile 是否真的配置了 API Key（查安全存储）。
+     *
+     * ModelProfile.apiKeyConfigured 是保存模型设置时写入的标记，
+     * 而设置写入路径从不填这个字段，导致诊断报告永远报 false（假阴性）。
+     * 用 lambda 传入以保持本服务不依赖 ModelApiKeyService，测试也可注入固定值。
+     */
+    private val apiKeyConfiguredOf: ((String) -> Boolean?)? = null,
 ) {
     private val json = Json {
         prettyPrint = true
@@ -48,10 +62,12 @@ class DiagnosticsService(
         val startupReport = runCatching { loadStartupReport() }.getOrDefault(emptyMap())
         val recentEvents = runCatching { eventLog?.recent() ?: emptyList() }.getOrDefault(emptyList())
         val onDevice = runCatching { onDeviceSnapshot?.invoke().orEmpty() }.getOrDefault(emptyMap())
+        val runtimeLog = runCatching { buildRuntimeLogSnapshot(MAX_REPORT_LOG_LINES) }
+            .getOrElse { RuntimeLogDto(capturedAt = nowIsoString(), note = "运行日志采集失败，已跳过该节。") }
 
         return DiagnosticsReport(
             kind = "zaomeng_diagnostics",
-            schemaVersion = 2,
+            schemaVersion = 3,
             generatedAt = nowIsoString(),
             runtime = RuntimeInfo(
                 kotlin = systemProperty("java.version") ?: "unknown",
@@ -70,7 +86,39 @@ class DiagnosticsService(
             startup = startupReport,
             runs = runs,
             recentEvents = recentEvents,
-            onDevice = onDevice
+            onDevice = onDevice,
+            runtimeLog = runtimeLog
+        )
+    }
+
+    /**
+     * 构建运行日志快照（脱敏 + 夹紧行数）。
+     *
+     * 诊断报告内嵌与「运行日志」页单独拉取共用这一个入口，保证两处口径一致：
+     * 同样的来源标识、同样的密钥脱敏、同样的行数上限。
+     *
+     * @param maxLines 期望行数，夹紧到 [MAX_STANDALONE_LOG_LINES]。
+     */
+    fun buildRuntimeLogSnapshot(maxLines: Int = MAX_REPORT_LOG_LINES): RuntimeLogDto {
+        val bounded = maxLines.coerceIn(1, MAX_STANDALONE_LOG_LINES)
+        val source = runtimeLogSource
+            ?: return RuntimeLogDto(
+                available = false,
+                capturedAt = nowIsoString(),
+                note = "当前平台没有运行日志采集器。",
+            )
+        val snapshot = runCatching { source.snapshot(bounded) }
+            .getOrElse {
+                RuntimeLogDto(
+                    source = source.source,
+                    available = false,
+                    capturedAt = nowIsoString(),
+                    note = "运行日志采集失败。",
+                )
+            }
+        return snapshot.copy(
+            lines = LogRedactor.redactLines(snapshot.lines.take(bounded)),
+            crashes = LogRedactor.redactCrashes(snapshot.crashes.take(MAX_REPORT_CRASHES)),
         )
     }
 
@@ -146,10 +194,25 @@ class DiagnosticsService(
                 provider = profile.provider ?: "",
                 model = profile.model ?: "",
                 baseUrl = safeEndpoint(profile.baseUrl ?: ""),
-                apiKeyConfigured = profile.apiKeyConfigured ?: false,
+                apiKeyConfigured = resolveApiKeyConfigured(profile),
                 configured = profile.configured ?: false
             )
         }
+    }
+
+    /**
+     * 该 profile 是否配置了 API Key。
+     *
+     * ModelProfile.apiKeyConfigured 本应由保存模型设置时写入，但保存路径从不填它，
+     * 于是诊断报告永远报 false：用户明明配好 Key，导出里却显示"未配置"，排查会走错方向。
+     * 这里以安全存储的实际结果为准（见构造参数 apiKeyConfiguredOf），查不到再回落该字段。
+     */
+    private fun resolveApiKeyConfigured(profile: ModelProfile): Boolean {
+        val profileId = profile.profileId?.trim().orEmpty()
+        if (profileId.isNotEmpty()) {
+            apiKeyConfiguredOf?.invoke(profileId)?.let { return it }
+        }
+        return profile.apiKeyConfigured == true
     }
 
     /**
@@ -202,6 +265,15 @@ class DiagnosticsService(
     private companion object {
         // scheme://host[:port]/path（去掉 query/fragment）
         val ENDPOINT_REGEX = Regex("^(https?)://([^/:?#]+)(?::(\\d+))?([^?#]*)")
+
+        /** 诊断报告内嵌的日志行数上限：报告要能直接发给排查者，不能无界膨胀。 */
+        const val MAX_REPORT_LOG_LINES = 1_200
+
+        /** 「运行日志」页单独拉取时的行数上限。 */
+        const val MAX_STANDALONE_LOG_LINES = 5_000
+
+        /** 报告内嵌的崩溃记录条数上限。 */
+        const val MAX_REPORT_CRASHES = 5
     }
 }
 
@@ -222,6 +294,13 @@ data class DiagnosticsReport(
     val recentEvents: List<DiagnosticsEvent> = emptyList(),
     /** 端侧推理快照：状态、模型、端口、llama-server 日志尾部（无端侧时为空）。 */
     val onDevice: Map<String, String> = emptyMap(),
+    /**
+     * 整个应用的运行时日志尾部（已脱敏）。
+     *
+     * Android 来自本进程 logcat 的持续采集，覆盖 native（llama.cpp）、第三方库
+     * （OkHttp/Compose）与系统崩溃日志；JVM 来自进程内缓冲。schemaVersion 3 起加入。
+     */
+    val runtimeLog: RuntimeLogDto = RuntimeLogDto(),
 )
 
 @Serializable

@@ -96,6 +96,7 @@ Authorization: Bearer <token>
 |---|---|---|---|
 | GET | `/api/web/health` | 无 | `200` `HealthResponse` |
 | GET | `/api/web/diagnostics/export` | 无 | `200` 诊断 JSON；下载名 `zaomeng-diagnostics.json` |
+| GET | `/api/web/diagnostics/runtime-log` | `lines`（可选，期望行数，服务端夹紧到 5000） | `200` `RuntimeLogDto` |
 
 健康检查响应固定为：
 
@@ -104,6 +105,47 @@ Authorization: Bearer <token>
 ```
 
 诊断报告可能包含运行环境、存储概况与脱敏后的错误信息，不应包含模型 API Key。
+
+### 2.1 运行日志（`RuntimeLogDto`）
+
+`/api/web/diagnostics/export` 的 `runtimeLog` 段与 `/api/web/diagnostics/runtime-log` 同源同口径，
+都是**整个应用的运行时日志**：Android 上由应用启动时挂起的
+`logcat -v threadtime --pid=<本进程>` 持续采集（覆盖 native、第三方库与系统崩溃日志），
+JVM/Desktop 上取进程内缓冲。两处在返回前统一执行日志脱敏（密钥、令牌、Authorization、
+URL 中的凭据一律替换为 `***`），超长行截断。
+
+```json
+{
+  "source": "logcat-file",
+  "available": true,
+  "capturedAt": "2026-10-12T20:00:00+08:00",
+  "totalLines": 4210,
+  "truncated": true,
+  "note": "",
+  "lines": ["10-12 20:00:00.000  1234  1234 I Zaomeng.Dialogue: ..."],
+  "crashes": [
+    {
+      "occurredAt": "2026-10-12T19:59:59+08:00",
+      "thread": "main",
+      "summary": "NullPointerException: ...",
+      "stackTrace": "at ..."
+    }
+  ]
+}
+```
+
+`source` 取值：
+
+| 值 | 含义 |
+|---|---|
+| `logcat-file` | 本进程 logcat 持续采集并落盘（最完整，跨进程重启保留） |
+| `logcat-dump` | 落盘文件为空，改用一次性 `logcat -d` 抓取 |
+| `process-buffer` | logcat 不可用，仅返回进程内日志缓冲（不含第三方库与 native 输出） |
+| `unavailable` | 拿不到任何日志，此时 `available=false` 且 `note` 说明原因 |
+
+`truncated=true` 表示只返回了尾部若干行。诊断报告内嵌时 `lines` 上限为 1200 行、
+`crashes` 最多 5 条；单独拉取该接口时 `lines` 上限为 5000 行。
+诊断报告 `schemaVersion` 自 3 起包含 `runtimeLog` 段。
 
 ## 3. 书卷与蒸馏运行
 
@@ -661,6 +703,16 @@ data: {"index":0,"speaker":"林黛玉","role":"character","field":"message","tex
 连接测试/能力检测请求字段相同，但没有 `profile_name`、`create_profile`、`activate_profile`。响应只返回 `api_key_configured`，绝不回传明文 API Key。
 
 能力检测响应包括连接状态、TTFT、总耗时、真实流式支持、SSE 分块统计、NDJSON 遵循度、结构化响应与 reasoning-off 支持，以及推荐的 token/响应格式设置。
+
+#### 生成类请求超时（`timeout_seconds`）
+
+`ModelProfile` 有一个 `timeout_seconds` 字段，控制蒸馏等非流式 `chatCompletion` 请求的超时秒数。该字段**不经由 UI 或保存接口写入**——保存设置时会原样保留既有值，不会抹掉。需要调整时直接编辑设置文件中的 `timeout_seconds`：
+
+- 留空或缺失 → 默认 300 秒（与流式读取超时对齐）；
+- 越界（<30 或 >3600）→ 回退默认，避免坏配置把请求卡死或几秒被切断；
+- 合法值 → 覆盖该 profile 的生成类请求总超时与字节间隔超时。
+
+此前的默认 60 秒不足以跑完一次内容提取，导致蒸馏频繁超时失败。
 
 ## 10. 插件
 

@@ -58,6 +58,14 @@ data class ModelProfile(
     val baseUrl: String? = null,
     @SerialName("max_tokens")
     val maxTokens: Int? = null,
+    /**
+     * 生成类请求（蒸馏、非流式 chatCompletion）的超时秒数。
+     *
+     * 可空 = 用默认 300 秒；越界（<30 或 >3600）视为非法配置，回退默认。
+     * 该字段不经由 UI 写入，保存模型设置时会原样保留既有值。
+     */
+    @SerialName("timeout_seconds")
+    val timeoutSeconds: Int? = null,
     @SerialName("reasoning_effort")
     val reasoningEffort: String? = null,
     @SerialName("token_parameter")

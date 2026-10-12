@@ -27,7 +27,11 @@ import top.wkbin.zaomeng.platform.rememberToast
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppSupportSettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
+fun AppSupportSettingsScreen(
+    viewModel: SettingsViewModel,
+    onBack: () -> Unit,
+    onOpenRuntimeLog: () -> Unit = {},
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val fileExporter = rememberFileExporter(
         onSave = { sink -> viewModel.exportDiagnostics(sink) },
@@ -58,6 +62,7 @@ fun AppSupportSettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 state = state,
                 onExportDiagnostics = { fileExporter("zaomeng-diagnostics.json", "application/json") },
+                onOpenRuntimeLog = onOpenRuntimeLog,
                 onOpenOfficialWebsite = { openExternalUrl("https://dz3197578117-lab.github.io/zaomeng/") },
                 onOpenProject = { openExternalUrl("https://github.com/dz3197578117-lab/zaomeng") },
                 onOpenPackageLibrary = { openExternalUrl("https://github.com/wkbin/zaomeng-library") },
@@ -80,6 +85,7 @@ private fun SettingsSupportGroup(
     modifier: Modifier,
     state: SettingsUiState,
     onExportDiagnostics: () -> Unit,
+    onOpenRuntimeLog: () -> Unit,
     onOpenOfficialWebsite: () -> Unit,
     onOpenProject: () -> Unit,
     onOpenPackageLibrary: () -> Unit,
@@ -93,10 +99,17 @@ private fun SettingsSupportGroup(
         androidx.compose.foundation.layout.Column {
             SettingsRow(
                 title = "运行诊断",
-                subtitle = "导出启动自检、任务状态与模型连接摘要，不包含密钥或小说内容。",
+                subtitle = "导出启动自检、任务状态、模型连接摘要与运行日志，不包含密钥或小说内容。",
                 value = if (state.exportingDiagnostics) "导出中" else "导出",
                 enabled = !state.exportingDiagnostics,
                 onClick = onExportDiagnostics,
+            )
+            androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            SettingsRow(
+                title = "运行日志",
+                subtitle = "查看整个应用的运行时日志（含 native、第三方库与崩溃堆栈），可导出为文本。",
+                value = "查看",
+                onClick = onOpenRuntimeLog,
             )
             androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             SettingsRow(

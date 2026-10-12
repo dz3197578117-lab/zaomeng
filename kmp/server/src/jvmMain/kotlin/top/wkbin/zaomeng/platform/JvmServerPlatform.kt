@@ -20,12 +20,16 @@ class JvmServerPlatform(
 
     private val onDeviceRuntime = JvmOnDeviceRuntime(dataRoot)
 
+    private val runtimeLog = JvmRuntimeLogSource()
+
     override fun secureStore(): SecureKeyValueStore = store
 
     override fun databaseBuilder(): RoomDatabase.Builder<ZaomengDatabase> =
         getDatabaseBuilder(dataRoot / "zaomeng.db")
 
     override fun onDeviceRuntime(): OnDeviceRuntime = onDeviceRuntime
+
+    override fun runtimeLogSource(): RuntimeLogSource = runtimeLog
 }
 
 internal fun defaultDataRoot(cwd: File = File(System.getProperty("user.dir"))): Path {
