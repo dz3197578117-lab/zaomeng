@@ -36,11 +36,13 @@ jobs:
 
       # 每次推送都把关：
       #   - 源码守卫：成员扩展遮蔽同类属性并自调用（会导致 StackOverflowError 闪退）
+      #   - 提示词同步：prompts/** 与两处打包副本必须逐字节一致（改一处不生效极难排查）
       #   - 发布元数据：版本号唯一来源、发布说明、CHANGELOG、版本号是否被写回源码
-      - name: Check source hygiene and release metadata
+      - name: Check source hygiene, prompt sync and release metadata
         shell: bash
         run: |
           bash scripts/check-kotlin-shadowing.sh
+          bash scripts/check-prompt-sync.sh
           bash scripts/check-release-ready.sh --ci
 
       - name: Set up JDK
