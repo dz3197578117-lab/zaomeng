@@ -215,7 +215,13 @@ class ChatViewModel(
                     val currentSession = current.session ?: return@update current
                     current.copy(
                         session = currentSession.copy(
-                            transcript = page.items.asReversed() + currentSession.transcript,
+                            // 走 prependTranscript 而不是直接拼接：分页 offset 是请求前算的，
+                            // 往返期间 transcript 变化就会让这一页与已有内容重叠，
+                            // 盲接会产生重复条目 → LazyColumn key 撞车 → 主线程闪退。
+                            transcript = prependTranscript(
+                                earlier = page.items.asReversed(),
+                                current = currentSession.transcript,
+                            ),
                             transcriptCount = page.total,
                         ),
                         loadingEarlier = false,
@@ -550,7 +556,9 @@ class ChatViewModel(
                         recovering = false,
                         session = recovered.copy(
                             transcript = if (recovered.transcript.isNotEmpty()) {
-                                recovered.transcript
+                                // 采纳服务端整份 transcript 时兜底去重：一旦它含重复条目，
+                                // 客户端照单全收会让 LazyColumn key 撞车并闪退。
+                                dedupTranscript(recovered.transcript)
                             } else {
                                 mergeTranscript(baseline, committedAppend)
                             },
@@ -634,7 +642,9 @@ class ChatViewModel(
                         recovering = false,
                         session = refreshed.copy(
                             transcript = if (refreshed.transcript.isNotEmpty()) {
-                                refreshed.transcript
+                                // 同 recover 路径：采纳服务端整份 transcript 时兜底去重，
+                                // 避免重复条目导致 LazyColumn key 撞车闪退。
+                                dedupTranscript(refreshed.transcript)
                             } else {
                                 mergeTranscript(baseline, committedAppend)
                             },

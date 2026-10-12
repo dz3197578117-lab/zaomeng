@@ -77,6 +77,50 @@ internal fun mergeTranscript(
     return base.filterNot { it.turnId in appendedTurnIds } + dedupedAppend
 }
 
+/**
+ * 按 [TranscriptItemDto.transcriptKey] 去重，保留首次出现。
+ *
+ * 用于**直接采纳服务端返回的整份 transcript** 时兜底：服务端列表是权威来源，
+ * 但一旦它含重复条目，客户端会照单全收，而重复条目会让 LazyColumn 的 key 撞车。
+ */
+internal fun dedupTranscript(items: List<TranscriptItemDto>): List<TranscriptItemDto> =
+    if (items.size < 2) items else items.distinctBy { it.transcriptKey() }
+
+/**
+ * 把「更早的一页」并到当前 transcript **前面**（分页向上加载）。
+ *
+ * 分页的 offset 是**发请求前**用 `total - loaded` 算出来的；请求往返期间
+ * transcript 可能已经变化（新一轮提交、流式完成、恢复刷新），于是这一页会和
+ * 已有内容重叠。早前这里是直接 `page + transcript`，重叠就产生重复条目——
+ * 而重复条目会让 LazyColumn 的 key 撞车，在主线程抛
+ * `IllegalArgumentException: Key "…" was already used` 直接闪退（线上已发生）。
+ *
+ * 因此这里对页内按 turnId 去重（保留最后一次出现，保持顺序），
+ * 并把已经在页里出现过的 turnId 从当前列表里移除，避免同一条消息出现两次。
+ */
+internal fun prependTranscript(
+    earlier: List<TranscriptItemDto>,
+    current: List<TranscriptItemDto>,
+): List<TranscriptItemDto> {
+    if (earlier.isEmpty()) return current
+    if (current.isEmpty()) return earlier
+
+    val lastIndexByTurnId = earlier.withIndex()
+        .filter { it.value.turnId.isNotBlank() }
+        .associate { it.value.turnId to it.index }
+    val dedupedEarlier = earlier.filterIndexed { index, item ->
+        item.turnId.isBlank() || lastIndexByTurnId[item.turnId] == index
+    }
+
+    val earlierTurnIds = dedupedEarlier.map { it.turnId }.filter { it.isNotBlank() }.toSet()
+    val keptCurrent = if (earlierTurnIds.isEmpty()) {
+        current
+    } else {
+        current.filterNot { it.turnId in earlierTurnIds }
+    }
+    return dedupedEarlier + keptCurrent
+}
+
 internal fun hasCommittedContent(items: List<TranscriptItemDto>): Boolean =
     items.any { it.role != "user" && it.message.isNotBlank() }
 

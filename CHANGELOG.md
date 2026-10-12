@@ -6,7 +6,26 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
-## [2.1.9] - 未发布
+## [2.1.10] - 未发布
+
+### 修复
+
+- **修复「对话闪退」与「对方重复说同一句」——同一个 bug**。
+  线上崩溃：`IllegalArgumentException: Key "…|李慧英|…" was already used`（Compose 列表 key 重复）。
+  - **根因**：向上加载历史消息时把拉到的一页**直接拼到现有列表前面、完全没有去重**；
+    而分页位置是**发请求前**算的，往返期间列表一旦变化（新的一轮提交、流式完成、失败恢复刷新），
+    这一页就会与已有内容重叠 → 同一条消息出现两次。
+  - 一条消息出现两次会同时造成：**界面重复**（看起来像角色又把同一句说了一遍）与
+    **直接闪退**（列表项 key 由 `turnId|说话人|时间戳|正文哈希` 组成，两条相同消息 key 也相同，
+    Compose 在主线程抛异常）。崩溃时间点正好紧跟在一次历史消息请求之后。
+  - **修复三层**：①渲染层按 key 去重（最后一道防线，任何上游重复都不再崩）；
+    ②分页前插去重（按 turnId 去重页内，并把页里已有的从当前列表移除，从源头消除重叠）；
+    ③采纳服务端整份列表时（失败恢复 / 刷新两条路径）兜底去重。
+  - 新增 4 个回归测试并做对照实验：把分页前插还原成修复前的裸拼接后，
+    `prepending an overlapping page does not duplicate items` 会失败，恢复后通过；
+    断言同时校验「key 必须唯一」这一崩溃相关的不变量。
+
+## [2.1.9] - 2026-10-13
 
 ### 新增
 
@@ -229,7 +248,8 @@
 早期版本（含从上游造梦 2.0 继续改动的部分）逐文件清单见
 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)。
 
-[2.1.9]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.8...HEAD
+[2.1.10]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.9...HEAD
+[2.1.9]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.8...v2.1.9
 [2.1.8]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.7...v2.1.8
 [2.1.7]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.6...v2.1.7
 [2.1.6]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.5...v2.1.6

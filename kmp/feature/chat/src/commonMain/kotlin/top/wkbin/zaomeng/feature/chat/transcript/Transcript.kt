@@ -178,7 +178,13 @@ internal fun Transcript(
     val isSpeaking by tts.isSpeaking.collectAsStateWithLifecycle()
     val speakingId by tts.currentSpeakingId.collectAsStateWithLifecycle()
     val bottomThresholdPx = with(LocalDensity.current) { 24.dp.roundToPx() }
-    val transcript = session.transcript
+    // 渲染前按 transcriptKey 去重：重复条目会让 LazyColumn 的 key 撞车，
+    // 在主线程抛 IllegalArgumentException: Key "…" was already used 直接闪退（线上已发生）。
+    // 放在渲染层是**最后一道防线**：上游任何写入路径漏掉的重复都不会再崩。
+    // distinctBy 保留首次出现——同 key 意味着 turnId/说话人/时间戳/正文全同，保留哪条都一样。
+    val transcript = remember(session.transcript) {
+        dedupTranscript(session.transcript)
+    }
     val latestAssistantIndex = transcript.indexOfLast { item ->
         item.role != "user" && item.role != "scene" && item.role != "director"
     }
