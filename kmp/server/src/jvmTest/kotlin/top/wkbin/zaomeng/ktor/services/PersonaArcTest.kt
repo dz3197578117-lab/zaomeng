@@ -2,10 +2,12 @@ package top.wkbin.zaomeng.ktor.services
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -168,5 +170,56 @@ class PersonaArcTest {
         assertTrue(system.contains("不得使用其他章节的信息"), "system 必须约束只看本章：$system")
         assertTrue(user.contains("第 7 章"), "user 应带章号：$user")
         assertTrue(user.contains("本章正文标记"), "user 应带本章正文：$user")
+    }
+
+    // ---------- 时间点解析（B-2） ----------
+
+    @Test
+    fun `persona chapter prefers progressed value then start chapter then 1`() {
+        assertEquals(
+            12,
+            resolvePersonaChapter(buildJsonObject { put("persona_chapter", 12); put("start_chapter", 3) }),
+            "推进后的 persona_chapter 优先",
+        )
+        assertEquals(
+            3,
+            resolvePersonaChapter(buildJsonObject { put("start_chapter", 3) }),
+            "没有推进值时用会话起始章",
+        )
+        assertEquals(
+            1,
+            resolvePersonaChapter(buildJsonObject { put("start_chapter", 0) }),
+            "起始章为 0（未指定）时按第 1 章 —— 宁可从早期状态开始，也不要剧透",
+        )
+        assertEquals(1, resolvePersonaChapter(null), "没有会话时按第 1 章")
+    }
+
+    @Test
+    fun `arc state for chapter falls back to the nearest earlier chapter`() {
+        val arc = arcOf(entry(1), entry(5), entry(9))
+
+        assertEquals(1, arcStateForChapter(arc, 1)!!["chapter"]!!.jsonPrimitive.intOrNull)
+        assertEquals(1, arcStateForChapter(arc, 3)!!["chapter"]!!.jsonPrimitive.intOrNull, "章号落在 1 和 5 之间应取更早的 1")
+        assertEquals(5, arcStateForChapter(arc, 5)!!["chapter"]!!.jsonPrimitive.intOrNull)
+        assertEquals(5, arcStateForChapter(arc, 8)!!["chapter"]!!.jsonPrimitive.intOrNull)
+        assertEquals(9, arcStateForChapter(arc, 99)!!["chapter"]!!.jsonPrimitive.intOrNull, "超出末尾时取最后一段")
+        assertEquals(
+            1,
+            arcStateForChapter(arc, 0)!!["chapter"]!!.jsonPrimitive.intOrNull,
+            "章号早于所有条目时取最早一段",
+        )
+    }
+
+    @Test
+    fun `arc state ignores entries without usable state`() {
+        val arc = arcOf(
+            arcEntry(1, "第1章", state = null, status = "failed", sourceChars = 0, truncated = false),
+            arcEntry(2, "第2章", state = null, status = "empty", sourceChars = 0, truncated = false),
+        )
+
+        assertNull(arcStateForChapter(arc, 2), "failed/empty 的条目没有状态可用，不能被选中")
+        assertNull(arcStateForChapter(null, 3), "没有弧线时返回 null（调用方退化为既有行为）")
+        assertNull(arcStateForChapter(newArc("run-1", "novel-1", "甲"), 1), "空弧线返回 null")
+        assertNull(arcStateForChapter(JsonObject(emptyMap()), 1), "损坏的弧线返回 null")
     }
 }

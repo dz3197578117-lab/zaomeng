@@ -79,17 +79,11 @@ class PersonaArcService(
     }
 
     fun arcFile(runId: String, novelId: String, character: String): Path =
-        storage.getRunDirectory(runId) /
-            "artifacts/characters/${PathSafety.sanitizePathComponent(novelId, "novelId")}" /
-            PathSafety.sanitizePathComponent(character, "character") /
-            "arc.json"
+        personaArcFile(storage, runId, novelId, character)
 
     /** 读取弧线；不存在或损坏都返回 null（调用方退化为既有行为）。 */
-    fun readArc(runId: String, novelId: String, character: String): JsonObject? {
-        val file = arcFile(runId, novelId, character)
-        if (!storage.isFile(file)) return null
-        return runCatching { json.parseToJsonElement(storage.readText(file)).jsonObject }.getOrNull()
-    }
+    fun readArc(runId: String, novelId: String, character: String): JsonObject? =
+        readPersonaArc(storage, runId, novelId, character)
 
     /**
      * 为一批角色逐章生成弧线。
@@ -235,8 +229,7 @@ class PersonaArcService(
 }
 
 /** 新建一个空弧线骨架。 */
-internal fun newArc(runId: String, novelId: String, character: String): JsonObject = buildJsonObject {
-    put("version", PersonaArcService.ARC_VERSION)
+internal fun newArc(runId: String, novelId: String, character: String): JsonObject = buildJsonObject {    put("version", PersonaArcService.ARC_VERSION)
     put("run_id", runId)
     put("novel_id", novelId)
     put("character", character)
@@ -375,4 +368,61 @@ internal fun parseArcState(content: String): Map<String, Any?>? {
         }
     }
     return state.ifEmpty { null }
+}
+
+// ---------------------------------------------------------------------------
+// 读取侧：对话按时间点注入时使用（不依赖 PersonaArcService 实例，避免为了读一个
+// 文件就要构造带 llm 的服务）。
+// ---------------------------------------------------------------------------
+
+/** 弧线文件的落盘路径（与 PROFILE.md 同目录）。 */
+internal fun personaArcFile(
+    storage: StorageService,
+    runId: String,
+    novelId: String,
+    character: String,
+): Path = storage.getRunDirectory(runId) /
+    "artifacts/characters/${PathSafety.sanitizePathComponent(novelId, "novelId")}" /
+    PathSafety.sanitizePathComponent(character, "character") /
+    "arc.json"
+
+/** 读取弧线；不存在或损坏返回 null，调用方退化为既有行为。 */
+internal fun readPersonaArc(
+    storage: StorageService,
+    runId: String,
+    novelId: String,
+    character: String,
+): JsonObject? {
+    val file = personaArcFile(storage, runId, novelId, character)
+    if (!storage.isFile(file)) return null
+    return runCatching { Json.parseToJsonElement(storage.readText(file)).jsonObject }.getOrNull()
+}
+
+/**
+ * 解析会话的「当前时间点（章）」。
+ *
+ * 优先用随剧情推进写回的 `persona_chapter`（B-3），否则回退到会话起始章
+ * `start_chapter`，都没有时按第 1 章处理——**宁可从早期状态开始，也不要剧透**。
+ */
+internal fun resolvePersonaChapter(session: JsonObject?): Int {
+    val explicit = session?.get("persona_chapter")?.jsonPrimitive?.intOrNull ?: 0
+    if (explicit > 0) return explicit
+    val start = session?.get("start_chapter")?.jsonPrimitive?.intOrNull ?: 0
+    if (start > 0) return start
+    return 1
+}
+
+/**
+ * 取覆盖 [chapter] 的弧线段：优先该章，其次最近一条更早的章，再都没有则最早的一条。
+ * 只认 `status == "ok"` 的条目（empty / failed 没有状态可用）。没有弧线返回 null。
+ */
+internal fun arcStateForChapter(arc: JsonObject?, chapter: Int): JsonObject? {
+    val entries = (arc?.get("chapters") as? JsonArray)
+        ?.mapNotNull { runCatching { it.jsonObject }.getOrNull() }
+        ?.filter { it["status"]?.jsonPrimitive?.contentOrNull == "ok" }
+        ?.sortedBy { it["chapter"]?.jsonPrimitive?.intOrNull ?: Int.MAX_VALUE }
+        .orEmpty()
+    if (entries.isEmpty()) return null
+    return entries.lastOrNull { (it["chapter"]?.jsonPrimitive?.intOrNull ?: 0) <= chapter }
+        ?: entries.first()
 }

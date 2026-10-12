@@ -6,7 +6,23 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
-## [2.1.7] - 未发布
+## [2.1.8] - 未发布
+
+### 新增
+
+- **人物身份与性格跟随时间线**：蒸馏额外产出**逐章人设弧线**
+  （`artifacts/characters/<novelId>/<角色>/arc.json`），对话时**静态人设取人物档案、
+  活跃状态取当前章那一段**，从第几章开局角色就是那个时间点的样子。
+  - 每章记录该时间点的身份与处境、目标、信条、应激反应、关系阶段、喜恶，
+    以及**该章结束前确实已经知道的事**（`known_facts`）；
+  - 稳定特征（说话风格、外貌、习惯等）**不进弧线**，仍取人物档案；
+  - 新增提示词 [`time_point_persona_rule`](prompts/dialogue/turn_system.yaml)：
+    身份与关系阶段以当前时间点为准，`known_facts` 之外的事要表现为不知道，
+    不得引用该时间点之后的事件，也不要预告未来走向；
+  - 逐章生成（本机模型同样逐章）、逐章幂等落盘，可中断可续跑可单章重试；
+  - 旧书卷没有 `arc.json` 时**完全退回原行为**，无需迁移。
+
+## [2.1.7] - 2026-10-13
 
 ### 新增
 
@@ -201,7 +217,8 @@
 早期版本（含从上游造梦 2.0 继续改动的部分）逐文件清单见
 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)。
 
-[2.1.7]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.6...HEAD
+[2.1.8]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.7...HEAD
+[2.1.7]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.6...v2.1.7
 [2.1.6]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.5...v2.1.6
 [2.1.5]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.4...v2.1.5
 [2.1.4]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.3...v2.1.4

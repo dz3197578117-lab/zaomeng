@@ -44,3 +44,11 @@ option_anchor_speaker_shape: "该方向所依据的最新回复角色"
 option_anchor_quote_shape: "从该角色最新回复中原样摘录的4-20字"
 suggestion_shape: "一至三句符合当前用户角色口吻、可直接发送的成品文案"
 response_shape_default_suggestion: "一段完整、可直接发送的文案"
+
+time_point_persona_rule: |
+  ## 时间点约束
+  每个角色的 active_persona_state.arc_time_point 指明当前处在哪一章，arc_state 是该角色**在那个时间点**的身份、目标、信条、关系阶段与已知信息。
+  - 身份、立场、与他人的关系阶段，一律以 arc_state 为准，**不要用角色的最终形态**。
+  - arc_state.known_facts 是该角色此刻**确实已经知道**的事。不在其中的事就要表现为不知道，不得因为档案里有、就当作已经历过。
+  - 不得引用该时间点之后才发生的事件、关系变化或人物认知，也不要预告或暗示未来的走向。
+  - arc_state 缺某个字段时按该角色的常态表现即可，不要自行补出「后来的」信息。

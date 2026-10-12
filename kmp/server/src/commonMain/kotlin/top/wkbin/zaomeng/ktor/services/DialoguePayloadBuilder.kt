@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -322,9 +323,12 @@ class DialoguePayloadBuilder(
         mode: String,
         controlledCharacter: String,
         snapshots: Map<String, Any?>,
+        currentChapter: Int = 1,
     ): List<Map<String, Any?>> {
         val artifactIndex = runManifest["artifact_index"]?.jsonObject
         val characters = artifactIndex?.get("characters")?.jsonArray ?: JsonArray(emptyList())
+        val runId = runManifest["run_id"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        val novelId = runManifest["novel_id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: runId
         val personaMap = linkedMapOf<String, Map<String, Any?>>()
         for (item in characters) {
             val obj = item.jsonObject
@@ -353,13 +357,31 @@ class DialoguePayloadBuilder(
                 "speech_style" to (profile["speech_style"]?.toString()?.trim().orEmpty()),
                 "appearance_feature" to trimText(profile["appearance_feature"], 80),
             ).filterValues { it.isNotEmpty() }
-            personaMap[name] = mapOf(
+            personaMap[name] = linkedMapOf<String, Any?>(
                 "name" to name,
                 "preview" to preview,
                 // 对齐 Python _compact_persona_context：profile 只取 12 个关键字段并截断，避免完整档案撑大 prompt
                 "profile" to compactPersonaProfile(profile),
                 "session_snapshot" to (mapValue(snapshots[name])),
-            )
+            ).apply {
+                // 逐章人设弧线：把「当前时间点」的状态送进**活跃状态**（不是静态人设）。
+                // 稳定特征仍取上面的 profile；这里只覆盖会随时间变的身份/目标/信条/关系阶段/已知信息。
+                val arcEntry = arcStateForChapter(
+                    readPersonaArc(storage, runId, novelId, name),
+                    currentChapter,
+                )
+                val state = arcEntry?.get("state")?.let { runCatching { it.jsonObject }.getOrNull() }
+                if (state != null) {
+                    put("arc_state", jsonMap(state))
+                    put(
+                        "arc_time_point",
+                        mapOf(
+                            "chapter" to (arcEntry["chapter"]?.jsonPrimitive?.intOrNull ?: currentChapter),
+                            "title" to (arcEntry["title"]?.jsonPrimitive?.contentOrNull.orEmpty()),
+                        ),
+                    )
+                }
+            }
         }
         val participantsNames = (participants + activeParticipants).distinct()
         val result = mutableListOf<Map<String, Any?>>()
@@ -809,6 +831,9 @@ class DialoguePayloadBuilder(
                     mode = mode,
                     controlledCharacter = controlledCharacterName,
                     snapshots = snapshots,
+                    // 当前时间点：优先推进后的 persona_chapter，否则 start_chapter，最后回退第 1 章。
+                    // 弧线缺失时下面读取为 null，行为与不带弧线时完全一致。
+                    currentChapter = resolvePersonaChapter(session),
                 )
             }
             val relation = async(platformIoDispatcher) {

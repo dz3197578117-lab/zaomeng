@@ -122,7 +122,52 @@ class DialoguePromptBuilder(
             "preview" to compactPreview,
             "profile" to compactProfile,
             "session_snapshot" to compactSnapshot,
+            // 逐章人设弧线（若有）：只在这里透传，静待人设仍走 profile，两者不混。
+            "arc_state" to compactArcState(map["arc_state"]),
+            "arc_time_point" to (
+                (map["arc_time_point"] as? Map<*, *>)
+                    ?.mapKeys { it.key.toString() }
+                    ?.filterValues { hasMeaningfulValue(it) }
+                    ?: emptyMap<String, Any?>()
+                ),
         )
+    }
+
+    /**
+     * 压缩弧线状态：只保留会随章节变的字段，并对长度与条数设上限，避免撑大 prompt。
+     * 空字段一律不落，缺弧线时返回空 map（调用方会把它过滤掉，行为与没有弧线时一致）。
+     */
+    private fun compactArcState(raw: Any?): Map<String, Any?> {
+        val state = (raw as? Map<*, *>)?.mapKeys { it.key.toString() } ?: return emptyMap()
+        val result = linkedMapOf<String, Any?>()
+        fun putText(key: String, limit: Int) {
+            val value = state[key]?.toString()?.trim().orEmpty()
+            if (value.isNotEmpty()) result[key] = trimText(value, limit)
+        }
+        putText("scene_identity", 80)
+        putText("age_stage", 40)
+        putText("goal", 120)
+        putText("belief_anchor", 120)
+        putText("stress_response", 120)
+        val bonds = (state["key_bonds"] as? List<*>)
+            ?.mapNotNull { item ->
+                val bond = (item as? Map<*, *>)?.mapKeys { it.key.toString() } ?: return@mapNotNull null
+                val name = bond["name"]?.toString()?.trim().orEmpty()
+                if (name.isEmpty()) return@mapNotNull null
+                mapOf("name" to name, "stage" to trimText(bond["stage"], 60))
+            }
+            ?.take(8)
+            .orEmpty()
+        if (bonds.isNotEmpty()) result["key_bonds"] = bonds
+        for (key in listOf("preference_like", "dislike_hate", "known_facts")) {
+            val items = (state[key] as? List<*>)
+                ?.mapNotNull { it?.toString()?.trim()?.takeIf { text -> text.isNotEmpty() } }
+                ?.map { trimText(it, 80) }
+                ?.take(8)
+                .orEmpty()
+            if (items.isNotEmpty()) result[key] = items
+        }
+        return result
     }
 
     private fun compactStaticPersonaContext(item: Any?): Map<String, Any?> {
@@ -147,6 +192,10 @@ class DialoguePromptBuilder(
         val result = linkedMapOf<String, Any?>(
             "name" to (compact["name"]?.toString()?.trim().orEmpty()),
             "profile_details" to details,
+            // 弧线落在这里（活跃状态），不落在静态人设：身份/目标/信条/关系阶段/该时间点已知信息
+            // 都应随剧情推进而变，而语音风格、外貌等稳定特征继续取 profile。
+            "arc_state" to (compact["arc_state"] ?: emptyMap<Any?, Any?>()),
+            "arc_time_point" to (compact["arc_time_point"] ?: emptyMap<Any?, Any?>()),
             "session_snapshot" to (compact["session_snapshot"] ?: emptyMap<Any?, Any?>()),
         )
         return result.filterValues { hasMeaningfulValue(it) }
@@ -529,6 +578,15 @@ class DialoguePromptBuilder(
         }
         if (knowledgeContext.isNotEmpty()) {
             turnSystemParts.add(promptLoader.getTurnSystemRule("knowledge_boundary_rule"))
+        }
+        // 只要有名册带上了逐章人设弧线，就声明「以当前时间点为准」，防止从早期章节开局
+        // 却让角色带着后期才形成的立场、关系与认知（剧透）。没有弧线时行为完全不变。
+        val hasArcState = (payload["active_persona_state"] as? List<*>)
+            ?.mapNotNull { it as? Map<*, *> }
+            ?.any { (it["arc_state"] as? Map<*, *>)?.isNotEmpty() == true }
+            ?: false
+        if (hasArcState) {
+            turnSystemParts.add(promptLoader.getTurnSystemRule("time_point_persona_rule"))
         }
         if (originalSourceEntries.isNotEmpty()) {
             turnSystemParts.add(promptLoader.getTurnSystemRule("original_source_rule"))
