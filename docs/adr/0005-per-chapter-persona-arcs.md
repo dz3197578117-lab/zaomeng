@@ -71,9 +71,21 @@ artifacts/characters/<novelId>/<角色>/
   应激反应、关系阶段、喜恶、**该阶段已知信息**（`known_facts`，用于不剧透）。
   **不放进弧线**（始终取最终档案）：`speech_style`、`appearance_feature`、`habit_action`、
   `gender`、`soul_goal` 等稳定特征。
-- **章节对齐**：由 `DistillExcerptBuilder` 在生成 `excerpt_stages` 时**记录每段的源文本字符区间**，
-  再用 `NovelChapterIndexService` 的章节字符区间换算成 `chapter_start/chapter_end`。
-  取不到章节索引时退化为按阶段比例估算，并在 `arc.json` 标注 `chapter_alignment: "estimated"`。
+- **章节对齐：已经现成，无需改造，也不需要估算**。
+  实施前的核查发现 `NovelChapterIndexService` 本就提供逐章的**精确字符区间**：
+
+  ```kotlin
+  list(runManifest) → chapters[{ index, title, start_char, end_char, char_count, preview }]
+  excerpt(runManifest, index, maxChars) / excerptForRun(runId, index, maxChars) → 单章正文
+  chapterDetail(runManifest, index, maxChars) → 单章正文 + truncated 标记
+  ```
+
+  因此 ADR 早期设想的「改 `DistillExcerptBuilder` 记录字符区间、取不到时按比例估算」**不再需要**，
+  `chapter_alignment` 也不会出现 `estimated`：逐章文本与章号直接对应。
+  实施时只需注意单章正文有长度上限（`excerpt` 默认 `DEFAULT_EXCERPT_CHARS`、
+  上限 `MAX_DETAIL_CHARS`），超长章要按上限截断并在 `arc.json` 标注 `source_truncated: true`，
+  避免让模型对着半章正文编出整章状态。
+  章节索引缓存在 run 目录的 `novel_chapters.json`。
 - **溯源**：写入 `source_signature`（复用章节索引的 `SourceSignature` 思路）。
   源文本或蒸馏参数变化时弧线与章节对齐都作废，重蒸馏时重建。
 
@@ -172,9 +184,20 @@ artifacts/characters/<novelId>/<角色>/
 
 ## 实施步骤（每步独立可验证、可发布）
 
-1. **落盘弧线（不改行为）**：`DistillExecutor` 保留逐块草稿 → 生成并写 `arc.json`；
-   `artifact_index` 增加 `has_arc`/`arc_stages`；章节区间换算。
-   *验证*：新蒸馏一个书卷，检查 `arc.json` 的阶段数与章节区间合理；旧书卷不受影响。
+1. **落盘弧线（不改对话行为）**
+   - 新增 `PersonaArcService`（`:server` services）：遍历章节 → 逐章抽取 → 写
+     `artifacts/characters/<novelId>/<角色>/arc.json`；复用 `NovelChapterIndexService`
+     的章节列表与单章正文。
+   - 逐章抽取提示词放进**既有的** `prompts/distill/guidance.yaml`
+     （新增 `persona_arc_instruction` / `persona_arc_output_format`），
+     避免再引入一份三处同步的新文件。
+   - 由 `DistillExecutor` 在人物档案写完后作为**独立收尾阶段**调用，
+     沿用 `applyDistillProgress` 写进度；`artifact_index.characters[]` 增加
+     `has_arc` / `arc_count`。
+   - 幂等与续跑：以「章节号」为键，已存在于 `arc.json` 的章直接跳过（支持单章重试）；
+     全部失败时只留空弧线，主档案不受影响。
+   - *验证*：新蒸馏一个书卷，检查 `arc.json` 的章数与章节索引一致；
+     旧书卷（无 `arc.json`）行为不变；中途中断后已完成章仍在。
 2. **时间点注入**：`DialoguePayloadBuilder` 按当前章取用弧线段；新增
    `time_point_persona_rule`（两处提示词同步）；会话创建时把 `start_chapter` 映射为首个时间点。
    *验证*：同一书卷分别从第 1 章与第 25 章开局，角色身份/口吻/已知信息应明显不同。
