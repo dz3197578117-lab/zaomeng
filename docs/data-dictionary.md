@@ -412,6 +412,17 @@ source of truth 建议：
 - 旧书卷没有 `arc.json`，读取方一律退化为既有行为，**无需迁移**；
 - 章节索引不可用、模型不可用、单章解析失败都只降级，不影响已有人物档案。
 
+读取侧依赖的会话字段（`session.json`）：
+
+- `start_chapter`：会话起始章（1 起，0 表示从头开始），是时间线的**起点**。
+- `persona_chapter`：**当前时间点**（章）。由服务端每轮提交后推导写回
+  （`start_chapter` + `turn_count / TURNS_PER_PERSONA_CHAPTER`），
+  因此同一轮重复提交不会重复推进。缺省或为 0 时回退到 `start_chapter`，
+  再没有就按第 1 章——**宁可从早期状态开始，也不要剧透**。
+
+> 注意：本文档第 3 节描述的是旧 Python 实现的会话模型（来源 `src/web/chat/service.py`），
+> 因此 `start_chapter` / `persona_chapter` 这类 KMP 新增字段记在这里，而不是第 3 节。
+
 ## 6. Relation Delta
 
 来源：

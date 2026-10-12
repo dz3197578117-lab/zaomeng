@@ -991,6 +991,11 @@ API 2 还允许在 `execution.rules` 中组合事件、条件和动作链。规�
 - 消息：`transcript`、`transcript_count`、`turn_count`、`current_turn_id`、`pending_turn_summary`。
 - 场景/身份：`scene_card_id`、`scene_card`、`scene_profile`、`self_card_id`、`self_insert`、`self_profile`。
 - 记忆/进展：`memory_ledger`、`scene_history`、`event_timeline`、`scene_progress`、`story_recap`。
+- 章节与人物时间点：`start_chapter`、`start_chapter_title`、`persona_chapter`。
+  - `persona_chapter` 是**当前时间点**（章）：服务端在每轮提交后由 `start_chapter` 与
+    `turn_count` **推导**写回（每 4 轮推进一章），因此重复提交同一轮不会重复推进。
+    `0` 表示尚未推导过，调用方应回退到 `start_chapter` 处理。
+    它决定该轮对话取用人设弧线的哪一段（见 [`docs/data-dictionary.md`](data-dictionary.md) 第 5.1 节）。
 - 关系/分支：`relation_matrix`、`relation_timeline`、`relation_locks`、`branch_graph`、`branch_origin`、`branch_meta`。
 - 诊断与插件：`consistency_monitor`、`speaker_activity`、`generation_cache_stats`、`latest_context_usage`、`plugin_enhancer_states`。
 
