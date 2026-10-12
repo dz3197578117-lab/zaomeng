@@ -89,8 +89,6 @@ clawhub-zaomeng-skill/runtime/data/
 # 端侧功能永久不可用（要自己重跑 scripts/build-llama-server-android.sh）。
 !kmp/app/androidApp/src/main/jniLibs/**/*.so
 
-# 发布产物：debug APK 直接进仓库，clone 即可安装。
-# 上面的 `dist/` 是挡 Python 打包产物的，这里只放行 APK。
-!dist/
-dist/*
-!dist/*.apk
+# 发布产物：Android APK 改由 GitHub Actions 在推送 v* tag 时构建并上传到 Release，
+# 不再进入版本控制（此前每发一版仓库体积 +39 MB，且依赖手工提交二进制）。
+# 上面的 `dist/` 规则继续挡住 skill 包等本地产物。流程见 docs/release-android.md。

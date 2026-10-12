@@ -150,6 +150,7 @@ class DiagnosticsService(
                         stage = "",
                         characterCount = 0,
                         errorType = "",
+                        errorMessage = "manifest 缺失或无法解析",
                         updatedAt = ""
                     )
                 } else {
@@ -164,6 +165,9 @@ class DiagnosticsService(
                         stage = progress?.string("stage").orEmpty(),
                         characterCount = characterCount,
                         errorType = error?.string("type").orEmpty(),
+                        // 失败原因优先取结构化 error.message，回退蒸馏写入的 progress.error。
+                        errorMessage = error?.string("message").orEmpty()
+                            .ifBlank { progress?.string("error").orEmpty() },
                         updatedAt = manifest.string("updated_at")
                     )
                 }
@@ -174,6 +178,7 @@ class DiagnosticsService(
                     stage = "",
                     characterCount = 0,
                     errorType = e::class.simpleName ?: "unknown",
+                    errorMessage = e.message.orEmpty(),
                     updatedAt = ""
                 )
             }
@@ -340,5 +345,13 @@ data class RunSummary(
     val stage: String,
     val characterCount: Int,
     val errorType: String,
+    /**
+     * 失败原因（人可读）。
+     *
+     * 蒸馏失败把原因写在 `progress.error`（见 DistillExecutor.fail），而不是顶层
+     * `error.type`；只读后者会让诊断导出里所有失败 run 的原因都是空的，
+     * 排查时只能看到「失败了」而看不到「为什么」。
+     */
+    val errorMessage: String,
     val updatedAt: String
 )

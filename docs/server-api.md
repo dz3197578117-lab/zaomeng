@@ -147,6 +147,26 @@ URL 中的凭据一律替换为 `***`），超长行截断。
 `crashes` 最多 5 条；单独拉取该接口时 `lines` 上限为 5000 行。
 诊断报告 `schemaVersion` 自 3 起包含 `runtimeLog` 段。
 
+### 2.2 诊断导出报告（`DiagnosticsReport`）
+
+导出报告的各段独立容错：单段读取失败只降级为空，不会让整个导出返回 500。
+
+`runs[]`（`RunSummary`）字段：
+
+| 字段 | 含义 |
+|---|---|
+| `runId` | 运行 ID |
+| `status` | manifest 里的状态；manifest 缺失时为 `invalid_manifest`，读取抛异常时为 `error` |
+| `stage` | `progress.stage` |
+| `characterCount` | `artifact_index.characters` 的元素个数 |
+| `errorType` | 结构化错误类型（`error.type`）。蒸馏失败的原因写在 `progress.error`，此处通常为空 |
+| `errorMessage` | 失败原因（人可读）：优先 `error.message`，回退 `progress.error` |
+| `updatedAt` | `updated_at` |
+
+> `errorMessage` 自 `schemaVersion` 3 起提供。此前只导出 `errorType`，
+> 而蒸馏失败走的是 `progress.error`，导致导出包里所有失败 run 都看不出失败原因，
+> 只显示一个空的 `errorType`。
+
 ## 3. 书卷与蒸馏运行
 
 ### 3.1 查询、创建、导入与生命周期

@@ -10,7 +10,7 @@
 
 [![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-8A2BE2.svg)](LICENSE) · [官网](https://dz3197578117-lab.github.io/zaomeng/) · [English](README.en.md)
 
-> 本仓库是在上游造梦 2.0 基础上继续改的版本（当前 **2.1.2**），改动见下方「本版改动」。
+> 本仓库是在上游造梦 2.0 基础上继续改的版本（当前 **2.1.4**），改动见下方「本版改动」；逐版本变更记录见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 本版改动
 
@@ -27,6 +27,9 @@
 | 角色质量总览 | 运行详情页新增质量总览卡：角色数、待校对数、待修字段数、缺失字段、高危问题数，并按角色列出评分与等级 |
 | 从正文自动提取主要角色 | 导入书籍与重蒸馏流程可从正文自动识别主要角色并填入名单 |
 | 对话可指定起始章 | 创建对话时可选择从第几章开始剧情，章节列表由章节索引服务提供 |
+| 运行日志采集与导出 | 内嵌服务持续采集本进程 `logcat`（含崩溃记录），设置内新增「运行日志」页可查看与导出；诊断导出包内嵌整段日志并统一脱敏，排查问题不再需要用户自己抓 logcat |
+| 诊断可信度修正 | 诊断报告里「是否配置 API Key」改为查安全存储的实际结果，不再永远显示「未配置」；诊断导出 schemaVersion 升至 3 |
+| 生成超时与重试 | 蒸馏等非流式生成请求超时由 60 秒放宽到 300 秒（可用 `timeout_seconds` 按档案微调），瞬时断连/超时自动重试，失败提示改为中文可读文案 |
 
 逐文件的完整清单（相对上游：新增 35 / 修改 67 / 删除 2，含复核方法）见 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)。
 
@@ -42,7 +45,7 @@
 
 ### 客户端
 
-预编译的 Android 包见 [Releases](https://github.com/dz3197578117-lab/zaomeng/releases/latest)（`arm64-v8a`，当前为 2.1.2 调试版，随包内嵌 llama.cpp 运行时）。桌面的构建说明见 [`kmp/README.md`](kmp/README.md)。
+预编译的 Android 包见 [Releases](https://github.com/dz3197578117-lab/zaomeng/releases/latest)（`arm64-v8a`，当前为 2.1.4 调试版，随包内嵌 llama.cpp 运行时）。Release 附件由 GitHub Actions 在打 tag 时自动构建，不再依赖仓库里手工提交的二进制。桌面的构建说明见 [`kmp/README.md`](kmp/README.md)。
 
 > ⚠️ 从旧版 Android（1.5.0 及更早）升级到 **2.0.0** 为**阻断性升级**，本地数据不兼容、不会自动迁移；升级前请先在旧版导出书卷包（`.zaomeng-run.zip`）备份。
 

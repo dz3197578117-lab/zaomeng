@@ -10,7 +10,7 @@ Distill Chinese novel characters into reusable persona bundles, extract relation
 
 [![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-8A2BE2.svg)](LICENSE) · [Website](https://dz3197578117-lab.github.io/zaomeng/) · [中文](README.md)
 
-> This repository continues from upstream Zaomeng 2.0 (current version: **2.1.2**). See "What's different in this build" below.
+> This repository continues from upstream Zaomeng 2.0 (current version: **2.1.4**). See "What's different in this build" below, and [`CHANGELOG.md`](CHANGELOG.md) for the per-version history.
 
 ## What's different in this build
 
@@ -27,6 +27,9 @@ Two things were the focus: **it runs without any network**, and **Chinese model 
 | Persona quality overview | The run detail screen gains an overview card: character count, items needing review, pending repairs, missing fields, and high-severity issues, with a score and grade per character |
 | Main characters extracted from the text | The book-import and re-distillation flows can detect the main characters from the source text and fill in the list for you |
 | Pick the starting chapter | When creating a dialogue session you can choose which chapter the story starts from; the chapter list is served by a chapter index service |
+| Runtime log capture and export | The embedded server continuously captures this process's `logcat` (crash records included); a new "Runtime log" page in settings lets you view and export it, and diagnostics exports embed the whole log with redaction applied — no more asking users to grab logcat themselves |
+| Trustworthy diagnostics | "API key configured" in the diagnostics report now queries the secure store instead of a flag that was never written, so it no longer always reports "not configured"; the export schemaVersion is now 3 |
+| Generation timeout and retries | Non-streaming generation calls (distillation and friends) moved from a 60-second timeout to 300 seconds (tunable per profile via `timeout_seconds`), transient disconnects and timeouts are retried, and failures now surface a readable message |
 
 A file-by-file manifest (35 added / 67 modified / 2 deleted against upstream, with a reproduction method) is in [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md).
 
@@ -42,7 +45,7 @@ A file-by-file manifest (35 added / 67 modified / 2 deleted against upstream, wi
 
 ### Clients
 
-Prebuilt Android builds are on [Releases](https://github.com/dz3197578117-lab/zaomeng/releases/latest) (`arm64-v8a`, currently a 2.1.2 debug build with the llama.cpp runtime bundled). Build instructions for Desktop live in [`kmp/README.md`](kmp/README.md).
+Prebuilt Android builds are on [Releases](https://github.com/dz3197578117-lab/zaomeng/releases/latest) (`arm64-v8a`, currently a 2.1.4 debug build with the llama.cpp runtime bundled). Release assets are built by GitHub Actions when a tag is pushed, so they no longer depend on a binary committed to the repository. Build instructions for Desktop live in [`kmp/README.md`](kmp/README.md).
 
 > ⚠️ Upgrading from the legacy Android build (1.5.0 and earlier) to **2.0.0** is a **breaking change**: local data is incompatible and is not migrated automatically. **Export your book bundles (`.zaomeng-run.zip`) as backups in the old version before upgrading.**
 

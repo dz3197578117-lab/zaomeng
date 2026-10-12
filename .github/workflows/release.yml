@@ -1,12 +1,37 @@
 name: Release
 
+# 发布流程：推送 v* tag 时自动构建并上传 APK。
+#
+# 为什么必须在 CI 里注入发布密钥：
+#   Android 的 debug 包默认用 $HOME/.android/debug.keystore 签名，而这把密钥是
+#   **每台机器/每次全新环境随机生成**的。若 CI 用自己生成的密钥签名，产出的 APK
+#   签名与 2.1.2 / 2.1.3 不一致，用户将**无法覆盖安装**（只能卸载重装，丢数据）。
+#   因此这里强制要求仓库 secret ANDROID_RELEASE_KEYSTORE_BASE64 提供发布密钥，
+#   并在打包后校验签名指纹，不匹配直接失败。
+#   配置方法见 docs/release-android.md。
+
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的 tag（例如 v2.1.4），必须已经推送到仓库"
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  # 已发布调试版（2.1.2 / 2.1.3）的签名证书指纹。
+  # 必须保持一致，否则用户无法覆盖安装。
+  EXPECTED_SIGNER_SHA256: "3c5cb56d7221ed35ef03240cda3d718dfade061a9614b92aa62b4f299733ee48"
 
 jobs:
   release:
@@ -15,37 +40,121 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          # tag 推送时取该 tag；手动触发时取输入的 tag。
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
 
-      - name: Pick the APK and compute its checksum
-        id: apk
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore release signing key
         shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          apk="$(ls -1 dist/*"${version}"*.apk 2>/dev/null | head -n1 || true)"
-          if [ -z "${apk}" ]; then
-            apk="$(ls -1 dist/*.apk | head -n1)"
+          if [ -z "${KEYSTORE_BASE64}" ]; then
+            {
+              echo "::error title=缺少发布签名密钥::仓库未配置 ANDROID_RELEASE_KEYSTORE_BASE64 secret。"
+              echo "CI 若用随机生成的 debug 密钥签名，产出的 APK 将无法覆盖安装 2.1.2/2.1.3，"
+              echo "用户只能卸载重装（丢数据）。配置方法见 docs/release-android.md。"
+            }
+            exit 1
           fi
-          echo "path=${apk}" >> "${GITHUB_OUTPUT}"
-          echo "sha256=$(sha256sum "${apk}" | cut -d' ' -f1)" >> "${GITHUB_OUTPUT}"
-          echo "size=$(stat -c%s "${apk}")" >> "${GITHUB_OUTPUT}"
-          echo "selected: ${apk}"
+          install -d -m 700 "${HOME}/.android"
+          printf '%s' "${KEYSTORE_BASE64}" | base64 -d > "${HOME}/.android/debug.keystore"
+          chmod 600 "${HOME}/.android/debug.keystore"
+          echo "已写入 ${HOME}/.android/debug.keystore"
+
+      - name: Build debug APK
+        working-directory: kmp
+        shell: bash
+        run: ./gradlew :app:androidApp:assembleDebug --no-daemon --console=plain --stacktrace
+
+      - name: Verify signature, version and package
+        id: apk
+        shell: bash
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          apk="$(ls -1 kmp/app/androidApp/build/outputs/apk/debug/*.apk | head -n1)"
+          echo "构建产物：${apk}"
+
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "${sdk}" ]; then
+            echo "::error title=找不到 Android SDK::ANDROID_HOME 与 ANDROID_SDK_ROOT 均未设置。"
+            exit 1
+          fi
+          build_tools="$(ls -d "${sdk}"/build-tools/* | sort -V | tail -n1)"
+
+          # 1) 签名必须与已发布的 2.1.2 / 2.1.3 一致，否则用户无法覆盖安装。
+          signer="$("${build_tools}/apksigner" verify --print-certs "${apk}" \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1)"
+          if [ "${signer}" != "${EXPECTED_SIGNER_SHA256}" ]; then
+            {
+              echo "::error title=签名不匹配::期望 ${EXPECTED_SIGNER_SHA256}，实际 ${signer:-<空>}。"
+              echo "该 APK 无法覆盖安装 2.1.2/2.1.3。请确认 ANDROID_RELEASE_KEYSTORE_BASE64 是发布密钥。"
+            }
+            exit 1
+          fi
+          echo "签名指纹：${signer} ✓"
+
+          # 2) APK 元数据必须与 tag 对应，避免发出版本号错位的包。
+          badging="$("${build_tools}/aapt2" dump badging "${apk}")"
+          package_name="$(printf '%s\n' "${badging}" | sed -n "s/^package: name='\([^']*\)'.*/\1/p" | head -n1)"
+          version_name="$(printf '%s\n' "${badging}" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -n1)"
+          expected_version="${TAG#v}"
+          echo "包名：${package_name}，版本：${version_name}，tag：${TAG}"
+
+          if [ "${version_name}" != "${expected_version}" ]; then
+            {
+              echo "::error title=版本号不匹配::tag 是 ${TAG}，但 APK 的 versionName 是 ${version_name}。"
+              echo "请把 kmp/app/androidApp/build.gradle.kts 的 versionName / versionCode 同步到该版本后再打 tag。"
+            }
+            exit 1
+          fi
+
+          # 3) 更新检查依赖附件名里的 arm64-v8a（见 AppUpdateManager.parseLatestRelease）。
+          asset="${RUNNER_TEMP}/zaomeng-${version_name}-arm64-v8a-debug.apk"
+          cp "${apk}" "${asset}"
+
+          {
+            echo "path=${asset}"
+            echo "name=$(basename "${asset}")"
+            echo "sha256=$(sha256sum "${asset}" | cut -d' ' -f1)"
+            echo "size=$(stat -c%s "${asset}")"
+            echo "version=${version_name}"
+            echo "package=${package_name}"
+          } >> "${GITHUB_OUTPUT}"
 
       - name: Compose release notes
         shell: bash
+        env:
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
-          notes=".github/release-notes/${GITHUB_REF_NAME}.md"
+          notes=".github/release-notes/${TAG}.md"
           if [ -f "${notes}" ]; then
             cp "${notes}" "${RUNNER_TEMP}/notes.md"
           else
-            echo "发布 ${GITHUB_REF_NAME}。" > "${RUNNER_TEMP}/notes.md"
+            echo "发布 ${TAG}。" > "${RUNNER_TEMP}/notes.md"
           fi
           {
             echo ""
             echo "### 校验"
             echo ""
             echo '```'
+            echo "file:   ${{ steps.apk.outputs.name }}"
+            echo "package: ${{ steps.apk.outputs.package }}"
             echo "sha256: ${{ steps.apk.outputs.sha256 }}"
             echo "size:   ${{ steps.apk.outputs.size }} bytes"
             echo '```'
@@ -54,19 +163,14 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         shell: bash
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          # 附件名必须带 arm64-v8a：App 的更新检查会优先挑名字里含它的包
-          # （见 kmp/app/androidApp/.../update/AppUpdateManager.kt 的 parseLatestRelease）。
-          # 注意 gh 的 `file#label` 语法只设置显示标签、不改附件文件名，
-          # 所以先复制成目标名字再上传。
-          asset="${RUNNER_TEMP}/zaomeng-${version}-arm64-v8a-debug.apk"
-          cp "${{ steps.apk.outputs.path }}" "${asset}"
-          # 幂等：同名 Release 已存在就先删掉重建（tag 由推送产生，保留不动）
-          gh release delete "${GITHUB_REF_NAME}" --yes || true
-          gh release create "${GITHUB_REF_NAME}" "${asset}" \
+          version="${TAG#v}"
+          # 幂等：同名 Release 已存在就先删掉重建（tag 本身保留不动）
+          gh release delete "${TAG}" --yes || true
+          gh release create "${TAG}" "${{ steps.apk.outputs.path }}" \
             --title "造梦 ${version}" \
             --notes-file "${RUNNER_TEMP}/notes.md" \
             --latest \

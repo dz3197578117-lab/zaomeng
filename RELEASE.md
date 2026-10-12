@@ -1,9 +1,22 @@
 # Release Flow
 
-This file describes the repository-level release path for `zaomeng-skill`.
+This file describes the repository-level release paths for maintainers.
 
+There are two independent release tracks:
+
+| Track | Trigger | Guide |
+| --- | --- | --- |
+| Android app (APK) | pushing a `v*` tag | [`docs/release-android.md`](docs/release-android.md) |
+| `zaomeng-skill` package | `python scripts/release_skill.py` | this file, below |
+
+The Android track is automated by [`.github/workflows/release.yml`](.github/workflows/release.yml),
+which builds the APK in CI and uploads it to the GitHub Release. It **requires** the
+`ANDROID_RELEASE_KEYSTORE_BASE64` secret so the APK keeps the same signature as previous
+releases and stays overwrite-installable. See the guide for the one-time setup, what the
+workflow validates, and troubleshooting.
+
+The rest of this file covers the skill package only.
 The skill package itself keeps user-facing usage docs under `zaomeng-skill/`.
-This file is only for maintainers preparing a new published build.
 
 ## Single Version Source
 

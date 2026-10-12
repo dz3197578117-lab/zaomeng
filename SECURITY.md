@@ -47,6 +47,19 @@
 
 如果秘密已经进入 Git 历史，不要只删除当前文件：立即撤销/轮换秘密，并私下协调清理历史和发布安全修复。
 
+## CI 发布密钥
+
+Android 覆盖安装要求签名一致，因此签名密钥通过 GitHub Actions secret
+`ANDROID_RELEASE_KEYSTORE_BASE64` 注入，**不进仓库**。相关约定：
+
+- 该 secret 只允许发布工作流读取，其他工作流不得引用；
+- 导出 base64 后立即删除临时文件（例如 `shred -u /tmp/release-keystore.b64`）；
+- 轮换密钥会改变签名，已安装用户将无法覆盖安装，必须提前公告并提供书卷导出备份路径；
+- 该密钥是 Android debug 密钥，**没有吊销机制**：一旦泄露应立即换新密钥，
+  并在 Release 说明中告知用户需要卸载重装。
+
+配置步骤与校验机制见 [`docs/release-android.md`](docs/release-android.md)。
+
 ## 修复披露
 
 维护者确认问题后会评估影响、准备修复和回归测试，并在用户有合理升级窗口后协调披露。请在修复公开前保持报告内容私密。

@@ -29,8 +29,8 @@ android {
         minSdk = libs.versions.android.minSdk.get().toInt()
         //noinspection OldTargetApi
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 16
-        versionName = "2.1.3"
+        versionCode = 17
+        versionName = "2.1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
