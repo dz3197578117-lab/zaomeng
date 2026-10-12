@@ -1,5 +1,9 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
 package top.wkbin.zaomeng.platform
 
+import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.usePinned
 import platform.CoreFoundation.CFStringConvertEncodingToNSStringEncoding
 import platform.CoreFoundation.kCFStringEncodingGB_18030_2000
 import platform.Foundation.NSData
@@ -11,6 +15,6 @@ actual fun decodeGb18030Strict(bytes: ByteArray): String? {
     val data = bytes.usePinned { pinned ->
         NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
     }
-    val encoding = CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingGB_18030_2000)
+    val encoding = CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingGB_18030_2000.toUInt())
     return NSString.create(data = data, encoding = encoding)?.toString()
 }

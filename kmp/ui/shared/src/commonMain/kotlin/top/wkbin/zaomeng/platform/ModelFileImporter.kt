@@ -21,7 +21,6 @@ import io.github.vinceglb.filekit.sink
 import io.github.vinceglb.filekit.size
 import io.github.vinceglb.filekit.source
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -164,7 +163,9 @@ internal suspend fun importIntoDirectory(
     val partFile = directory / "$fileName$PART_SUFFIX"
     val totalBytes = runCatching { picked.size() }.getOrDefault(0L)
 
-    return withContext(Dispatchers.IO) {
+    // 用平台 IO 调度器而非 Dispatchers.IO：后者在 Kotlin/Native 上是 internal
+    // （见 :core:runtime 的 PlatformIoDispatcher，iOS 侧回落到 Dispatchers.Default）。
+    return withContext(platformIoDispatcher) {
         runCatching { directory.createDirectories() }
         runCatching { partFile.delete(mustExist = false) }
         onStarted(fileName, totalBytes)

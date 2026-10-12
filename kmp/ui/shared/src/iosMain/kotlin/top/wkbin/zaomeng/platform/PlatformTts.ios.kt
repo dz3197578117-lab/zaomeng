@@ -11,6 +11,7 @@ import platform.AVFAudio.AVSpeechSynthesizer
 import platform.AVFAudio.AVSpeechSynthesizerDelegateProtocol
 import platform.AVFAudio.AVSpeechUtterance
 import platform.darwin.NSObject
+import kotlinx.cinterop.ObjCSignatureOverride
 
 internal class IosPlatformTts : PlatformTts {
     private val synthesizer = AVSpeechSynthesizer()
@@ -23,17 +24,23 @@ internal class IosPlatformTts : PlatformTts {
     private var activeId: String? = null
 
     private val delegate = object : NSObject(), AVSpeechSynthesizerDelegateProtocol {
+        // 三个 delegate 方法在 Kotlin 侧签名相同（都是 (AVSpeechSynthesizer, AVSpeechUtterance)，
+        // 仅靠 ObjC selector 的参数名区分），直接 override 会报「Conflicting overloads」。
+        // @ObjCSignatureOverride 告诉编译器这是 ObjC 方法重载，允许按参数名消歧。
+        @ObjCSignatureOverride
         override fun speechSynthesizer(synthesizer: AVSpeechSynthesizer, didStartSpeechUtterance: AVSpeechUtterance) {
             _isSpeaking.value = true
             _currentSpeakingId.value = activeId
         }
 
+        @ObjCSignatureOverride
         override fun speechSynthesizer(synthesizer: AVSpeechSynthesizer, didFinishSpeechUtterance: AVSpeechUtterance) {
             _isSpeaking.value = false
             _currentSpeakingId.value = null
             activeId = null
         }
 
+        @ObjCSignatureOverride
         override fun speechSynthesizer(synthesizer: AVSpeechSynthesizer, didCancelSpeechUtterance: AVSpeechUtterance) {
             _isSpeaking.value = false
             _currentSpeakingId.value = null

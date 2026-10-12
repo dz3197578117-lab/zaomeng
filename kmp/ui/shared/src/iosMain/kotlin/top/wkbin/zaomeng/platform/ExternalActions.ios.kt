@@ -3,7 +3,7 @@ package top.wkbin.zaomeng.platform
 import androidx.compose.runtime.Composable
 import platform.Foundation.NSURL
 import platform.UIKit.UIAlertController
-import platform.UIKit.UIAlertControllerStyle
+import platform.UIKit.UIAlertControllerStyleAlert
 import platform.UIKit.UIApplication
 import platform.darwin.DISPATCH_TIME_NOW
 import platform.darwin.dispatch_after
@@ -14,7 +14,8 @@ import platform.darwin.dispatch_time
 @Composable
 actual fun rememberOpenExternalUrl(): (String) -> Unit = { url ->
     NSURL.URLWithString(url)?.let { nsUrl ->
-        UIApplication.sharedApplication.openURL(nsUrl, emptyMap(), null)
+        // options 的形参类型是 Map<Any?, *>，emptyMap() 推断不出类型参数，这里显式给出。
+        UIApplication.sharedApplication.openURL(nsUrl, emptyMap<Any?, Any?>(), null)
     }
 }
 
@@ -25,7 +26,8 @@ actual fun rememberToast(): (String) -> Unit = { message ->
         val alert = UIAlertController.alertControllerWithTitle(
             title = null,
             message = message,
-            preferredStyle = UIAlertControllerStyle.UIAlertControllerStyleAlert,
+            // UIAlertControllerStyle 在 Kotlin/Native 绑定里是 typealias，枚举值以顶层常量暴露。
+            preferredStyle = UIAlertControllerStyleAlert,
         )
         presenter.presentViewController(alert, animated = true, completion = null)
         dispatch_after(
