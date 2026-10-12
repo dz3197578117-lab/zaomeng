@@ -348,6 +348,70 @@ source of truth 建议：
 - 适合驱动当前一幕的演出连贯性
 - 不适合回写到人物档案本体
 
+## 5.1 人设弧线（arc.json）
+
+路径：
+
+- `artifacts/characters/<novelId>/<角色名>/arc.json`
+
+定位：
+
+- 记录该角色**逐章**「会随时间改变」的状态，供对话按时间点取用；
+- 与 `PROFILE.md`（全书蒸馏出的**单一最终形态**）并列：稳定特征在 `PROFILE.md`，
+  随时间变的部分在 `arc.json`；
+- 解决的问题：无论对话从第几章开始，此前都只能看到全书之后的身份与认知，
+  从第 1 章开局会剧透。
+
+形状：
+
+```json
+{
+  "version": 1,
+  "run_id": "…",
+  "novel_id": "…",
+  "character": "林七夜",
+  "generated_at": "2026-10-13T12:00:00+08:00",
+  "chapters": [
+    {
+      "chapter": 1,
+      "title": "第一章 …",
+      "status": "ok",              // ok | empty | failed
+      "source_chars": 5200,        // 实际送入模型的本章正文字数
+      "source_truncated": false,   // 本章是否因上限被截断
+      "state": {
+        "scene_identity": "刚入队的见习守夜人",
+        "age_stage": "少年",
+        "goal": "想证明自己不是累赘",
+        "belief_anchor": "相信规则能保护人",
+        "stress_response": "硬撑，不肯示弱",
+        "key_bonds": [{ "name": "沈青竹", "stage": "初识，互相看不顺眼" }],
+        "preference_like": ["…"],
+        "dislike_hate": ["…"],
+        "known_facts": ["只知道队里死了人，不知道凶手是谁"]
+      }
+    }
+  ],
+  "chapter_count": 1
+}
+```
+
+字段说明：
+
+- `state` 是**白名单**字段（见 `PersonaArcService.MUTABLE_FIELDS`），
+  空值一律不落盘；模型多写的字段会被丢弃。
+- `known_facts` 只记录该章结束前角色**确实已经知道**的事，是「不剧透」的抓手。
+- `status`：`ok` 表示该章已成功抽取；`empty` 表示该章取不到正文；
+  `failed` 表示模型输出无法解析。三者都会记账，避免续跑时无限重试；
+  单章重试走 `retryChapters` 显式指定。
+- 逐章幂等：每完成一章原子落盘一次，同一章重复写入是**替换**而非追加，
+  因此可中断、可续跑。
+- `artifact_index.characters[]` 上会补 `has_arc` / `arc_count` 两个提示字段。
+
+兼容：
+
+- 旧书卷没有 `arc.json`，读取方一律退化为既有行为，**无需迁移**；
+- 章节索引不可用、模型不可用、单章解析失败都只降级，不影响已有人物档案。
+
 ## 6. Relation Delta
 
 来源：

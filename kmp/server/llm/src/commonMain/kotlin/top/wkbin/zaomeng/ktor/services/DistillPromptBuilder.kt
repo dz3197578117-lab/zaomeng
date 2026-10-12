@@ -184,6 +184,47 @@ object DistillPromptBuilder {
         )
     }
 
+    /**
+     * 逐章人设弧线抽取：只给**本章**正文，输出该角色在本章结束时的状态。
+     *
+     * 与人物档案蒸馏刻意不同：这里不喂全书证据，避免模型拿后文信息回答本章状态
+     * （那正是「从第 1 章开局却带着全书认知」的根因）。
+     * 输出契约放 system（系统规则），章节正文放 user（用户内容），两者分区。
+     */
+    fun buildPersonaArcMessages(
+        guidance: Map<String, String>,
+        character: String,
+        chapterIndex: Int,
+        chapterTitle: String,
+        chapterText: String,
+    ): List<LlmClient.ChatMessage> {
+        val outputFormat = guidance["persona_arc_output_format"].orEmpty().trim()
+        val systemParts = mutableListOf(
+            "你是人物设定整理助手。只依据给定的章节正文判断该角色在本章结束时的状态，" +
+                "不得使用其他章节的信息，不得提前使用后续才发生的事件。",
+            outputFormat,
+        )
+        val instruction = render(
+            guidance["persona_arc_instruction"].orEmpty(),
+            mapOf(
+                "character" to character,
+                "chapter_index" to chapterIndex.toString(),
+                "chapter_title" to chapterTitle,
+                "chapter_text" to chapterText,
+            ),
+        ).trim()
+        val userContent = instruction.ifEmpty {
+            "目标角色：$character\n第 $chapterIndex 章 $chapterTitle\n\n$chapterText"
+        }
+        return listOf(
+            LlmClient.ChatMessage(
+                role = "system",
+                content = systemParts.filter { it.isNotBlank() }.joinToString("\n\n"),
+            ),
+            LlmClient.ChatMessage(role = "user", content = userContent),
+        )
+    }
+
     fun buildRelationMessages(
         payload: DistillPayload,
         characters: List<String>,

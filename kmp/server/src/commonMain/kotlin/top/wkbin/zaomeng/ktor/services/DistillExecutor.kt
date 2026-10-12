@@ -438,6 +438,10 @@ class DistillExecutor(
             distillPayloadPaths = distillPayloadPaths,
             startedAt = startedAt,
         )
+
+        // 逐章人设弧线：独立收尾阶段，失败不影响已完成的档案与关系图谱。
+        // 放在 finalizeSuccess 之后，因为弧线要把 has_arc/arc_count 补进 artifact_index。
+        runPersonaArcStage(runId, novelId, completed.ifEmpty { characters })
     }
 
     // ------------------------------------------------------------------
@@ -1354,6 +1358,80 @@ class DistillExecutor(
         }
         storage.writeRunManifest(runId, updated)
         PlatformLog.i(TAG, "Distillation completed for run=$runId: ${completed.size}/${planned.size} characters")
+    }
+
+    /**
+     * 逐章人设弧线收尾阶段。
+     *
+     * 人物档案 (PROFILE.md) 是全书蒸馏出的**单一最终形态**，无论对话从第几章开始，
+     * 模型看到的都是「全书之后」的身份与认知；从第 1 章开局就会剧透。
+     * 这里把「会随时间改变」的状态按章落盘为 arc.json，供对话按时间点取用。
+     *
+     * 放在收尾而不是主流程里，理由：
+     * - 逐章调用量约等于章数（端侧同样逐章），可能很久，必须可中断；
+     * - 章节索引不可用、模型不可用、单章解析失败都不应让整次蒸馏失败。
+     */
+    private suspend fun runPersonaArcStage(runId: String, novelId: String, characters: List<String>) {
+        if (characters.isEmpty()) return
+        val service = PersonaArcService(storage, llm, NovelChapterIndexService(storage))
+        val manifest = storage.readRunManifest(runId) ?: return
+        val summary = runCatching {
+            service.generate(
+                runId = runId,
+                runManifest = manifest,
+                novelId = novelId,
+                characters = characters,
+                guidance = loadGuidance(),
+                onProgress = { stage, details ->
+                    // 逐章进度会按章读-改-写整个 manifest，这里只按节拍上报，避免写放大。
+                    val index = (details["chapter_index"] as? Number)?.toInt() ?: 0
+                    val total = (details["chapter_total"] as? Number)?.toInt() ?: 0
+                    if (index == 1 || index == total || (index > 0 && index % 5 == 0)) {
+                        applyDistillProgress(runId, stage, details)
+                    }
+                },
+            )
+        }.getOrElse { error ->
+            PlatformLog.w(TAG, "Persona arc stage skipped for run=$runId: ${error.message}")
+            return
+        }
+        PlatformLog.i(
+            TAG,
+            "Persona arc for run=$runId: characters=${summary.charactersProcessed} " +
+                "generated=${summary.generated} skipped=${summary.skipped} failed=${summary.failed}",
+        )
+        if (!summary.hasArc) return
+        patchManifest(runId) { current ->
+            val artifactIndex = current["artifact_index"]?.jsonObject ?: JsonObject(emptyMap())
+            val known = artifactIndex["characters"] as? JsonArray ?: JsonArray(emptyList())
+            val updatedCharacters = buildJsonArray {
+                known.forEach { raw ->
+                    val entry = runCatching { raw.jsonObject }.getOrNull() ?: return@forEach
+                    val name = entry["name"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                    val arc = if (name.isBlank()) null else service.readArc(runId, novelId, name)
+                    val arcCount = arc?.get("chapter_count")?.jsonPrimitive?.intOrNull ?: 0
+                    add(
+                        buildJsonObject {
+                            entry.forEach { (key, value) ->
+                                if (key != "has_arc" && key != "arc_count") put(key, value)
+                            }
+                            put("has_arc", arcCount > 0)
+                            put("arc_count", arcCount)
+                        },
+                    )
+                }
+            }
+            buildJsonObject {
+                current.forEach { (key, value) -> if (key != "artifact_index") put(key, value) }
+                put(
+                    "artifact_index",
+                    buildJsonObject {
+                        artifactIndex.forEach { (key, value) -> if (key != "characters") put(key, value) }
+                        put("characters", updatedCharacters)
+                    },
+                )
+            }
+        }
     }
 
     private fun formatElapsedText(seconds: Double): String {

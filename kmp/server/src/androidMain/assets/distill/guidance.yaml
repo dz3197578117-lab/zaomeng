@@ -61,3 +61,24 @@ distill_merge_head: "目标角色：{character}\n同批角色：{peers}\n以下�
 relation_user_head: "请严格输出一份完整的关系图谱 Markdown。\n不要解释，不要输出代码块，不要补充额外前后缀。\n只保留当前书段内有明确证据支撑的人物关系。"
 relation_merge_head: "以下是基于多个证据块得到的局部关系图谱草稿，请整合成唯一一份最终 RELATION_GRAPH Markdown。\n去重、纠偏、补足稳定关系；不要保留剧情转述碎句。\n若某关系只在单一块中短暂出现且证据弱，可以不保留。\n不要解释，不要输出代码块，不要补充额外前后缀。\n{fallback_line}"
 fallback_line: "补充分批原因参考：{fallback_reason}"
+
+persona_arc_instruction: |
+  ## PERSONA_ARC_TASK
+  你正在为同一个角色建立**逐章人设弧线**：只记录「会随时间改变」的状态，
+  让对话从某一章开始时，角色能呈现**那个时间点**的身份与认知。
+  - 只依据本章正文判断，**不得提前使用后续章节才出现的信息**。
+  - 以「本章结束时的状态」为准，不要写成全书总结。
+  - 说话风格、外貌、习惯等稳定特征**不要写**，这里只记会变的部分。
+  - known_facts 只写该角色在本章结束前**确实已经知道**的事；拿不准的一律不写。
+  - 本章没有依据的字段留空（空字符串或空数组），禁止写占位词、省略号或「未知」。
+  ### CHARACTER
+  {character}
+  ### CHAPTER
+  第 {chapter_index} 章 {chapter_title}
+  ### CHAPTER_TEXT
+  {chapter_text}
+
+persona_arc_output_format: |
+  只返回合法 JSON，不要 Markdown 代码块，不要任何解释或前后缀：
+  {"scene_identity":"本章的身份或处境","age_stage":"年龄阶段","goal":"本章的目标","belief_anchor":"本章的信条","stress_response":"受压时的反应","key_bonds":[{"name":"对方姓名","stage":"本章的关系阶段"}],"preference_like":["本章在意的事"],"dislike_hate":["本章抵触的事"],"known_facts":["本章结束前已确认知道的事"]}
+  上述字段全部可选，没有依据的用空字符串或空数组。禁止输出未在上面声明的字段。
