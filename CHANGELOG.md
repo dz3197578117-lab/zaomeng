@@ -6,7 +6,7 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
-## [2.1.4] - 未发布
+## [2.1.4] - 2026-10-13
 
 本次聚焦「蒸馏/生成不再因为超时和瞬断而失败」与「出问题能自己拿到日志」。
 
