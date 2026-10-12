@@ -181,6 +181,7 @@ keyPassword=你的口令
 | `缺少签名 secret` | 4 个 secret 未配齐或名称拼错，见上文表格 |
 | `签名密钥不匹配` | secret 里的密钥不是预期那把；若是有意换密钥，先改 `EXPECTED_SIGNER_SHA256` |
 | `产物签名不匹配` | `keystore.properties` 没生效：检查 `storeFile` 路径与 `keyAlias` |
+| `无法读取产物签名` | 解析 `apksigner --print-certs` 输出失败。前缀随 build-tools 版本变化：**37.0.0 用 `V2 Signer:`**，36.0.0 及更早用 `Signer #1`——所以解析不能锚定行首。原始输出会打印在日志里，据此核对 |
 | `版本号不匹配` | 忘记改 `versionName`，或 tag 与 gradle 版本不一致 |
 | 用户反馈「应用未安装」 | 签名不一致；确认本次发布确实用了专用密钥 |
 | 用户反馈「版本降级」 | `versionCode` 没有递增 |
