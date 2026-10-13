@@ -6,6 +6,49 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.1.18] - 2026-10-14
+
+### 修复：端侧推理整个起不来（2.1.16 引入的回归，P0）
+
+2.1.16 换掉随包二进制之后，**本机推理完全无法启动**——不是"用不上 GPU"，是加载阶段就失败：
+
+```
+CANNOT LINK EXECUTABLE "/data/app/.../lib/arm64/libllama-server.so":
+library "libOpenCL.so" not found: needed by main executable
+```
+
+根因是「**随包二进制多了一条非系统依赖**」+「**起子进程时没有设置库搜索路径**」两件事叠加：
+
+- 2.1.16 的构建把 OpenCL 后端编了进来，于是 `libllama-server.so` 的 `NEEDED` 里多了一条
+  **`libOpenCL.so`**（2.1.15 那版 `NEEDED` 只有 `libm/libdl/libc`，全是系统库，所以没暴露问题）；
+- 而 `AndroidOnDeviceRuntime.spawn()` 用的是裸 `ProcessBuilder(...).start()`，**没有设置任何环境变量**。
+  Android 的 linker **不搜索「可执行文件所在目录」**，应用的 linker namespace 只对 `dlopen` 生效，
+  所以子进程找不到同目录的 `libOpenCL.so`。
+- 注意 `libOpenCL.so` 本身**确实在 APK 里**（`androidApp` 开了 `useLegacyPackaging = true`，它被解压到了
+  `nativeLibraryDir`）——缺的只是**搜索路径**。
+
+修复分两步，**两手都做了**：
+
+1. **随包二进制退回自包含**（`GGML_OPENCL=0`，保留 KleidiAI）：`NEEDED` 回到只剩
+   `libm/libdl/libc`，与 2.1.15 一样不可能因为缺库而加载失败。同时从 jniLibs 移除已无引用的
+   `libOpenCL.so`（50,272 B，白占体积）。产物 13,591,072 → **10,683,016 B**。
+2. **spawn 时显式设置 `LD_LIBRARY_PATH`** 指向 `applicationInfo.nativeLibraryDir`（保留调用方原有的
+   值），让子进程能找到与可执行文件同目录的非系统依赖。这一步**也是将来任何多 `.so` 形态的前提**
+   ——否则「动态后端」架构（`BUILD_SHARED_LIBS=ON` + `GGML_BACKEND_DL=ON`）同样会整体起不来。
+
+### 关于 OpenCL（撤回，不是放弃）
+
+OpenCL 后端**仍然可以编**（`GGML_OPENCL=1`），构建脚本的解析与随包逻辑都保留着。它被撤回随包，
+是因为**它在真机上从未被验证过**，而它带来的却是一个「整个端侧起不来」的风险——这个代价
+和收益完全不成比例。等满足两个条件再考虑随包：① spawn 的 `LD_LIBRARY_PATH` 修复在真机上确认有效；
+② 确认 ICD loader 能在 App 沙箱内枚举到厂商驱动。
+
+### 已知残留
+
+- 端侧 GPU（OpenCL）**不随包**；「GPU 层数」填了不会有效果（与 2.1.15 行为一致）。
+- 桌面端 `ImageDecoding.jvm.kt` 仍整幅解码（见 2.1.17）。
+- 背景图目标文件名固定，换同扩展名的图时不刷新（见 2.1.17）。
+
 ## [2.1.17] - 2026-10-14
 
 ### 修复：设置聊天背景后闪退（大图未下采样）

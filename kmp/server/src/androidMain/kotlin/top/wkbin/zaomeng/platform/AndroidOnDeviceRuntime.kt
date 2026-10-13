@@ -60,16 +60,38 @@ class AndroidOnDeviceRuntime(context: Context) : OnDeviceRuntime {
             val log = File(logFile.toString())
             log.parentFile?.mkdirs()
             val workDir = File(runtimeDir.toString()).apply { mkdirs() }
-            val process = ProcessBuilder(command)
+            val builder = ProcessBuilder(command)
                 .directory(workDir)
                 // stderr 并入 stdout，日志泵只需读一路
                 .redirectErrorStream(true)
-                .start()
+            // 让 linker 能找到「与可执行文件同目录」的非系统依赖（例如 libOpenCL.so）。
+            //
+            // 为什么必须显式设：Android 的 linker **不搜索可执行文件所在目录**，而应用的 linker
+            // namespace 只对 dlopen 生效；子进程继承的 LD_LIBRARY_PATH 里并没有原生库目录。
+            // 于是 NEEDED 里只要出现一个非系统库，整个可执行文件就加载失败（2.1.16/2.1.17 的真机实测）：
+            //   CANNOT LINK EXECUTABLE ".../lib/arm64/libllama-server.so":
+            //   library "libOpenCL.so" not found: needed by main executable
+            // 2.1.15 没暴露这个问题，只是因为那版产物 NEEDED 只有 libm/libdl/libc（都是系统库）。
+            // 注意：库确实被解压到了 nativeLibraryDir（androidApp 开了 useLegacyPackaging），
+            // 缺的只是搜索路径。
+            builder.environment()["LD_LIBRARY_PATH"] = librarySearchPath()
+            val process = builder.start()
             // llama-server 不读 stdin，但保持管道打开会让某些实现阻塞在 read 上，主动关闭更安全
             runCatching { process.outputStream.close() }
             pumpOutputToLog(process, log)
             AndroidNativeProcess(process)
         }.getOrNull()
+    }
+
+    /**
+     * 子进程的动态库搜索路径：原生库目录在前，保留调用方原有的 `LD_LIBRARY_PATH`。
+     *
+     * 目录不存在时返回原有的值（可能是空串），不制造一个指向空目录的搜索项。
+     */
+    private fun librarySearchPath(): String {
+        val nativeDir = appContext.applicationInfo?.nativeLibraryDir?.takeIf { it.isNotBlank() }
+        val inherited = System.getenv("LD_LIBRARY_PATH")?.takeIf { it.isNotBlank() }
+        return listOfNotNull(nativeDir, inherited).joinToString(":")
     }
 
     override fun findFreePort(): Int? = runCatching {
