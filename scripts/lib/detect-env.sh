@@ -153,6 +153,19 @@ prepare_aapt2_override() {
   AAPT2_OVERRIDE_NOTE=""
   AAPT2_WRAPPER_DIR=""
 
+  # Windows（Git Bash / MSYS / Cygwin）宿主直接跳过这个覆盖。
+  # 它是为 **arm64 宿主** 准备的：那类机器上 AGP 从 Maven 取到的 aapt2 是 x86-64 ELF，跑不了，
+  # 必须换成能用的那份。而 Windows 宿主上 AGP 自带的 aapt2 架构本来就是对的，反倒会因为
+  # override 的实现方式失败：为满足 AGP 的文件名校验，wrapper 是一个**名为 aapt2 的 POSIX
+  # 脚本**（见下面 aapt2_wrapper 的注释），而 AGP 在 Windows 上无法把非 .exe 当可执行文件，
+  # 于是报 "Custom AAPT2 location does not point to an AAPT2 executable"（本机实测）。
+  case "$(uname -s 2>/dev/null || echo unknown)" in
+    MINGW*|MSYS*|CYGWIN*)
+      AAPT2_OVERRIDE_NOTE="Windows 宿主：AGP 自带的 aapt2 架构正确，跳过覆盖（override 的 wrapper 是 POSIX 脚本，AGP 校验不过）"
+      return 0
+      ;;
+  esac
+
   local jar
   if ! jar="$(find_android_jar)"; then
     AAPT2_OVERRIDE_NOTE="未找到 platforms/android-*/android.jar（SDK 里可能还没装 platform），跳过 aapt2 实测"
