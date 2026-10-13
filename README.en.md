@@ -10,7 +10,9 @@ Distill Chinese novel characters into reusable persona bundles, extract relation
 
 [![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-8A2BE2.svg)](LICENSE) · [Website](https://dz3197578117-lab.github.io/zaomeng/) · [中文](README.md)
 
-> This repository continues from upstream Zaomeng 2.0 (current version: **2.1.4**). See "What's different in this build" below, and [`CHANGELOG.md`](CHANGELOG.md) for the per-version history.
+> This repository continues from upstream Zaomeng 2.0.
+> **For what it can do today, see [What Zaomeng can do](docs/features.md)** (grouped by capability, with the version each arrived in);
+> per-version history is in [`CHANGELOG.md`](CHANGELOG.md) — **the current version is whatever its top entry says** (no version is hard-coded here, so it cannot drift from the shipped APK).
 
 ## What's different in this build
 
@@ -60,7 +62,7 @@ Scripts (run from the repository root):
 
 ### Clients
 
-Prebuilt Android builds are on [Releases](https://github.com/dz3197578117-lab/zaomeng/releases/latest) (`arm64-v8a`, currently a 2.1.4 debug build with the llama.cpp runtime bundled). Release assets are built by GitHub Actions when a tag is pushed, so they no longer depend on a binary committed to the repository. Build instructions for Desktop live in [`kmp/README.md`](kmp/README.md).
+Prebuilt Android builds are on [Releases](https://github.com/dz3197578117-lab/zaomeng/releases/latest) (`arm64-v8a`, a debug build with the llama.cpp runtime bundled; the version is the latest tag). Release assets are built by GitHub Actions when a tag is pushed, so they no longer depend on a binary committed to the repository. Build instructions for Desktop live in [`kmp/README.md`](kmp/README.md).
 
 > ⚠️ **2.1.4 is a one-time reinstall release**: the signing key used for 2.1.2 / 2.1.3 has been lost, so 2.1.4 cannot be installed over 2.1.3. If you are on 2.1.3, first export each book bundle as `.zaomeng-run.zip` (**into your Downloads folder**), then uninstall and reinstall. From 2.1.4 onward the build is signed with a dedicated, backed-up key, so normal in-place upgrades resume. See [`docs/release-android.md`](docs/release-android.md).
 

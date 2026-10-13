@@ -8,9 +8,11 @@
 
 把中文小说人物蒸馏成可复用的人物包，抽取关系图谱，再让角色按自己的性格、立场、关系和记忆重新开口说话。
 
-[![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-8A2BE2.svg)](LICENSE) · [官网](https://dz3197578117-lab.github.io/zaomeng/) · [English](README.en.md)
+[![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-8A2BE2.svg)](LICENSE) · [官网](https://dz3197578117-lab.github.io/zaomeng/) · [English](README.en.md) · [**造梦能做什么 →**](docs/features.md)
 
-> 本仓库是在上游造梦 2.0 基础上继续改的版本（当前 **2.1.4**），改动见下方「本版改动」；逐版本变更记录见 [`CHANGELOG.md`](CHANGELOG.md)。
+> 本仓库是在上游造梦 2.0 基础上继续改的版本。
+> **想知道它现在能做什么，看 [造梦能做什么](docs/features.md)**（按能力域汇总，并标注每项从哪版开始有）；
+> 逐版本变更记录见 [`CHANGELOG.md`](CHANGELOG.md)，**当前版本以 CHANGELOG 顶部为准**（这里不再写死版本号，避免与实际 APK 不一致）。
 
 ## 本版改动
 
@@ -60,7 +62,7 @@
 
 ### 客户端
 
-预编译的 Android 包见 [Releases](https://github.com/dz3197578117-lab/zaomeng/releases/latest)（`arm64-v8a`，当前为 2.1.4 调试版，随包内嵌 llama.cpp 运行时）。Release 附件由 GitHub Actions 在打 tag 时自动构建，不再依赖仓库里手工提交的二进制。桌面的构建说明见 [`kmp/README.md`](kmp/README.md)。
+预编译的 Android 包见 [Releases](https://github.com/dz3197578117-lab/zaomeng/releases/latest)（`arm64-v8a` 调试版，随包内嵌 llama.cpp 运行时；**版本以最新 tag 为准**）。Release 附件由 GitHub Actions 在打 tag 时自动构建，不再依赖仓库里手工提交的二进制。桌面的构建说明见 [`kmp/README.md`](kmp/README.md)。
 
 > ⚠️ **2.1.4 是一次性重装版本**：2.1.2 / 2.1.3 使用的签名密钥已丢失，2.1.4 无法覆盖安装 2.1.3。正在用 2.1.3 的用户请先在旧版把书卷导出为 `.zaomeng-run.zip`（**存到「下载」目录**），再卸载重装。从 2.1.4 起改用妥善备份的专用密钥签名，后续版本恢复正常覆盖安装。详见 [`docs/release-android.md`](docs/release-android.md)。
 
