@@ -252,7 +252,7 @@ GitHub 仓库页顶部的 **About 区（描述 / 主页 / topics）不随仓库�
 
 描述：
 
-> 造梦 — 把中文小说蒸馏成可对话的人物。KMP + Compose Multiplatform：多角色对话、逐章人设弧线与时间线推进、剧情导演与第四面墙、插件系统、端侧 llama.cpp 推理（GGUF），可完全离线运行
+> 造梦 — 把中文小说蒸馏成可对话的人物。KMP + Compose Multiplatform：多角色对话、逐章人设弧线与时间线推进、剧情导演与第四面墙、插件系统、端侧 llama.cpp 推理（GGUF，支持 Adreno GPU 加速与内置模型一键下载），可完全离线运行
 
 主页：<https://dz3197578117-lab.github.io/zaomeng/>
 
@@ -267,7 +267,7 @@ TOKEN=<有 repo 权限的令牌>
 
 curl -sS -X PATCH -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" \
   "https://api.github.com/repos/$REPO" \
-  -d '{"description":"造梦 — 把中文小说蒸馏成可对话的人物。KMP + Compose Multiplatform：多角色对话、逐章人设弧线与时间线推进、剧情导演与第四面墙、插件系统、端侧 llama.cpp 推理（GGUF），可完全离线运行","homepage":"https://dz3197578117-lab.github.io/zaomeng/"}' >/dev/null
+  -d '{"description":"造梦 — 把中文小说蒸馏成可对话的人物。KMP + Compose Multiplatform：多角色对话、逐章人设弧线与时间线推进、剧情导演与第四面墙、插件系统、端侧 llama.cpp 推理（GGUF，支持 Adreno GPU 加速与内置模型一键下载），可完全离线运行","homepage":"https://dz3197578117-lab.github.io/zaomeng/"}' >/dev/null
 
 curl -sS -X PUT -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" \
   "https://api.github.com/repos/$REPO/topics" \
@@ -280,6 +280,27 @@ curl -sS -X PUT -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.gi
   所以只测「读」会误以为令牌没问题，直到 PATCH 返回 401 才发现。
 - **`topics` 不能用 PATCH 设**，要用专门的 `PUT /repos/{owner}/{repo}/topics`
   （用 PATCH 传 `topics` 会被静默忽略，返回体里 topics 仍是空）。
+
+### 加功能 / 发版时必须一起更新的「对外描述面」
+
+这几处的共同点：**它们都在说「造梦现在能做什么」，因此每次加能力或发版都会过期**。
+漏掉任何一处，就会出现「仓库里写了、用户看到的地方还没有」或者反过来的错位。
+
+| 面 | 位置 | 能否离线校验 |
+|---|---|---|
+| 仓库页 About 描述 | GitHub 设定；**权威文案在本文件上方**，改文案后必须重新 PATCH | ❌ 只存在 GitHub 上 |
+| About 之外：`topics` | 同上（`PUT …/topics`） | ❌ |
+| README「本版改动」表 | [`README.md`](../README.md)（英文版 [`README.en.md`](../README.en.md) 同步） | ⚠️ 只能人工看 |
+| 能力域清单 | [`docs/features.md`](features.md)（按域汇总，每项标「起始版本」） | ⚠️ 只能人工看 |
+| 逐版本细节 | [`CHANGELOG.md`](../CHANGELOG.md) + [`.github/release-notes/`](../.github/release-notes/) | ✅ `scripts/check-release-ready.sh` |
+
+两条经验：
+
+- **不要在这几处写死版本号**——README 已经这么做了（「当前版本以 CHANGELOG 顶部为准」）。
+  同理，`docs/changes-from-upstream.md` 那个「新增 / 修改 / 删除」计数是**某一轮的快照**，
+  README 不再把它当成实时数字，只指向该文档。
+- **未发布的能力**在「起始版本」栏写「未发布」，等真正切版本号时再改成版本号——
+  提前写一个还没发的号，会让这三处和 CHANGELOG 立刻互相矛盾。
 
 ## 八、新增功能时必须动两处：`KnownFeatures` 与探针注册
 

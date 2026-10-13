@@ -35,8 +35,15 @@
 | **修复对话闪退与「同一句重复出现」** | 分页前插不去重 + 服务端缺 turnId 幂等，导致同一消息进列表两次；两层相同消息的列表 key 撞车直接闪退 | 2.1.10 |
 | 角色名引号归一化 · 本机模型独立页 | 修 `"李慧英"` 同时进允许与禁止名单；端侧配置从模型档案编辑页拆出 | 2.1.11 |
 | **运行诊断与运行日志分页 + 采集控制 + 三层问题捕获** | 采集启停与清除旧日志；应用内悬浮窗；进程内 handler / `ApplicationExitInfo` / 结构化事件三层捕获 | 2.1.12 |
+| **功能自检（27 项探针）** | 各能力域自己注册探针并报告是否正常，同时列出「哪些功能还没有任何探针覆盖」 | 2.1.13 |
+| 画面与流畅度信号 | 掉帧率、过度重组、布局跳动、闪烁检测（阈值仍需真机校准） | 2.1.13 |
+| **内容审核拒绝与请求出错分开** | 上游按内容策略拒收时单独归类（`dialogue.content_rejected`），聊天页不再给注定无效的「重试」 | 2.1.14 |
+| **移除 Windows 支持** | 桌面端只发布 macOS / Linux：删掉 JNA 深色标题栏、Windows TTS、`.exe` 分支、Windows 安装包配置与网站上的 Windows 声明（Windows 桌面包从未真正发布过） | 未发布 |
+| **端侧 GPU 加速（Adreno / OpenCL）+ CPU 改用 KleidiAI** | 编入 llama.cpp 的 Adreno OpenCL 后端，`-ngl` 可在设置里调（上游已验机型含 Snapdragon 8 Elite / Adreno 830）；CPU 改用 KleidiAI 运行时派发内核，不再靠抬高全局 `-march`（那会让 armv8.0 机型 SIGILL） | 未发布 |
+| **内置模型清单：点名字一键下载并选中** | 4 个 Qwen GGUF 预设；下载源可在 HuggingFace 官方与 hf-mirror 镜像间切换；每个模型都标注**能力来源**（确切仓库 / 发布者是否官方 / 上游基座 / 元数据读取时间 / 上游模型卡） | 未发布 |
+| 三处真机诊断查实的缺陷修复 | 内容审核判据只认文案、漏掉上游机器可读的 `code`；`model_configured` 恒为 false；本地（端侧）档案的 `base_url` 指向死端口 | 未发布 |
 
-逐文件的完整清单（相对上游：新增 35 / 修改 67 / 删除 2，含复核方法）见 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)；逐版本细节见 [`CHANGELOG.md`](CHANGELOG.md)。
+相对上游的逐文件清单见 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)：**该文档是某一轮的快照**，其中的「新增 / 修改 / 删除」计数按当时统计、不随仓库继续增长（复核方法也写在里面）；逐版本细节见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 维护
 

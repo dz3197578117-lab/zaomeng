@@ -90,6 +90,26 @@
 - ViewModel 状态更新应保持幂等，尤其注意断线重试、operation ID、流式 reset/complete 和历史分页合并。
 - Compose 列表元素应使用稳定 key；避免在高频 delta 上进行昂贵的全列表重建。
 
+## 对外描述面同步
+
+下列位置都在说「造梦现在能做什么」，因此**每次加能力或发版都会过期**，必须一起更新；
+漏掉任意一处就会出现「仓库里写了、用户看到的地方还没有」或反过来的错位。
+
+| 面 | 位置 | 能否自动校验 |
+|---|---|---|
+| README「本版改动」表 | `README.md`（英文版 `README.en.md` 同步） | ❌ 只能人工看 |
+| 能力域清单（按域汇总 + 每项「起始版本」） | `docs/features.md` | ❌ 只能人工看 |
+| 逐版本细节 | `CHANGELOG.md` + `.github/release-notes/v<版本>.md` | ✅ `scripts/check-release-ready.sh` |
+| 仓库页 About 描述 / topics | GitHub 设定；**权威文案在 `docs/maintainer-setup.md` 第七节**，改完必须重新 PATCH 到 GitHub | ❌ 只存在 GitHub 上 |
+
+两条硬规则：
+
+- **不要在这些地方写死版本号**。README 已声明「当前版本以 CHANGELOG 顶部为准」；
+  同理 `docs/changes-from-upstream.md` 里的「新增 / 修改 / 删除」计数是**某一轮的快照**，
+  不要再把它当实时数字引用（README 已改为只指向该文档）。
+- **未发布的能力**在「起始版本」栏统一写「未发布」，切版本号时再替换。
+  提前写一个还没发布的号，会让这几处与 CHANGELOG 立刻互相矛盾。
+
 ## 验证命令
 
 命令默认从 `kmp/` 目录运行，使用 `./gradlew`。桌面端只支持 **macOS 与 Linux**（Windows 构建与安装包已移除）。需要 JDK 21+（所有模块 `jvmTarget = JVM_21` 且未配 `jvmToolchain`），CI 使用 JDK 21。

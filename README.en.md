@@ -35,8 +35,15 @@ Three things this fork keeps improving on top of upstream 2.0: **it runs offline
 | **Fixed dialogue crash and duplicated replies** | Pagination prepend had no dedup; duplicate list keys crashed Compose | 2.1.10 |
 | Character-name quote normalization; on-device page split out | 2.1.11 |
 | **Diagnostics/runtime-log split, capture control, three-layer problem capture** | 2.1.12 |
+| **Feature self-check (27 probes)** | Each capability domain registers a probe and reports whether it is healthy; also lists which features have no probe coverage yet | 2.1.13 |
+| Smoothness signals | Dropped frames, excessive recomposition, layout jitter, flicker (thresholds still need on-device calibration) | 2.1.13 |
+| **Provider content rejection separated from request errors** | A policy rejection is now classified on its own (`dialogue.content_rejected`); chat no longer offers a "retry" that can only fail again | 2.1.14 |
+| **Windows support removed** | Desktop ships macOS / Linux only: JNA dark title bar, Windows TTS, the `.exe` lookup branch, the Windows installer config and the Windows claims on the website are gone (a Windows desktop package never actually shipped) | Unreleased |
+| **On-device GPU (Adreno / OpenCL) + KleidiAI CPU kernels** | llama.cpp's Adreno OpenCL backend is compiled in and `-ngl` is settable in the app (upstream lists Snapdragon 8 Elite / Adreno 830 as verified); the CPU path now uses KleidiAI's runtime-dispatched kernels instead of raising a global `-march` (which SIGILLs on armv8.0 devices) | Unreleased |
+| **Built-in model list: tap a name to download and select it** | Four Qwen GGUF presets; download source switchable between the official HuggingFace site and the hf-mirror mirror; every entry labels its **capability provenance** (exact repo / whether the publisher is official / upstream base model / when metadata was read / upstream model card) | Unreleased |
+| Three defects found via a real-device diagnostic | Moderation detection only matched wording and missed the machine-readable `code`; `model_configured` was always false; the local (on-device) profile's `base_url` pointed at a dead port | Unreleased |
 
-Full file-level diff against upstream (35 added / 67 modified / 2 removed, with how it was verified) is in [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md); per-version detail is in [`CHANGELOG.md`](CHANGELOG.md).
+The file-level diff against upstream is in [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md) — **that document is a snapshot from one pass**, so its added / modified / removed counts are frozen at that point and do not grow with the repository; the verification method is documented there too. Per-version detail is in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Maintenance
 
