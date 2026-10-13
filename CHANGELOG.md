@@ -6,7 +6,7 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
-## [2.1.14] - 未发布
+## [2.1.14] - 2026-10-13
 
 ### 新增
 
@@ -95,6 +95,11 @@
 - 探针 `ChatGenerationProbe` 与 `RuleEngineProbe` 只统计 `dialogue.stream_error`，
   审核拒绝不再计入——这是「不再混为一谈」的必然结果，本版未改探针判定逻辑。
 - 非流式路径（蒸馏/章节/建议等）也会抛同一异常且文案一致，但未逐个审计各调用方对错误的包装。
+- 旧书卷 `artifact_index` 里带引号的角色名（如 `"李慧英"`）仍是历史数据问题：
+  本版只保证它**不再崩掉整轮生成**，没有把这类名字改成规范写法。收录新书卷时名字已过规范化。
+- 桌面端 `packageReleaseDistributionForCurrentOS`（ProGuard + jpackage 打包）**未在本机验证**：
+  它需要 macOS/Linux 工具链。删除 JNA / FileKit-Windows 的 ProGuard 保留规则对 release
+  打包的影响未经实机验证——编译、单测与 CI 的 Desktop 作业（只编译）不受影响。
 
 ## [2.1.13] - 2026-10-13
 
