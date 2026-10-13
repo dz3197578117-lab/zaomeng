@@ -140,7 +140,13 @@ import top.wkbin.zaomeng.feature.chat.insights.consistencyInsight
 import top.wkbin.zaomeng.platform.PlatformBackHandler
 import top.wkbin.zaomeng.platform.rememberClipboardTextWriter
 import top.wkbin.zaomeng.platform.rememberPlatformImage
+import top.wkbin.zaomeng.platform.SpeechEngine
+import top.wkbin.zaomeng.platform.SpeechEngineSelection
+import top.wkbin.zaomeng.platform.classifySpeechEmotion
+import top.wkbin.zaomeng.platform.deliver
 import top.wkbin.zaomeng.platform.rememberPlatformTts
+import top.wkbin.zaomeng.platform.resolveVoiceProfile
+import top.wkbin.zaomeng.platform.toAuthoredVoice
 import top.wkbin.zaomeng.ui.graphics.decodeImageBitmap
 import top.wkbin.zaomeng.ui.format.toLocalDateTimeDisplay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -153,6 +159,11 @@ import kotlinx.serialization.json.jsonPrimitive
 internal fun Transcript(
     session: DialogueSessionDto,
     avatarBytes: Map<String, ByteArray>,
+    /**
+     * 参演角色 → 人物包字段（声线的来源，见 [top.wkbin.zaomeng.platform.toAuthoredVoice]）。
+     * 缺省为空表时每个角色仍会拿到「按角色名确定性派生」的声线，朗读不会因此失效。
+     */
+    personaFields: Map<String, Map<String, String>> = emptyMap(),
     sending: Boolean,
     loadingEarlier: Boolean,
     hasMoreHistory: Boolean,
@@ -174,7 +185,20 @@ internal fun Transcript(
     val listState = rememberLazyListState()
     val scrollScope = rememberCoroutineScope()
     val clipboardWriter = rememberClipboardTextWriter()
-    val tts = rememberPlatformTts()
+    // 引擎选择由偏好传入（对话显示偏好里带着它）。神经引擎不可用时 `rememberPlatformTts`
+    // 会降级到系统 TTS 并留下原因——界面负责把原因显示出来，不静默降级。
+    val tts = rememberPlatformTts(
+        SpeechEngineSelection(
+            engine = if (displayPreferences.neuralSpeechEnabled) SpeechEngine.NEURAL else SpeechEngine.SYSTEM,
+            neuralModelId = displayPreferences.ttsNeuralModelId,
+            neuralModelDir = displayPreferences.ttsNeuralModelDir,
+        ),
+    )
+    // 把本次会话的参演角色告诉引擎，供神经引擎分配**互不相同**的音色（系统 TTS 忽略此项）。
+    // 用 sessionId 作 key：只在换会话时重算，同一会话内不会因为重组建而改变音色。
+    LaunchedEffect(session.sessionId, session.characterAvatars) {
+        tts.setCast(session.characterAvatars.keys.toList())
+    }
     val isSpeaking by tts.isSpeaking.collectAsStateWithLifecycle()
     val speakingId by tts.currentSpeakingId.collectAsStateWithLifecycle()
     val bottomThresholdPx = with(LocalDensity.current) { 24.dp.roundToPx() }
@@ -331,9 +355,23 @@ internal fun Transcript(
                             if (isSpeaking && speakingId == key) {
                                 tts.stop()
                             } else {
+                                // 每个角色用自己的声线：作者在人物包里填过就用填的，
+                                // 没填（或字段格式不可解析）就按角色名确定性派生——
+                                // 所以「每个人物声音不同」是默认成立的，不依赖作者填得多完整。
+                                // 再按这一句的情绪（内心独白优先，它比台词更能说明情绪）与标点调整韵律。
+                                val authored = personaFields[item.speaker].orEmpty().toAuthoredVoice()
+                                val delivery = resolveVoiceProfile(item.speaker, authored).deliver(
+                                    text = item.message,
+                                    emotion = classifySpeechEmotion(item.innerThought.ifBlank { item.message }),
+                                )
                                 tts.speak(
                                     id = key,
                                     text = item.message,
+                                    pitch = delivery.pitch,
+                                    speed = delivery.speed,
+                                    volume = delivery.volume,
+                                    speaker = item.speaker,
+                                    voiceName = delivery.voiceName,
                                 )
                             }
                         },

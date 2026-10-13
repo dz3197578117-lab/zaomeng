@@ -1,0 +1,93 @@
+package top.wkbin.zaomeng.platform
+
+/** 朗读引擎。 */
+enum class SpeechEngine {
+    /** 系统 TTS：不需要下载任何东西就一定可用，但中文通常只有 1~2 个音色。 */
+    SYSTEM,
+
+    /** 离线神经 TTS：每个角色能拿到**真正不同**的音色，但模型要按需下载，且**不支持音高**。 */
+    NEURAL,
+}
+
+/**
+ * 用户选择的朗读引擎与神经模型。
+ *
+ * 由偏好（`ttsEngine` / `ttsNeuralModelId` / `ttsNeuralModelDir`）构造后一路传到
+ * `rememberPlatformTts()`——**不放进全局可变状态**：那样「谁在什么时候改的」无从追查，
+ * 而引擎选错的表现只是「没声音」或「声音不对」，最难查的正是这种。
+ */
+data class SpeechEngineSelection(
+    val engine: SpeechEngine = SpeechEngine.SYSTEM,
+    /** 选用的模型 id（`NeuralVoiceCatalog` 里的 id）。 */
+    val neuralModelId: String = "",
+    /** 模型在本机的绝对目录（服务端回报，客户端不自己拼）。 */
+    val neuralModelDir: String = "",
+)
+
+/**
+ * 真正用哪个引擎，以及**降级原因**。
+ *
+ * [fallbackReason] 只在「用户选了神经引擎但它不可用」时非空——界面必须把它显示出来。
+ * 静默降级是最坏的选择：用户会以为「所谓的不同音色就是这样的」，
+ * 而实际上他听到的一直是系统 TTS。
+ */
+data class SpeechEngineDecision(
+    val engine: SpeechEngine,
+    val fallbackReason: String? = null,
+) {
+    val isFallback: Boolean get() = fallbackReason != null
+}
+
+/**
+ * 决定实际使用哪个引擎。**纯函数**：只看选择与「本机已有哪些文件」，不碰文件系统。
+ *
+ * 判定顺序（每一步都给出可读的原因）：
+ * 1. 选的是系统 TTS → 直接用，无需检查任何东西；
+ * 2. 模型 id 不在目录里（例如旧版本存的 id 已下线）→ 降级；
+ * 3. 没有模型目录 → 降级（提示去下载）；
+ * 4. 模型文件不齐 → 降级，并说明缺几个；
+ * 5. 否则用神经引擎。
+ */
+fun resolveSpeechEngine(
+    selection: SpeechEngineSelection,
+    catalogModel: NeuralVoiceModel?,
+    existingFileNames: Collection<String>,
+): SpeechEngineDecision {
+    if (selection.engine == SpeechEngine.SYSTEM) {
+        return SpeechEngineDecision(SpeechEngine.SYSTEM)
+    }
+    if (catalogModel == null) {
+        return SpeechEngineDecision(
+            SpeechEngine.SYSTEM,
+            fallbackReason = "所选语音模型已不在可用目录中，已改用系统朗读。",
+        )
+    }
+    if (selection.neuralModelDir.isBlank()) {
+        return SpeechEngineDecision(
+            SpeechEngine.SYSTEM,
+            fallbackReason = "还没有下载「${catalogModel.displayName}」，已改用系统朗读。",
+        )
+    }
+    val missing = catalogModel.missingFileNames(existingFileNames)
+    if (missing.isNotEmpty()) {
+        return SpeechEngineDecision(
+            SpeechEngine.SYSTEM,
+            fallbackReason = "「${catalogModel.displayName}」的文件不完整（缺 ${missing.size} 个），" +
+                "已改用系统朗读；重新下载即可恢复。",
+        )
+    }
+    return SpeechEngineDecision(SpeechEngine.NEURAL)
+}
+
+/**
+ * 引擎的一句话说明，用于设置界面。**如实标注能力边界**——尤其「神经引擎不支持音高」，
+ * 这是引擎 API 决定的（`generate(text, sid, speed)` 没有音高参数），不是没做。
+ */
+fun SpeechEngine.description(): String = when (this) {
+    SpeechEngine.SYSTEM ->
+        "系统 TTS：不用下载，立刻可用。中文通常只有 1~2 个音色，" +
+            "角色差异靠音高、语速与音量表达（支持全部三项）。"
+    SpeechEngine.NEURAL ->
+        "离线神经 TTS：每个角色可分到**不同音色**（多说话人模型），完全离线。" +
+            "支持语速与音量；**不支持音高**（引擎没有该参数），情绪主要靠语速与模型表现力。"
+}

@@ -42,6 +42,7 @@ import top.wkbin.zaomeng.ktor.routes.sessionManagementRoutes
 import top.wkbin.zaomeng.ktor.routes.settingsManagementRoutes
 import top.wkbin.zaomeng.ktor.routes.suggestionsRoutes
 import top.wkbin.zaomeng.ktor.routes.worldMemoryRoutes
+import top.wkbin.zaomeng.ktor.routes.voiceModelRoutes
 import top.wkbin.zaomeng.platform.ServerPlatform
 
 /**
@@ -142,6 +143,7 @@ class LocalBackendController(
                     originalKnowledgeRoutes(services.originalKnowledge, storage)
                     novelChapterRoutes(services.novelChapters, storage)
                     onDeviceModelRoutes(services.onDeviceModels)
+                    voiceModelRoutes(services.voiceModels)
                     pluginRoutes(services.plugins)
                     pluginOperationsRoutes(services.pluginOperations)
                     pluginBuilderRoutes(services.pluginBuilder)

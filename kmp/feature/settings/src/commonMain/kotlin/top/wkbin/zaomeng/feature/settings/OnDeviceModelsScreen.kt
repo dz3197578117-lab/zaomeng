@@ -38,9 +38,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 fun OnDeviceModelsScreen(
     viewModel: OnDeviceModelsViewModel,
+    voiceViewModel: VoiceModelSettingsViewModel,
     onBack: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // 朗读语音模型与端侧推理模型同页：两者都是「在本机跑」的模型，下载源也共用同一套镜像设置。
+    val voiceState by voiceViewModel.state.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
 
     // 回到本页时刷一次：启动/下载可能在别的页面里被改过
@@ -124,6 +127,18 @@ fun OnDeviceModelsScreen(
                     onDeleteModel = viewModel::deleteModel,
                     onApplyEndpoint = viewModel::enableOnDeviceInference,
                     onToggleLogs = viewModel::toggleLogs,
+                )
+            }
+            item(key = "voice-model") {
+                VoiceModelContent(
+                    state = voiceState,
+                    onSelectModel = voiceViewModel::selectModel,
+                    onSelectEndpoint = voiceViewModel::selectEndpoint,
+                    onToggleEnabled = voiceViewModel::setEnabled,
+                    onDownload = voiceViewModel::download,
+                    onCancelDownload = voiceViewModel::cancelDownload,
+                    onDelete = voiceViewModel::deleteSelected,
+                    onDismissMessage = voiceViewModel::dismissMessage,
                 )
             }
         }

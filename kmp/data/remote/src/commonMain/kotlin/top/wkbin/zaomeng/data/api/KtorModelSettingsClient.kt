@@ -104,6 +104,36 @@ class KtorModelSettingsClient(
         http.client.delete("${endpoint.baseUrl.trimEnd('/')}/api/web/on-device/models/$encoded")
     }.body()
 
+    // ------------------------------------------------------------------
+    // 语音模型（离线神经 TTS，按需下载）。
+    // 错误体形状与端侧接口一致（都是 {"error": "…"} 的中文提示），所以复用 onDeviceRequest。
+    // ------------------------------------------------------------------
+
+    /** 某语音模型目录的现状与下载进度。 */
+    suspend fun voiceModelStatus(modelId: String): VoiceModelStatusDto = onDeviceRequest { endpoint ->
+        val encoded = modelId.encodeURLPathPart()
+        http.client.get("${endpoint.baseUrl.trimEnd('/')}/api/web/voice/status?model_id=$encoded")
+    }.body()
+
+    /** 按清单下载语音模型。**立刻返回**，进度靠轮询 [voiceModelStatus]。 */
+    suspend fun voiceModelDownload(
+        payload: DownloadVoiceModelRequest,
+    ): VoiceModelStatusDto = onDeviceRequest { endpoint ->
+        // 不显式设 contentType：客户端已装 ContentNegotiation，与上面端侧那几个方法一致。
+        http.client.post("${endpoint.baseUrl.trimEnd('/')}/api/web/voice/download") {
+            setBody(payload)
+        }
+    }.body()
+
+    suspend fun voiceModelCancelDownload(): VoiceModelStatusDto = onDeviceRequest { endpoint ->
+        http.client.post("${endpoint.baseUrl.trimEnd('/')}/api/web/voice/download/cancel")
+    }.body()
+
+    suspend fun voiceModelDelete(modelId: String): VoiceModelStatusDto = onDeviceRequest { endpoint ->
+        val encoded = modelId.encodeURLPathPart()
+        http.client.delete("${endpoint.baseUrl.trimEnd('/')}/api/web/voice/models/$encoded")
+    }.body()
+
     /**
      * 端侧接口把失败原因放在 `{"error": "..."}`，且 400/404/409 都是给用户看的中文提示。
      * 通用 [request] 会把它包成 `Ktor request failed: 409 {...}`，所以这里单独解出 message。

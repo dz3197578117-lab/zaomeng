@@ -9,6 +9,18 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+        Android 11（API 30）起有「包可见性」限制：不声明这一条，App **枚举不到任何 TTS 引擎**，
+        TextToSpeech 初始化直接回调 ERROR，表现为「点朗读完全没声音、也没有任何报错」
+        ——因为 PlatformTts 的初始化回调只处理 SUCCESS，会把待播内容一直挂着。
+        Android 官方文档要求 targetSdk 30+ 且使用 TTS 的 App 声明这个 intent。
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:name=".ZaomengApplication"
         android:allowBackup="false"

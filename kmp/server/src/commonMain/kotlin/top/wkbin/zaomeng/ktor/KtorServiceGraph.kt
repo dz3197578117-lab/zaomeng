@@ -103,6 +103,10 @@ class KtorServiceGraph(platform: ServerPlatform) {
     // 端侧推理：按存储根做进程内单例（后端 retry() 会重建本服务图，不能丢掉 llama-server 句柄）
     val onDeviceModels = OnDeviceModelService.getOrCreate(platform)
 
+    // 离线神经 TTS 的模型下载：同样按存储根做单例（下载中的任务不能因为重建服务图而失去句柄）。
+    // 复用底层 OnDeviceRuntime.download()，但目录与状态和端侧 GGUF 完全分开。
+    val voiceModels = VoiceModelDownloadService.getOrCreate(platform)
+
     // ------------------------------------------------------------------
     // 功能自检（探针）
     // ------------------------------------------------------------------

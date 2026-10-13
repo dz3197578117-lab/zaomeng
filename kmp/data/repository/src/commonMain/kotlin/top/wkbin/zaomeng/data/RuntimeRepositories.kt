@@ -11,6 +11,8 @@ import top.wkbin.zaomeng.backend.BackendController
 import top.wkbin.zaomeng.backend.BackendState
 import top.wkbin.zaomeng.data.api.DialogueSessionDto
 import top.wkbin.zaomeng.data.api.DownloadOnDeviceModelRequest
+import top.wkbin.zaomeng.data.api.DownloadVoiceModelRequest
+import top.wkbin.zaomeng.data.api.VoiceModelStatusDto
 import top.wkbin.zaomeng.data.api.FeatureProbeReportDto
 import top.wkbin.zaomeng.data.api.GeneratePluginDraftRequest
 import top.wkbin.zaomeng.data.api.InspectPluginPackageRequest
@@ -126,6 +128,24 @@ class ModelSettingsRepositoryImpl(
 
     override suspend fun deleteOnDeviceModel(fileName: String): OnDeviceStatusDto = repositoryRequest {
         ktorModelSettings.onDeviceDeleteModel(fileName)
+    }
+
+    override suspend fun voiceModelStatus(modelId: String): VoiceModelStatusDto = repositoryRequest {
+        ktorModelSettings.voiceModelStatus(modelId)
+    }
+
+    override suspend fun downloadVoiceModel(
+        request: DownloadVoiceModelRequest,
+    ): VoiceModelStatusDto = repositoryRequest {
+        ktorModelSettings.voiceModelDownload(request)
+    }
+
+    override suspend fun cancelVoiceModelDownload(): VoiceModelStatusDto = repositoryRequest {
+        ktorModelSettings.voiceModelCancelDownload()
+    }
+
+    override suspend fun deleteVoiceModel(modelId: String): VoiceModelStatusDto = repositoryRequest {
+        ktorModelSettings.voiceModelDelete(modelId)
     }
 }
 

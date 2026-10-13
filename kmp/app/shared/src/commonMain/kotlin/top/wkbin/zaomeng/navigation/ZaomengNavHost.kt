@@ -51,6 +51,7 @@ import top.wkbin.zaomeng.feature.settings.ModelProfilesViewModel
 import top.wkbin.zaomeng.feature.settings.ModelSettingsScreen
 import top.wkbin.zaomeng.feature.settings.OnDeviceModelsScreen
 import top.wkbin.zaomeng.feature.settings.OnDeviceModelsViewModel
+import top.wkbin.zaomeng.feature.settings.VoiceModelSettingsViewModel
 import top.wkbin.zaomeng.feature.settings.PluginsScreen
 import top.wkbin.zaomeng.feature.pluginbuilder.PluginBuilderScreen
 import top.wkbin.zaomeng.feature.settings.RuntimeDiagnosticsScreen
@@ -227,8 +228,11 @@ fun ZaomengNavHost(
             }
             entry(OnDeviceModelsDestination) {
                 val viewModel: OnDeviceModelsViewModel = koinViewModel()
+                // 离线神经朗读与端侧推理同页：都是「在本机跑」的模型，下载源也共用同一套镜像设置。
+                val voiceViewModel: VoiceModelSettingsViewModel = koinViewModel()
                 OnDeviceModelsScreen(
                     viewModel = viewModel,
+                    voiceViewModel = voiceViewModel,
                     onBack = popBack,
                 )
             }

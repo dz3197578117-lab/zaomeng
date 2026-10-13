@@ -7,6 +7,8 @@ import okio.Sink
 import top.wkbin.zaomeng.backend.BackendState
 import top.wkbin.zaomeng.data.api.DialogueSessionDto
 import top.wkbin.zaomeng.data.api.DownloadOnDeviceModelRequest
+import top.wkbin.zaomeng.data.api.DownloadVoiceModelRequest
+import top.wkbin.zaomeng.data.api.VoiceModelStatusDto
 import top.wkbin.zaomeng.data.api.FeatureProbeReportDto
 import top.wkbin.zaomeng.data.api.ModelCapabilityReportDto
 import top.wkbin.zaomeng.data.api.ModelConnectionTestDto
@@ -67,6 +69,22 @@ interface ModelSettingsRepository {
     suspend fun cancelOnDeviceDownload(): OnDeviceStatusDto
 
     suspend fun deleteOnDeviceModel(fileName: String): OnDeviceStatusDto
+
+    // ------------------------------------------------------------------
+    // 语音模型（离线神经 TTS，按需下载）
+    //
+    // 与端侧推理分开：那边是单个 .gguf 平铺，这边每个模型一个子目录、多个文件。
+    // ------------------------------------------------------------------
+
+    /** 某语音模型目录的现状 + 下载进度：UI 轮询这一个即可。 */
+    suspend fun voiceModelStatus(modelId: String): VoiceModelStatusDto
+
+    /** 按清单下载语音模型。**立刻返回**，进度靠轮询 [voiceModelStatus]。 */
+    suspend fun downloadVoiceModel(request: DownloadVoiceModelRequest): VoiceModelStatusDto
+
+    suspend fun cancelVoiceModelDownload(): VoiceModelStatusDto
+
+    suspend fun deleteVoiceModel(modelId: String): VoiceModelStatusDto
 }
 
 interface DiagnosticsRepository {

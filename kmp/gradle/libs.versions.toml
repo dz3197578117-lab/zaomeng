@@ -38,6 +38,12 @@ paging = "3.5.1"
 navigationevent = "1.1.2"
 materialKolor = "5.0.0"
 
+# 离线神经 TTS 引擎（多说话人中文模型 + 按需下载）。
+# 注意：它**不是**普通的 Maven 依赖——JitPack 上只有不含原生库的 jar，
+# Android 的 AAR 只发布在 GitHub Release 上，所以由 ui:shared 的 downloadSherpaOnnx 任务按
+# URL 下载并校验 sha256（详见该任务旁的注释）。
+sherpaOnnx = "1.13.8"
+
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
