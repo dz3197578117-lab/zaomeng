@@ -24,7 +24,6 @@ internal class JvmPlatformTts : PlatformTts {
     private var activeProcess: Process? = null
 
     private val osName = System.getProperty("os.name", "").lowercase()
-    private val isWindows = osName.contains("win")
     private val isMac = osName.contains("mac")
 
     override fun speak(
@@ -43,11 +42,7 @@ internal class JvmPlatformTts : PlatformTts {
             _isSpeaking.value = true
             _currentSpeakingId.value = id
             try {
-                when {
-                    isWindows -> speakWindows(clean, speed)
-                    isMac -> speakMac(clean, speed, voiceName)
-                    else -> speakLinux(clean, speed)
-                }
+                if (isMac) speakMac(clean, speed, voiceName) else speakLinux(clean, speed)
             } catch (e: Exception) {
                 // Ignore platform process launch/cancellation errors
             } finally {
@@ -57,17 +52,6 @@ internal class JvmPlatformTts : PlatformTts {
                 }
             }
         }
-    }
-
-    private fun speakWindows(text: String, speed: Float) {
-        val rate = ((speed - 1.0f) * 5).toInt().coerceIn(-10, 10)
-        val escaped = text.replace("'", "''").replace("\"", "`\"")
-        val script = "Add-Type -AssemblyName System.Speech; \$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; \$s.Rate = $rate; \$s.Speak('$escaped');"
-        val process = ProcessBuilder("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
-            .redirectErrorStream(true)
-            .start()
-        activeProcess = process
-        process.waitFor()
     }
 
     private fun speakMac(text: String, speed: Float, voiceName: String) {

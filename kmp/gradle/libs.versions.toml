@@ -36,7 +36,6 @@ skiko = "0.144.6"
 kotlinxDatetime = "0.8.0"
 paging = "3.5.1"
 navigationevent = "1.1.2"
-jna = "5.19.1"
 materialKolor = "5.0.0"
 
 [libraries]
@@ -68,8 +67,6 @@ okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 filekit-core = { module = "io.github.vinceglb:filekit-core", version.ref = "filekit" }
 filekit-dialogs-compose = { module = "io.github.vinceglb:filekit-dialogs-compose", version.ref = "filekit" }
 kotlinx-io-okio = { module = "org.jetbrains.kotlinx:kotlinx-io-okio", version.ref = "kotlinxIo" }
-jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
-jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }
 skiko-awt = { module = "org.jetbrains.skiko:skiko-awt", version.ref = "skiko" }
 compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "composeMultiplatform" }
 compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "composeMultiplatform" }
@@ -120,7 +117,6 @@ compose-ui = [
 koin-compose = ["koin-core", "koin-compose", "koin-compose-viewmodel"]
 filekit-compose = ["filekit-core", "filekit-dialogs-compose"]
 androidx-datastore = ["androidx-datastore", "androidx-datastore-preferences"]
-jna = ["jna", "jna-platform"]
 
 [plugins]
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

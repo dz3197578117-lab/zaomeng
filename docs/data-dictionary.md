@@ -1,6 +1,6 @@
 # 内部数据字典
 
-更新时间：2026-08-11
+更新时间：2026-10-13
 
 > 维护范围：本文主要用于旧 Python/Web 数据与书卷包兼容。当前 KMP/Room 总体设计见
 > [`architecture.md`](architecture.md)；字段真相仍以当前序列化模型和实现为准。
@@ -12,8 +12,9 @@
 3. `dialogue session`
 4. `session state`
 5. `character snapshot`
-6. `relation delta`
-7. `runtime_state_overview`
+6. `人设弧线`（`arc.json`，见 §5.1）
+7. `relation delta`
+8. `runtime_state_overview`
 
 目标不是列出每一个零碎字段，而是说明：
 

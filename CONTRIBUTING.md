@@ -5,7 +5,7 @@
 ## 开发环境
 
 - Git
-- JDK 17 或更高版本（推荐并由 CI 使用 JDK 21）
+- JDK 21 或更高版本（所有模块 `jvmTarget = JVM_21` 且未配置 `jvmToolchain`，因此低版本 JDK 编不出来；CI 使用 21）
 - Android SDK（Android 构建需要）
 - Python 3.11+（仅旧基线与仓库级开发检查需要）
 
@@ -56,7 +56,10 @@ git diff --check
 
 ### 提示词
 
-`prompts/**` 与 `kmp/server/src/androidMain/assets/**` 的对应文件必须同步。结构化输出改动需要同时检查调用方约束和解析器测试。
+内置提示词共**三处**：`prompts/**`（源）、`kmp/server/src/androidMain/assets/**`（Android 打包副本）、
+`kmp/app/shared/src/commonMain/composeResources/files/prompts/**`（Compose Resources 副本，桌面端经 classpath 读取）。
+三者必须逐字节一致，改完跑 `./scripts/check-prompt-sync.sh`（双向校验，会揪出缺副本、内容不一致与孤儿文件）。
+结构化输出改动需要同时检查调用方约束和解析器测试。
 
 ### 数据与 Room
 

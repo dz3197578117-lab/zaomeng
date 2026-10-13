@@ -11,7 +11,7 @@
 
 ## 一、本机环境准备
 - **Git**：用于克隆仓库。
-- **JDK 17+**（推荐 21）：KMP 工程要求；CI 用 21。
+- **JDK 21+**：KMP 工程要求（所有模块 `jvmTarget = JVM_21`）；CI 用 21。
 - **Android SDK**（仅当你要打 Android APK）：含 build-tools 与 platform。
 - 桌面端**不需要** Android SDK，最省事，优先用它验证。
 
@@ -27,10 +27,10 @@ cd zaomeng
 ## 三、运行方式（按平台选）
 
 ### 桌面端（推荐，无需 Android SDK）
+
+桌面端只支持 **macOS 与 Linux**（仓库不再维护 Windows 构建）：
+
 ```bash
-# Windows
-./gradlew :app:desktopApp:run
-# macOS / Linux
 ./gradlew :app:desktopApp:run
 ```
 启动后在界面内：**设置 → 模型配置** 填 API Key / base URL / 模型名；导入书卷（TXT/EPUB/书卷包）；开聊。

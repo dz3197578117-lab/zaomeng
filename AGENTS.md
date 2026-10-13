@@ -70,10 +70,15 @@
 
 ## 提示词同步
 
-对话等内置提示词同时存在于可编辑源目录和 Android 打包 assets 中。修改以下一侧时必须同步另一侧：
+内置提示词同时存在于**三处**，修改任何一处都必须同步另外两处：
 
-- `prompts/**`
-- `kmp/server/src/androidMain/assets/**`
+- `prompts/**` —— 可编辑的源
+- `kmp/server/src/androidMain/assets/**` —— Android 打包副本（服务端读取）
+- `kmp/app/shared/src/commonMain/composeResources/files/prompts/**` —— Compose Resources 副本（由 `app:shared` 打包，**桌面端经 classpath 读取**）
+
+只改其中一处会出现「改了提示词但运行时不生效」。跑 `./scripts/check-prompt-sync.sh` 做双向校验：
+正向查源→两处副本逐字节一致，反向查副本里有没有 `prompts/` 不存在的孤儿文件。
+该脚本目前是**手动门禁**（未接入 `dev_checks.py` 或任何 workflow），改动提示词后必须自己跑。
 
 结构化输出提示必须明确：输出形状、必填字段、是否允许 Markdown 围栏、是否允许前后缀文字。新增 JSON 模型任务时，在调用处启用提供商支持的结构化约束，并为不支持该能力的兼容端保留严格提示词和解析校验。
 
@@ -87,7 +92,7 @@
 
 ## 验证命令
 
-命令默认从 `kmp/` 目录运行，使用 `./gradlew`（本项目不再维护 Windows 构建）。需要 JDK 17+，CI 使用 JDK 21。
+命令默认从 `kmp/` 目录运行，使用 `./gradlew`。桌面端只支持 **macOS 与 Linux**（Windows 构建与安装包已移除）。需要 JDK 21+（所有模块 `jvmTarget = JVM_21` 且未配 `jvmToolchain`），CI 使用 JDK 21。
 
 快速验证服务端改动（含子模块）：
 

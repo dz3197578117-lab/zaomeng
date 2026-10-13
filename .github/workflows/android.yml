@@ -17,16 +17,11 @@ permissions:
 
 jobs:
   android:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
 
       - name: Set up JDK
         uses: actions/setup-java@v4
@@ -39,14 +34,10 @@ jobs:
 
       - name: Run Android checks
         working-directory: kmp
-        shell: pwsh
+        shell: bash
         run: |
-          .\gradlew.bat testDebugUnitTest jvmTest lintDebug assembleDebug --no-daemon --stacktrace --console=plain 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\gradle-ci.log"
-          if ($LASTEXITCODE -ne 0) {
-            $log = Get-Content "$env:RUNNER_TEMP\gradle-ci.log"
-            $log |
-              Select-String -Pattern 'What went wrong|Caused by:|FAILURE:|Could not|> Task .* FAILED|error:|Exception|not found|Connection|timed? ?out|transfer|403|404|PKIX|SSL|proxy' |
-              Select-Object -First 60 | ForEach-Object { Write-Output "::error::$_" }
-            $log | Select-Object -Last 100 | ForEach-Object { Write-Output "::error::tail $_" }
-            exit $LASTEXITCODE
+          ./gradlew testDebugUnitTest jvmTest lintDebug assembleDebug --no-daemon --stacktrace --console=plain > /tmp/gradle-ci.log 2>&1 || {
+            grep -E 'What went wrong|Caused by:|FAILURE:|Could not|> Task .* FAILED|error:|Exception|not found|Connection|timed? ?out|transfer|403|404|PKIX|SSL|proxy' /tmp/gradle-ci.log | head -60 | sed 's/^/::error::/' || true
+            tail -100 /tmp/gradle-ci.log | sed 's/^/::error::tail /' || true
+            exit 1
           }

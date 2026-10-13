@@ -54,9 +54,13 @@ class RuntimeLogDiagnosticsTest {
             ),
         )
 
-        val report = serviceWith(source).buildDiagnosticsReport()
+        // 运行日志明细只在 full 档导出（2.1.13 起 compact 档刻意不带明细），
+        // 本用例断言的正是明细内容，所以必须显式取 full 档。
+        val report = serviceWith(source).buildDiagnosticsReport(tier = DIAGNOSTICS_TIER_FULL)
 
-        assertEquals(4, report.schemaVersion, "schemaVersion 4 起内嵌运行日志并带现场元信息/统计")
+        // 当前值见 DiagnosticsService.buildDiagnosticsReport 里的 schemaVersion；
+        // 每次上调版本都应是一次有意识的修改，所以这里断言确切值而不是「>= 4」。
+        assertEquals(6, report.schemaVersion, "schemaVersion 6 为当前导出契约版本")
         assertEquals(RuntimeLogDto.SOURCE_LOGCAT_FILE, report.runtimeLog.source)
         assertTrue(report.runtimeLog.available)
         assertEquals(42L, report.runtimeLog.totalLines)
@@ -93,7 +97,9 @@ class RuntimeLogDiagnosticsTest {
             ),
         )
 
-        val report = serviceWith(source).buildDiagnosticsReport()
+        // 运行日志明细只在 full 档导出（2.1.13 起 compact 档刻意不带明细），
+        // 本用例断言的正是明细内容，所以必须显式取 full 档。
+        val report = serviceWith(source).buildDiagnosticsReport(tier = DIAGNOSTICS_TIER_FULL)
         val json = Json { encodeDefaults = true }
         val encoded = json.encodeToString(top.wkbin.zaomeng.ktor.services.DiagnosticsReport.serializer(), report)
         val decoded = json.decodeFromString(top.wkbin.zaomeng.ktor.services.DiagnosticsReport.serializer(), encoded)

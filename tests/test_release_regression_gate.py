@@ -15,7 +15,6 @@ class ReleaseRegressionGateTests(unittest.TestCase):
             "checked_at": "2026-05-20",
             "checked_by": ["owner"],
             "platforms": {
-                "windows": {"install": "pass", "update": "pass", "run": "pass", "import_export": "pass"},
                 "wsl": {"install": "pass", "update": "pass", "run": "pass", "import_export": "pass"},
                 "linux": {"install": "pass", "update": "pass", "run": "pass", "import_export": "pass"},
                 "termux": {"install": "pass", "update": "pass", "run": "pass", "import_export": "pass"},
@@ -30,9 +29,8 @@ class ReleaseRegressionGateTests(unittest.TestCase):
             "checked_at": "",
             "checked_by": [],
             "platforms": {
-                "windows": {"install": "pending", "update": "pass", "run": "pass", "import_export": "pass"},
                 "wsl": {"install": "pass", "update": "pass", "run": "pass", "import_export": "pass"},
-                "linux": {"install": "pass", "update": "pass", "run": "pass", "import_export": "pass"},
+                "linux": {"install": "pending", "update": "pass", "run": "pass", "import_export": "pass"},
                 "termux": {"install": "pass", "update": "pass", "run": "pass", "import_export": "pass"},
             },
         }
@@ -41,7 +39,7 @@ class ReleaseRegressionGateTests(unittest.TestCase):
         self.assertTrue(any("missing checked_at" in item for item in errors))
         self.assertTrue(any("checked_by must contain" in item for item in errors))
         self.assertTrue(any("release_tag mismatch" in item for item in errors))
-        self.assertTrue(any("windows.install is 'pending'" in item for item in errors))
+        self.assertTrue(any("linux.install is 'pending'" in item for item in errors))
 
     def test_signoff_template_exists(self):
         self.assertTrue(Path("docs/release-regression-signoff.json").exists())

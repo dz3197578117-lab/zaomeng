@@ -86,7 +86,9 @@ flowchart LR
 - 当前输入及插件增强；
 - 原作动态检索出的少量证据。
 
-提示词源位于 `prompts/`，Android 内置副本位于 `kmp/server/src/androidMain/assets/`。两份内容必须同步。
+提示词源位于 `prompts/`，两处内置副本分别是 `kmp/server/src/androidMain/assets/`（Android 打包，服务端读取）
+与 `kmp/app/shared/src/commonMain/composeResources/files/prompts/`（Compose Resources，桌面端经 classpath 读取）。
+**三处内容必须逐字节一致**，改完跑 `./scripts/check-prompt-sync.sh` 做双向校验。
 
 ## 原文检索
 

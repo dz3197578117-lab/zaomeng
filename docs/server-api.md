@@ -2,7 +2,9 @@
 
 本文档描述当前主实现中由 `LocalBackendController` 实际注册的 Ktor HTTP 接口。接口实现位于 `kmp/server`，客户端与服务端共享契约位于 `kmp/core/contracts`。旧 Python/Web 后端不在本文档范围内；标为“兼容别名”的路径仅用于兼容旧调用方。
 
-> 基线：2026-08-11 当前工作区。共 21 组路由、119 个有效的“HTTP 方法 + 路径”组合（卡片 CRUD 的三类路径分别计数；诊断组自本轮起新增 `overview`、采集开关 GET/PUT 与 `DELETE runtime-log`，健康检查与诊断子表见第 2 节）。
+> 基线：2026-10-13（2.1.14）当前工作区。**路由分组与端点以本文各节的表格为准**——这里刻意不再写「共 N 组 / M 个组合」这类数字：它每加一条路由就过期一次，而真源始终是 `kmp/server/src/commonMain/kotlin/top/wkbin/zaomeng/ktor/routes/`。
+>
+> 核对方式：`LocalBackendController` 的 `routing { … }` 里注册了哪些 `*Routes(...)` 调用，各路由文件里的 `get/post/put/delete(...)` 就是端点全集。
 
 ## 1. 通用约定
 
@@ -106,7 +108,7 @@ Authorization: Bearer <token>
 健康检查响应固定为：
 
 ```json
-{"status":"ok","version":"2.1.5","backend":"ktor"}
+{"status":"ok","version":"<versionName>","backend":"ktor"}
 ```
 
 `version` 是**应用版本号**，构建期由 `kmp/gradle.properties` 的 `zaomeng.versionName`
@@ -655,6 +657,18 @@ SSE `error` 事件随之返回 `"retryable": false`。
 
 该能力属于不稳定的 beta 功能；响应 manifest 的 `beta_feature.kind` 用于识别其来源。
 
+### 3.4 主角提取（从正文识别主要角色）
+
+| 方法 | 路径 | 请求 | 成功响应 |
+|---|---|---|---|
+| POST | `/api/web/runs/extract-characters` | `{"novel_name":"...","novel_content_base64":"...","max_characters":8}` | `200` `{"characters":["角色名", …]}` |
+| POST | `/api/web/runs/{run_id}/extract-characters` | `{"max_characters":8}` | 同上 |
+
+- 两条的差别只在**正文来源**：前者由调用方上传 Base64 正文；后者复用书卷自带原文，
+  客户端「重蒸馏」流程走这条，无需再上传一次。
+- `max_characters` 默认 `8`。服务端**只返回名单**、不落人物档案；拿到名单后再走蒸馏。
+- `400` 请求体不合法 / `404` 书卷不存在。
+
 ## 4. 对话会话
 
 ### 4.1 会话列表与管理
@@ -950,6 +964,17 @@ data: {"index":0,"speaker":"林黛玉","role":"character","field":"message","tex
 
 搜索结果的 `kind` 可表示 `chapter`、`persona` 或 `session`，并按类型携带 `chapter_id`、`session_id`、`character`、`title`、`preview`。
 
+### 6.4 原文分章（章节索引）
+
+| 方法 | 路径 | 请求 | 成功响应 |
+|---|---|---|---|
+| GET | `/api/web/runs/{run_id}/novel-chapters` | — | `200` 章节列表（**首次访问会自动切分并缓存**） |
+| POST | `/api/web/runs/{run_id}/novel-chapters/rebuild` | — | `200` 强制重新切分后的章节列表 |
+| GET | `/api/web/runs/{run_id}/novel-chapters/{index}` | — | `200` 单章正文片段（默认最多 8000 字） |
+
+- 这个索引同时供「对话可指定起始章」与逐章人设弧线取正文；原文被替换后用 `rebuild` 强制重切。
+- `400` 缺 `run_id`，或 `index` 不是数字；`404` 书卷不存在，或该章不存在。
+
 ## 7. 人物、关系与知识记忆
 
 ### 7.1 人物档案
@@ -1155,6 +1180,41 @@ data: {"index":0,"speaker":"林黛玉","role":"character","field":"message","tex
 - 合法值 → 覆盖该 profile 的生成类请求总超时与字节间隔超时。
 
 此前的默认 60 秒不足以跑完一次内容提取，导致蒸馏频繁超时失败。
+
+### 9.1 端侧模型（本机 llama.cpp）
+
+| 方法 | 路径 | 请求 | 成功响应 |
+|---|---|---|---|
+| GET | `/api/web/on-device/status` | — | `200` 状态 + 已就位模型列表 + 下载进度（前端轮询这一个即可） |
+| GET | `/api/web/on-device/logs?max_chars=N` | — | `200` `{"log":"…","log_path":"…","truncated":false}`（默认 8000 字） |
+| POST | `/api/web/on-device/start` | `StartOnDeviceRequest`（见下） | `200` 启动后的状态 |
+| POST | `/api/web/on-device/stop` | — | `200` 停止后的状态 |
+| POST | `/api/web/on-device/download` | `{"url":"…","file_name":"…","overwrite":false}` | `200` **立即返回**（`download.active=true`），进度靠轮询 `/status` |
+| POST | `/api/web/on-device/download/cancel` | — | `200` 取消后的状态 |
+| DELETE | `/api/web/on-device/models/{file_name}` | — | `200` 删除后的模型列表 |
+
+`StartOnDeviceRequest`：
+
+```json
+{
+  "model_file": "xxx.gguf",
+  "context_size": 0,
+  "threads": 0,
+  "gpu_layers": 0,
+  "disable_thinking": true,
+  "extra_args": []
+}
+```
+
+- `model_file` 必填，取 `/status` 返回的模型列表里的文件名。
+- `context_size = 0` 表示用模型自带的上下文长度，但**封顶 8192**（避免小内存机器 OOM）；
+  显式传值会被夹到 `[512, 32768]`。
+- `threads = 0` 表示自动（取 CPU 大核数的一半）；`gpu_layers` 手机端保持 `0`。
+- `disable_thinking` 默认 `true`，等价 `--reasoning-budget 0`：本机 CPU 解码慢，思考会把延迟
+  放大数倍，还容易吃光输出预算导致正文被截断。
+- `extra_args` 是直通 llama-server 的高级逃生口，**UI 不暴露**，只有 API 能传。
+- 错误映射（整个端侧分组统一）：`400` 请求体不合法或缺参数 / `404` 模型不存在 /
+  `409` 平台不支持、可执行文件缺失、或已有下载任务在进行 / `500` 其它失败。
 
 ## 10. 插件
 
@@ -1458,7 +1518,7 @@ curl -N -X POST \
 
 接口注册入口：
 
-- `kmp/app/shared/src/commonMain/kotlin/top/wkbin/zaomeng/backend/LocalBackendController.kt`
+- `kmp/server/src/commonMain/kotlin/top/wkbin/zaomeng/backend/LocalBackendController.kt`
 - `kmp/server/src/commonMain/kotlin/top/wkbin/zaomeng/ktor/routes/`
 
 共享请求/响应契约：

@@ -51,7 +51,16 @@ class DiagnosticsEventLog(
     private val regular = ArrayDeque<DiagnosticsEvent>()
     private val crashy = ArrayDeque<DiagnosticsEvent>()
 
-    private val maxRegularEntries: Int = maxEntries.coerceAtLeast(maxCrashEntries)
+    /**
+     * 常规事件配额就是调用方给的 [maxEntries]，不再向上改写。
+     *
+     * 这里曾经写作 `maxEntries.coerceAtLeast(maxCrashEntries)`，于是 `maxEntries`
+     * 小于崩溃配额时会被反向抬到崩溃配额（传 5 实际生效 120），参数名不再成立。
+     * 改为把**崩溃配额**压到不超过常规配额：既保住「崩溃记录不被常规事件挤掉」的
+     * 初衷，又让 `maxEntries` 真的是上限。默认值下（400 ≥ 120）两者完全等价。
+     */
+    private val maxRegularEntries: Int = maxEntries
+    private val crashQuota: Int = maxCrashEntries.coerceAtMost(maxEntries)
 
     private var dropped = 0L
     private var writeFailures = 0L
@@ -116,7 +125,7 @@ class DiagnosticsEventLog(
         lock.withLock {
             val target = if (isCrashClass) crashy else regular
             target.addLast(event)
-            val quota = if (isCrashClass) maxCrashEntries else maxRegularEntries
+            val quota = if (isCrashClass) crashQuota else maxRegularEntries
             while (target.size > quota) {
                 target.removeFirst()
                 dropped++
@@ -129,7 +138,7 @@ class DiagnosticsEventLog(
 
     /** 取最近 [limit] 条（崩溃与常规事件合并后按时间排序）。 */
     fun recent(limit: Int = 100): List<DiagnosticsEvent> = lock.withLock {
-        val bounded = limit.coerceIn(1, maxRegularEntries + maxCrashEntries)
+        val bounded = limit.coerceIn(1, maxRegularEntries + crashQuota)
         (crashy + regular).sortedBy { it.ts }.takeLast(bounded)
     }
 
@@ -141,7 +150,7 @@ class DiagnosticsEventLog(
             regularEntries = regular.size,
             regularMaxEntries = maxRegularEntries,
             crashEntries = crashy.size,
-            crashMaxEntries = maxCrashEntries,
+            crashMaxEntries = crashQuota,
             bytes = runCatching { fileSystem.metadataOrNull(file)?.size ?: 0L }.getOrDefault(0L),
             maxBytes = maxFileBytes,
             dropped = dropped,
@@ -204,7 +213,7 @@ class DiagnosticsEventLog(
                 dropped++
                 trimmed = true
             }
-            while (crashy.size > maxCrashEntries) {
+            while (crashy.size > crashQuota) {
                 crashy.removeFirst()
                 dropped++
                 trimmed = true
@@ -212,8 +221,18 @@ class DiagnosticsEventLog(
         }
     }
 
-    private fun clip(value: String, limit: Int): String =
-        if (value.length <= limit) value else value.take(limit) + TRUNCATED_MARK
+    /**
+     * 按 [limit] 截断，并把截断标记算在限额**之内**。
+     *
+     * 这些上限是「字段有界、磁盘占用有界」的保证（见类注释 R2/R5）。把标记追加在
+     * `limit` 之后会让字段实际长度超出它自己的上限——一条 2000 字的 message 会落盘
+     * 412 字，上限因此形同虚设。
+     */
+    private fun clip(value: String, limit: Int): String {
+        if (value.length <= limit) return value
+        val keep = (limit - TRUNCATED_MARK.length).coerceAtLeast(0)
+        return value.take(keep) + TRUNCATED_MARK
+    }
 
     companion object {
         /** 常规事件的默认配额。 */

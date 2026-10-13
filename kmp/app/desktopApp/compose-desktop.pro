@@ -4,7 +4,7 @@
 -dontoptimize
 
 # OkHttp detects these optional providers at runtime. They are intentionally not
-# bundled in the regular Windows JVM distribution, so ProGuard cannot resolve them.
+# bundled in the regular JVM distribution, so ProGuard cannot resolve them.
 -dontwarn com.oracle.svm.core.annotate.**
 -dontwarn org.graalvm.nativeimage.**
 -dontwarn org.bouncycastle.jsse.**
@@ -16,14 +16,6 @@
 -keepclasseswithmembers,includedescriptorclasses class * {
     native <methods>;
 }
-
-# FileKit uses JNA reflection and COM vtable wrappers for Windows file dialogs.
-# Keep JNA internals plus FileKit's Windows bindings and structure field layouts.
--keep class com.sun.jna.** { *; }
--keep class io.github.vinceglb.filekit.dialogs.platform.windows.** { *; }
--keep class * extends com.sun.jna.Structure { *; }
--keep interface * extends com.sun.jna.Library { *; }
--keep interface * extends com.sun.jna.Callback { *; }
 
 # Ktor discovers JSON serialization through ServiceLoader. The provider name is
 # stored in META-INF/services, so it must not be removed or renamed by ProGuard.

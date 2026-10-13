@@ -134,8 +134,8 @@ artifacts/characters/<novelId>/<角色>/
   而不是像今天那样只给喜恶与 `session_snapshot`；
 - 送一份**时间点上下文**：`persona_time_point = { label: "中段", chapter_start: 10, chapter_end: 21 }`。
 
-新增提示词规则 `time_point_persona_rule`（写入 `prompts/**` 与
-`kmp/server/src/androidMain/assets/**` 两处，必须同步）：
+新增提示词规则 `time_point_persona_rule`（写入 `prompts/**`、`kmp/server/src/androidMain/assets/**`
+与 `kmp/app/shared/src/commonMain/composeResources/files/prompts/**` **三处**，必须同步）：
 
 > 角色的身份、立场、关系阶段与已知信息，一律以「当前时间点」为准。
 > 不得引用该时间点之后才发生的事件、关系变化或人物认知；

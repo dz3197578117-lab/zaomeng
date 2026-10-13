@@ -134,9 +134,6 @@ class JvmOnDeviceRuntime(dataRoot: Path) : OnDeviceRuntime {
             ?.takeIf { it.isFile }
             ?.let { return it.absolutePath }
 
-        val fileNames =
-            if (isWindows) LLAMA_SERVER_NAMES.map { "$it.exe" } else LLAMA_SERVER_NAMES
-
         // 2. 仓库内自编译产物
         findRepoRoot(File(System.getProperty("user.dir")))?.let { repoRoot ->
             val nativeBuild = File(repoRoot, "native-build")
@@ -145,7 +142,7 @@ class JvmOnDeviceRuntime(dataRoot: Path) : OnDeviceRuntime {
                 nativeBuild.listFiles()?.forEach { add(it) }
             }
             dirs.forEach { dir ->
-                fileNames.forEach { name ->
+                LLAMA_SERVER_NAMES.forEach { name ->
                     listOf(File(dir, name), File(dir, "bin/$name"))
                         .firstOrNull { it.isFile }
                         ?.let { return it.absolutePath }
@@ -158,7 +155,7 @@ class JvmOnDeviceRuntime(dataRoot: Path) : OnDeviceRuntime {
             .split(File.pathSeparatorChar)
             .filter { it.isNotBlank() }
             .forEach { entry ->
-                fileNames.forEach { name ->
+                LLAMA_SERVER_NAMES.forEach { name ->
                     File(entry, name).takeIf { it.isFile }?.let { return it.absolutePath }
                 }
             }
@@ -194,8 +191,6 @@ class JvmOnDeviceRuntime(dataRoot: Path) : OnDeviceRuntime {
         const val COPY_BUFFER_BYTES = 256 * 1024
         const val PROGRESS_STEP_BYTES = 1024L * 1024L
         const val USER_AGENT = "zaomeng-ondevice/1.0 (+llama.cpp)"
-        val isWindows: Boolean =
-            System.getProperty("os.name").orEmpty().lowercase().contains("win")
     }
 }
 

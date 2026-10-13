@@ -171,7 +171,8 @@ jobs:
           if [ "${version_name}" != "${expected_version}" ]; then
             {
               echo "::error title=版本号不匹配::tag 是 ${TAG}，但 APK 的 versionName 是 ${version_name}。"
-              echo "请把 kmp/app/androidApp/build.gradle.kts 的 versionName / versionCode 同步到该版本后再打 tag。"
+              echo "请把 kmp/gradle.properties 的 zaomeng.versionName / zaomeng.versionCode 同步到该版本后再打 tag"
+              echo "（版本号唯一来源就是它；kmp/app/androidApp/build.gradle.kts 只是读取，不要在那里写死版本。）"
             }
             exit 1
           fi

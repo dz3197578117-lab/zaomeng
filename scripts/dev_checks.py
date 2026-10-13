@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -47,6 +48,26 @@ def run_step(title: str, command: list[str], *, env: dict[str, str] | None = Non
     subprocess.run(command, cwd=PROJECT_ROOT, check=True, env=env)
 
 
+def run_prompt_sync_guard() -> None:
+    """提示词三副本一致性：`prompts/**` 与两处打包副本必须逐字节相同。
+
+    这个门禁以前只写在文档里（「改完记得跑」）：它不在 dev_checks.py、不在任何
+    workflow、也不在 check-release-ready.sh，于是「改了 prompts/ 忘了同步副本」
+    只能靠人发现——而症状是「改了提示词但运行时不生效」，排查代价很高。
+
+    这里把它接进 CI 与本地都会跑的这个入口。脚本是唯一实现，本函数不重复其逻辑；
+    没有 bash（例如 Windows）时明确跳过而不是静默通过。
+    """
+    script = PROJECT_ROOT / "scripts" / "check-prompt-sync.sh"
+    if not script.exists():
+        raise FileNotFoundError(f"缺少提示词同步守卫脚本：{script}")
+    bash = shutil.which("bash")
+    if bash is None:
+        print("[skip] 未找到 bash，跳过提示词三副本检查；请直接运行 scripts/check-prompt-sync.sh")
+        return
+    run_step("check prompt copies are in sync", [bash, str(script)])
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run local development checks.")
     parser.add_argument(
@@ -75,6 +96,7 @@ def main() -> int:
         "check generated config example",
         [sys.executable, "scripts/generate_config_example.py", "--check"],
     )
+    run_prompt_sync_guard()
     run_step("run smoke guardrails", [sys.executable, "-m", "unittest", *SMOKE_TEST_MODULES])
     run_step("run mypy", [sys.executable, "-m", "mypy", "--config-file", "mypy.ini"])
     run_step(

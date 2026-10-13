@@ -34,6 +34,61 @@
   端点先过 `sanitizeEndpoint`（Gemini 的 key 在 query 里，绝不进异常与事件）。
 - 重试逻辑显式排除该异常（原 400 本就不重试，现加显式分支并注释原因），
   并给超时文案翻译加保护，避免准确文案被改写成「模型响应超时」。
+- **桌面端「查人设档案」会崩掉整轮对话生成**（`DocumentStore`）：okio 的 `metadataOrNull`
+  在 Windows 上**先做路径转换**，遇到本平台无法表示的路径会抛异常；而 `DialoguePayloadBuilder`
+  是用 `artifact_index` 里的**原始**角色名拼路径（为兼容旧书卷，注释写明「文件路径继续用原始写法」），
+  所以旧书卷里角色名带引号时（`artifacts/characters/"陆城"/PROFILE.md`）会直接崩。
+  该字符在 Linux 上合法，于是同一份数据变成**静默找不到人设**——两种坏法。
+  现把 `exists` / `isFile` / `isDirectory` / `updatedAtMillis` / `listFiles` 的路径异常
+  收敛为 `false`/`null`（「本平台无法表示的路径当然不存在」），两端行为一致。
+- **诊断日志的两个字段上限没生效**（`DiagnosticsEventLog`）：`clip()` 把截断标记拼在 `limit`
+  之外，400 字上限实际落盘 412 字——而这些上限的意义正是界定磁盘占用；
+  `maxRegularEntries = maxEntries.coerceAtLeast(maxCrashEntries)` 让传 `maxEntries=5`
+  实际生效 120，与 KDoc「常规与崩溃**分别设限**」矛盾（改为把崩溃配额压到不超过常规配额）。
+- **修复 14 个失败的 Kotlin 测试**（`:server:jvmTest` 此前 297 用例中 14 失败）：
+  `ExitReasonMappingTest` 的码值表整体错位一位（正是 `ExitReasonMapping` KDoc 明确警告过的错位：
+  8 应是 `PERMISSION_CHANGE` 而非 `EXCESSIVE_RESOURCE_USAGE`）、`schemaVersion` 断言 4→6、
+  `FeatureProbeRegistryTest` 用 `error(...)` 当 `promptLoader`（构造即抛，所有用例开头就挂）、
+  诊断断言未传 `tier=full`（compact 档刻意清空 `recentEvents` / `runtimeLog`）、
+  `unregisteredFeatures` 断言与实现的集合差语义相反。
+- `JvmPromptSourceTest` 的蒸馏 md 用例名与注释都声称覆盖 `zaomeng-skill` 回退，实际只走
+  `prompts/` 路径；已改名并**新增真正覆盖回退的用例**（自建临时根目录，不依赖本机仓库布局）。
+
+### 移除
+
+- **Windows 支持**。仓库此前已宣布「不再维护 Windows 构建」，本次把残留补齐：
+  - `.github/workflows/android.yml` 仍在调用**早已删除**的 `kmp/gradlew.bat`，且是唯一
+    `windows-latest` 作业 → 改为 `ubuntu-latest` + `./gradlew`。**它同时也是唯一执行 Kotlin
+    测试的 workflow**，坏掉之后 `jvmTest` 在 CI 里长期无人运行（这正是上面那 14 个失败
+    能积累下来的原因）。
+  - Windows 专属代码：JNA/DWM 深色标题栏（该函数在非 Windows 上本就 early-return，删除对
+    macOS/Linux 行为零影响）、Windows TTS（PowerShell SAPI）、llama-server 的 `.exe` 查找分支。
+  - `jna` 依赖与 version catalog bundle、`nativeDistributions` 的 `windows { }` 安装包配置、
+    仅被它引用的 `packaging/zaomeng_logo.ico`、ProGuard 里给 JNA / FileKit-Windows 的保留规则。
+  - 网站三处桌面平台声明与插件文档的 PowerShell 打包标签页、开发指南里两条完全相同的
+    Windows/macOS-Linux 命令分支、发布回归门禁的 `windows` 必签平台（含签署 JSON 与其测试）。
+  - **桌面端发布目标一直是 `targetFormats(Dmg, Deb)`**——Windows 从未真正打包过，
+    这些是「声称支持」的残留。
+- **刻意保留**与宿主平台无关的 Windows 路径处理：`RunPackageService` 的
+  `WINDOWS_ABSOLUTE_PATH` / `WINDOWS_RESERVED_NAMES`（防恶意 ZIP 的**安全**校验）、
+  `PathSafety` / `DocumentStore` / `RelationsService` 的路径规范化与 BOM 容忍。
+  这些删掉是回归，不是「去掉 Windows」。
+
+### 文档与维护
+
+- 提示词实际是**三处**副本（`prompts/**`、`kmp/server/src/androidMain/assets/**`、
+  `kmp/app/shared` 的 Compose Resources），根 `AGENTS.md`、`prompts/AGENTS.md`、
+  `CONTRIBUTING.md`、`docs/architecture.md` 与 ADR-0005 此前都只写两处——第三处由桌面端
+  经 classpath 读取，漏同步就是「改了提示词但不生效」。
+- `scripts/check-prompt-sync.sh` 接入 `scripts/dev_checks.py`：此前它不在 `dev_checks.py`、
+  不在任何 workflow、也不在 `check-release-ready.sh`，只是一个「记得手动跑」的门禁。
+- `docs/server-api.md` 补上 12 个已注册但未文档化的端点（`/api/web/on-device/*` 7 条、
+  `novel-chapters` 3 条、`extract-characters` 2 条），并去掉会随每次新增路由过期的计数。
+- JDK 要求统一为 **21+**：此前 5 处写 17+，但所有模块 `jvmTarget = JVM_21` 且未配 `jvmToolchain`。
+- 其余「文档与实现不符」：`data-dictionary` 的更新时间与结构数、`module-migration` 把 4 个设置
+  屏幕的归属写成 `ui:shared`（实际都在 `feature:settings`，`ui:shared` 内无任何 `*Screen*`）、
+  `features.md` 的「密钥只经 Android Keystore」（桌面端实为明文 properties）与「把已交付能力
+  列在还在路上」、`.gitignore` 的失效规则与重复 `.DS_Store`、网站 JSON-LD 的版本号。
 
 ### 已知限制
 

@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 
-REQUIRED_PLATFORMS = ("windows", "wsl", "linux", "termux")
+REQUIRED_PLATFORMS = ("wsl", "linux", "termux")
 REQUIRED_CHECKS = ("install", "update", "run", "import_export")
 ALLOWED_STATUS = {"pass", "fail", "pending"}
 

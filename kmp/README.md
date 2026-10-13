@@ -66,7 +66,7 @@ kmp/
 
 ## 构建与运行
 
-需要 JDK 17+（推荐 21）与 Android SDK。
+需要 JDK 21+（所有模块 `jvmTarget = JVM_21`）与 Android SDK。
 
 ### 一条命令构建 APK
 

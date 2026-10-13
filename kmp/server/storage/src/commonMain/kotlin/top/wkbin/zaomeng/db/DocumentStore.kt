@@ -47,7 +47,7 @@ class FileSystemDocumentStore(
     private val fs: FileSystem = FileSystem.SYSTEM,
 ) : DocumentStore {
     override fun readBytes(path: Path): ByteArray? {
-        if (!fs.exists(path)) return null
+        if (!exists(path)) return null
         return runCatching { fs.source(path).buffer().use { it.readByteArray() } }.getOrNull()
     }
 
@@ -71,16 +71,28 @@ class FileSystemDocumentStore(
         false
     }
 
-    override fun updatedAtMillis(path: Path): Long? = fs.metadataOrNull(path)?.lastModifiedAtMillis
+    /**
+     * `metadataOrNull` 在 Windows 上**先做路径转换**，遇到本平台无法表示的路径会抛
+     * `InvalidPathException` 而不是返回 null。真实触发场景：旧书卷的 `artifact_index`
+     * 里角色名带引号（`"陆城"`），据此拼出的 `artifacts/characters/"陆城"/PROFILE.md`
+     * 在 Windows 上无法表示，于是「查人设档案」这一步直接崩掉整轮对话生成。
+     *
+     * 这里的语义是「这个路径是否指向已存在的文件/目录」——无法表示当然就是不存在，
+     * 因此把异常收敛成 null/false，而不是让它打断调用链（Linux 上该字符合法，
+     * 同一段代码只会静默返回 false，两端行为由此一致）。
+     */
+    private fun metadataOrNull(path: Path) = runCatching { fs.metadataOrNull(path) }.getOrNull()
 
-    override fun exists(path: Path): Boolean = fs.exists(path)
+    override fun updatedAtMillis(path: Path): Long? = metadataOrNull(path)?.lastModifiedAtMillis
 
-    override fun isFile(path: Path): Boolean = fs.metadataOrNull(path)?.isRegularFile == true
+    override fun exists(path: Path): Boolean = runCatching { fs.exists(path) }.getOrDefault(false)
 
-    override fun isDirectory(path: Path): Boolean = fs.metadataOrNull(path)?.isDirectory == true
+    override fun isFile(path: Path): Boolean = metadataOrNull(path)?.isRegularFile == true
+
+    override fun isDirectory(path: Path): Boolean = metadataOrNull(path)?.isDirectory == true
 
     override fun listFiles(path: Path): List<Path> =
-        if (fs.exists(path)) fs.list(path) else emptyList()
+        if (exists(path)) runCatching { fs.list(path) }.getOrDefault(emptyList()) else emptyList()
 
     override fun mkdirs(path: Path) {
         fs.createDirectories(path)

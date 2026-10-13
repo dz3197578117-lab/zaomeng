@@ -4,7 +4,9 @@ import okio.Path.Companion.toPath
 import kotlinx.coroutines.runBlocking
 import top.wkbin.zaomeng.data.api.KnownFeatures
 import top.wkbin.zaomeng.ktor.services.DiagnosticsEventLog
+import top.wkbin.zaomeng.ktor.services.PromptLoader
 import top.wkbin.zaomeng.ktor.services.StorageService
+import top.wkbin.zaomeng.platform.PromptSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -39,11 +41,24 @@ class FeatureProbeRegistryTest {
         const val BOOKS = "书卷与整理"
     }
 
+    /**
+     * 本测试不读提示词，但 [FeatureProbeContext] 需要**真实存在**的 [PromptLoader]。
+     *
+     * 这里曾经写 `promptLoader = error("本测试不读提示词")`：`error()` 在构造 context 时
+     * 就被求值，于是所有用到 [newContext] 的用例一开头就抛异常，而不是「用到提示词时才抛」。
+     * 空实现比抛异常更贴合真实运行环境（读不到就是 `null`），见
+     * `FeatureProbeCaptureIndependenceTest` 的同名做法。
+     */
+    private object EmptyPromptSource : PromptSource {
+        override fun read(relativePath: String): Pair<String, Long>? = null
+        override fun lastModified(relativePath: String): Long? = null
+    }
+
     private fun newContext(dir: okio.Path): FeatureProbeContext {
         val storage = StorageService(dir)
         return FeatureProbeContext(
             storage = storage,
-            promptLoader = error("本测试不读提示词"),
+            promptLoader = PromptLoader(EmptyPromptSource),
             eventLog = DiagnosticsEventLog(dir / "events.jsonl"),
             connectivityLog = null,
         )
@@ -82,8 +97,10 @@ class FeatureProbeRegistryTest {
         val registry = FeatureProbeRegistry()
         registry.register(FakeProbe("probe.a", features = listOf("bookshelf.distill", "chat.not-a-feature")))
         assertEquals(listOf("chat.not-a-feature"), registry.unknownFeatureRefs())
-        // 未注册计算不应把未知 id 当成覆盖
-        assertTrue(registry.unregisteredFeatures().any { it.id == "bookshelf.distill" })
+        // 未知 id 会被单独报出（上一行），但它不影响已知功能的覆盖统计：
+        // computeUnregisteredFeatures 是纯集合差（known - covered），
+        // 而探针确实声明了 bookshelf.distill，所以它算已覆盖、不该出现在未注册里。
+        assertFalse(registry.unregisteredFeatures().any { it.id == "bookshelf.distill" })
     }
 
     @Test

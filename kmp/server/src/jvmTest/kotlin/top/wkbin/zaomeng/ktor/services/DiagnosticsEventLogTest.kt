@@ -102,10 +102,12 @@ class DiagnosticsEventLogTest {
             onDeviceSnapshot = { mapOf("state" to "failed", "log_tail" to "llama: loaded 0/1") },
         )
 
-        val report = service.buildDiagnosticsReport()
-        // schemaVersion 3 起报告内嵌 runtimeLog 段；4 起再加现场元信息与事件统计
+        // 事件明细只在 full 档导出（2.1.13 起 compact 档只保留类别统计），
+        // 本用例断言 recentEvents 内容，因此显式取 full 档。
+        val report = service.buildDiagnosticsReport(tier = DIAGNOSTICS_TIER_FULL)
+        // 当前值见 DiagnosticsService.buildDiagnosticsReport 里的 schemaVersion。
         // （本用例不注入日志来源，runtimeLog 段为「不可用」）
-        assertEquals(4, report.schemaVersion)
+        assertEquals(6, report.schemaVersion)
         assertEquals(1, report.recentEvents.size)
         assertEquals("ondevice.failed", report.recentEvents.single().category)
         assertEquals("failed", report.onDevice["state"])

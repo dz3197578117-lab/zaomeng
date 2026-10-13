@@ -22,12 +22,9 @@ venv/
 env/
 
 # Tooling/cache
-.codegraph/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-.pyre/
-.pytype/
 .zaomeng-web/
 
 # OS/editor
@@ -67,7 +64,6 @@ zaomeng-data/
 logs/
 outputs/
 clawhub-zaomeng-skill/runtime/data/
-.tools/
 
 # Local/generated Android Studio project mirror (contains signing credentials)
 /android/
@@ -75,9 +71,6 @@ clawhub-zaomeng-skill/runtime/data/
 # IDE/TOOLS
 .trae/
 .reasonix/
-
-# macOS 通用
-.DS_Store
 
 # ---------------------------------------------------------------------------
 # 以下为「反向排除」：上面的通用规则会误伤这几个必须随仓库分发的文件

@@ -20,7 +20,7 @@ kotlin {
     }
     jvm()
 
-    // Apple target 只能在 macOS 主机上编译；Windows/CI(Linux) 自动跳过，保持本机构建可跑。
+    // Apple target 只能在 macOS 主机上编译；非 macOS 主机（Linux / CI）自动跳过，保持本机构建可跑。
 
     sourceSets {
         commonMain.dependencies {

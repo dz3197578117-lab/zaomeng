@@ -15,7 +15,7 @@
 
 | 需要 | 说明 |
 | --- | --- |
-| JDK 17+（推荐 21） | 机器上可能装了多套，**其中一套可能是坏的**，脚本会实测筛选 |
+| JDK 21+（CI 用 21） | 所有模块 `jvmTarget = JVM_21` 且未配 `jvmToolchain`，低版本 JDK 编不出来。机器上可能装了多套，**其中一套可能是坏的**，脚本会实测筛选 |
 | Android SDK | 需含 `platforms/android-37`（compileSdk 37）与任一 `build-tools` |
 | git 身份 | 新机器通常没配，提交会直接失败 |
 

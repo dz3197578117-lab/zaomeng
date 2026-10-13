@@ -15,7 +15,6 @@ dependencies {
     implementation(libs.koin.core)
     implementation(libs.okio)
     implementation(libs.filekit.core)
-    implementation(libs.bundles.jna)
     implementation(libs.ktor.server.cio)
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.content.negotiation)
@@ -39,6 +38,7 @@ compose.desktop {
         }
 
         nativeDistributions {
+            // 桌面端只发布 macOS 与 Linux（仓库不再维护 Windows 构建，见根 AGENTS.md）。
             targetFormats(TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "造梦"
             // 版本号唯一来源：kmp/gradle.properties
@@ -46,13 +46,6 @@ compose.desktop {
             vendor = "dz3197578117-lab"
             // 运行期用到 sun.misc.Unsafe（jpackage 裁剪运行时默认不含 jdk.unsupported）
             modules("jdk.unsupported")
-            windows {
-                // 安装包图标、桌面快捷方式与开始菜单项
-                iconFile.set(file("packaging/zaomeng_logo.ico"))
-                shortcut = true
-                menu = true
-                menuGroup = "造梦"
-            }
         }
     }
 }

@@ -5,8 +5,12 @@
 ## 来源与同步
 
 - `prompts/` 是可审阅的提示词源目录。
-- 内置服务运行时还会读取 `kmp/server/src/androidMain/assets/` 中的对应文件。
-- 修改提示词时必须同步两处相同的相对路径，并在提交前比较内容。不要只改其中一份。
+- 内置提示词共**三处**，`prompts/` 是唯一生效的源：
+  - `kmp/server/src/androidMain/assets/` —— Android 打包副本（服务端读取）；
+  - `kmp/app/shared/src/commonMain/composeResources/files/prompts/` —— Compose Resources 副本（由 `app:shared` 打包，**桌面端经 classpath 读取**）。
+- 三处必须保持相同的相对路径与逐字节一致的内容，提交前跑 `./scripts/check-prompt-sync.sh` 校验。
+  该检查是双向的：副本缺文件、内容不一致、或副本里出现 `prompts/` 没有的孤儿文件，都会失败。
+  不要只改其中一份——只改一处会出现「改了提示词但运行时不生效」。
 
 ## 结构化输出
 
@@ -27,4 +31,4 @@
 
 - 为输出协议修改补充解析器或 prompt builder 测试。
 - 检查 YAML 引号、换行和占位符是否可被 `PromptLoader` 正确读取。
-- 对两份提示词执行内容比较，并运行相关 `:server:jvmTest`。
+- 跑 `./scripts/check-prompt-sync.sh` 比较三处提示词，并运行相关 `:server:jvmTest`。

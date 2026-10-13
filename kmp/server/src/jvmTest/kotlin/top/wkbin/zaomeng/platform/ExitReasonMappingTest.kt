@@ -41,7 +41,9 @@ class ExitReasonMappingTest {
 
     @Test
     fun `oem o-stop description beats generic OTHER reason`() {
-        val info = classifyExitReason(reasonCode = 12, description = "[UNKNOWN] stop top.wkbin.zaomeng.test due to o-stop(40)")
+        // realme/OPPO 的 o-stop(40) 落在 reason=13（OTHER），不是 12（DEPENDENCY_DIED）——
+        // 见 ExitReasonMapping 里 EXIT_DESCRIPTION_ATTRIBUTIONS 的 KDoc。
+        val info = classifyExitReason(reasonCode = 13, description = "[UNKNOWN] stop top.wkbin.zaomeng.test due to o-stop(40)")
         assertEquals("OTHER", info.reasonName)
         assertEquals("系统/OEM 后台清理", info.attribution)
         assertEquals(ExitAttributionSource.DESCRIPTION, info.attributionSource)
@@ -67,10 +69,16 @@ class ExitReasonMappingTest {
         assertEquals("CRASH_NATIVE", exitReasonName(5))
         assertEquals("ANR", exitReasonName(6))
         assertEquals("INITIALIZATION_FAILURE", exitReasonName(7))
-        assertEquals("EXCESSIVE_RESOURCE_USAGE", exitReasonName(8))
-        assertEquals("USER_REQUESTED", exitReasonName(9))
-        assertEquals("PERMISSION_CHANGE", exitReasonName(11))
-        assertEquals("OTHER", exitReasonName(12))
+        // 码值必须与 Android ApplicationExitInfo 的 REASON_* 常量一致。
+        // 这里曾经把 8/9/10 整体前移一位（8 当资源占用、9 当用户请求、11 当权限变更、
+        // 12 当 OTHER），正好是 ExitReasonMapping 的 KDoc 明确警告过的那个错位——
+        // 那会让「权限变更」在界面上显示成「资源占用过高」。
+        assertEquals("PERMISSION_CHANGE", exitReasonName(8))
+        assertEquals("EXCESSIVE_RESOURCE_USAGE", exitReasonName(9))
+        assertEquals("USER_REQUESTED", exitReasonName(10))
+        assertEquals("USER_STOPPED", exitReasonName(11))
+        assertEquals("DEPENDENCY_DIED", exitReasonName(12))
+        assertEquals("OTHER", exitReasonName(13))
     }
 
     @Test

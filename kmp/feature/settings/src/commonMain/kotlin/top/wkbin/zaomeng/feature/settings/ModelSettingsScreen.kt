@@ -380,7 +380,10 @@ fun ModelProfileEditorScreen(
                             onValueChange = viewModel::updateApiKey,
                             label = "API Key",
                             placeholder = if (state.apiKeyConfigured) "已保存；留空继续沿用" else "输入模型服务密钥",
-                            supportingText = "密钥由 Android Keystore 加密保护，不显示在档案列表或诊断信息中。",
+                            // 这句话在 commonMain，两端共用。原写「由 Android Keystore 加密保护」，
+                            // 但桌面端实际是明文 properties 文件（JvmServerPlatform.FileSecureKeyValueStore），
+                            // 对桌面用户是失真的。改成两端都成立的中性表述；要按平台分开说明得走 expect/actual。
+                            supportingText = "密钥保存在系统安全存储中，不显示在档案列表或诊断信息里。",
                             password = !showApiKey,
                             trailingIcon = {
                                 IconButton(onClick = { showApiKey = !showApiKey }) {

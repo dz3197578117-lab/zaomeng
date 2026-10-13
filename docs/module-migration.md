@@ -26,7 +26,7 @@ app:* -> server -> core:contracts / core:runtime / plugins-api
 - 第五批归位：为 `ZaomengRepository` 建立 runs、sessions、dialogue、persona、settings、cards、chapters 等领域门面接口，ViewModel 改为注入窄接口，公开行为保持不变。
 - 第六批归位：`ZaomengRepository` 实现按领域迁入小型 Repository 并删除上帝类；DI 直接绑定各领域门面，Gateway 由组合适配器提供。
 - 第七批归位：`feature:cards` 与 `feature:library` 独立为 Compose KMP 模块；`feature:settings` 先迁出 4 个 ViewModel，屏幕待共享 UI 模块就绪后迁移；数值格式化工具上移 `core:contracts`。
-- 第八批归位：新增 `ui:shared` 承载主题、外部动作、Toast、文件导出与 `AppMetadata`；settings 已迁出设置首页、启动恢复、外观与应用支持 4 个屏幕及全部 ViewModel。
+- 第八批归位：新增 `ui:shared` 承载主题、外部动作、Toast、文件导出与 `AppMetadata`；`feature:settings` 先迁出 4 个 ViewModel（设置首页、启动恢复、外观、应用支持），**这 4 个屏幕仍留在 `feature:settings`**——`ui:shared` 里没有任何 `*Screen*`。
 - 第九批归位：`ui:shared` 继续承接图像/zip 选择、平台图片加载、提供商标识资源与 `ChatBackgroundImage`；settings 的聊天显示、模型配置、插件 3 个屏幕迁出，第一波 `library` / `settings` / `cards` 全部独立。
 - 第十批归位：建立 `server:storage`、`server:llm`、`server:http` 子模块边界；`ktor/models`、`PathSafety`、`SimpleLock` 迁入 `server:storage`，为 Room 与 `StorageService` 迁移铺路。
 - 第十一批归位：`server:storage` 承接 `db`（Room 数据库与 actual）、`StorageService`、YAML/阻塞桥等平台存储工具；`server` 聚合模块改为依赖 `:server:storage`，启动入口不变。
