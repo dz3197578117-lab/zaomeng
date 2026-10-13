@@ -30,6 +30,8 @@ import top.wkbin.zaomeng.platform.PlatformLog
 import top.wkbin.zaomeng.platform.SimpleLock
 import top.wkbin.zaomeng.platform.nowEpochMillis
 import top.wkbin.zaomeng.platform.nowIsoString
+import top.wkbin.zaomeng.platform.DiagnosticsSink
+import top.wkbin.zaomeng.platform.RuntimeLogCoroutineFailures
 import top.wkbin.zaomeng.platform.platformIoDispatcher
 import top.wkbin.zaomeng.platform.randomUuid
 
@@ -118,7 +120,10 @@ class DialogueService(
     }
 
     private val json = Json { ignoreUnknownKeys = true }
-    private val backgroundScope = CoroutineScope(SupervisorJob() + platformIoDispatcher)
+    // 协程未捕获异常纳入运行日志口径（记录后仍交回线程原处理器，不改变崩溃行为）。
+    private val backgroundScope = CoroutineScope(
+        SupervisorJob() + platformIoDispatcher + RuntimeLogCoroutineFailures.handler,
+    )
     private val backgroundJobs = HashMap<String, Job>()
     private val backgroundPending = HashMap<String, MutableList<PostTurnWork>>()
     private val backgroundJobsLock = SimpleLock()
@@ -504,6 +509,13 @@ class DialogueService(
                 }
             }.onFailure { error ->
                 PlatformLog.w(TAG, "Background scene/ledger update failed for $runId/$sessionId: ${error.message}", error)
+                // 对话已提交、派生状态更新失败：用户看到的是「场景没更新」，不补事件就查不出原因
+                DiagnosticsSink.recordFailure(
+                    stage = "dialogue.post_turn_state",
+                    error = error,
+                    retrying = false,
+                    details = mapOf("run_id" to runId, "session_id" to sessionId),
+                )
             }.getOrNull()
 
             if (derivedSession != null) {
@@ -522,6 +534,12 @@ class DialogueService(
                     )
                 }.onFailure { error ->
                     PlatformLog.w(TAG, "Background long-term memory update failed for $runId/$sessionId: ${error.message}", error)
+                    DiagnosticsSink.recordFailure(
+                        stage = "dialogue.long_term_memory",
+                        error = error,
+                        retrying = false,
+                        details = mapOf("run_id" to runId, "session_id" to sessionId, "turn_id" to work.turnId),
+                    )
                 }
             }
             runCatching {
@@ -535,6 +553,12 @@ class DialogueService(
                 }
             }.onFailure { error ->
                 PlatformLog.w(TAG, "Background original-source index update failed for $runId: ${error.message}", error)
+                DiagnosticsSink.recordFailure(
+                    stage = "dialogue.original_index",
+                    error = error,
+                    retrying = false,
+                    details = mapOf("run_id" to runId, "session_id" to sessionId),
+                )
             }
             PlatformLog.d(
                 TAG,

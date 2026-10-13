@@ -1,6 +1,7 @@
 package top.wkbin.zaomeng.ktor.services
 
 import top.wkbin.zaomeng.data.api.CrashRecordDto
+import top.wkbin.zaomeng.data.api.ProcessExitInfoDto
 
 /**
  * 运行日志脱敏。
@@ -74,6 +75,19 @@ object LogRedactor {
         crash.copy(
             summary = redactLine(crash.summary),
             stackTrace = crash.stackTrace.lineSequence().joinToString("\n", transform = ::redactLine),
+        )
+    }
+
+    /**
+     * 进程退出记录脱敏。
+     *
+     * ANR / native 崩溃轨迹里会回显请求 URL、Authorization 头等内容，导出前同样必须过一遍。
+     * 轨迹按行脱敏（不是整段当一行），否则单行 4000 字符的截断会把后面的敏感内容一起带出去。
+     */
+    fun redactProcessExits(exits: List<ProcessExitInfoDto>): List<ProcessExitInfoDto> = exits.map { exit ->
+        exit.copy(
+            description = redactLine(exit.description),
+            trace = exit.trace.lineSequence().joinToString("\n", transform = ::redactLine),
         )
     }
 

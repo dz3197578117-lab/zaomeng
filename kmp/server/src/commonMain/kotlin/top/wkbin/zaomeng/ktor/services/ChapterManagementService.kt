@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import top.wkbin.zaomeng.platform.DiagnosticsSink
 import top.wkbin.zaomeng.platform.nowIsoString
 import top.wkbin.zaomeng.platform.randomUuid
 
@@ -496,8 +497,19 @@ class ChapterManagementService(
 
     private fun requireSession(runId: String, sessionId: String): JsonObject {
         if (!storage.runExists(runId)) throw NoSuchElementException("Run not found: $runId")
-        return runCatching { storage.getDialogueSession(runId, sessionId) }.getOrNull()
-            ?: throw NoSuchElementException("Session not found: $sessionId")
+        val read = runCatching { storage.getDialogueSession(runId, sessionId) }
+        val session = read.getOrNull()
+        if (session == null) {
+            // 会话读不出来（文件损坏 / 半写）以前只表现为 404，诊断里查不到原因。
+            DiagnosticsSink.recordFailure(
+                stage = "session.read",
+                error = read.exceptionOrNull(),
+                retrying = false,
+                details = mapOf("run_id" to runId, "session_id" to sessionId),
+            )
+            throw NoSuchElementException("Session not found: $sessionId")
+        }
+        return session
     }
 
     private fun transcriptOf(session: JsonObject): List<JsonObject> =

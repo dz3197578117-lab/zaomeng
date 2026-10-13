@@ -20,6 +20,7 @@ import top.wkbin.zaomeng.feature.settings.ModelProfileEditorViewModel
 import top.wkbin.zaomeng.feature.settings.ModelProfilesViewModel
 import top.wkbin.zaomeng.feature.settings.OnDeviceModelsViewModel
 import top.wkbin.zaomeng.feature.settings.PluginsViewModel
+import top.wkbin.zaomeng.feature.settings.RuntimeDiagnosticsViewModel
 import top.wkbin.zaomeng.feature.settings.RuntimeLogViewModel
 import top.wkbin.zaomeng.feature.settings.SettingsViewModel
 import top.wkbin.zaomeng.feature.storyrecap.StoryRecapViewModel
@@ -39,7 +40,8 @@ internal fun sharedViewModelModule(platform: AppPlatform) = module {
     }
     viewModel { ChatViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { SettingsViewModel(get(), get()) }
-    viewModel { RuntimeLogViewModel(get()) }
+    viewModel { RuntimeLogViewModel(get(), get()) }
+    viewModel { RuntimeDiagnosticsViewModel(get(), get()) }
     viewModel { ModelProfilesViewModel(get()) }
     viewModel { OnDeviceModelsViewModel(get()) }
     viewModel { PluginsViewModel(get()) }

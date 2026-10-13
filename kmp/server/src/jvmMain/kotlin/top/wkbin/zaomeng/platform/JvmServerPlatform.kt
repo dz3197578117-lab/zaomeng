@@ -29,6 +29,9 @@ class JvmServerPlatform(
 
     override fun onDeviceRuntime(): OnDeviceRuntime = onDeviceRuntime
 
+    override fun processUptimeMillis(): Long =
+        runCatching { java.lang.management.ManagementFactory.getRuntimeMXBean().uptime }.getOrDefault(-1L)
+
     override fun runtimeLogSource(): RuntimeLogSource = runtimeLog
 }
 

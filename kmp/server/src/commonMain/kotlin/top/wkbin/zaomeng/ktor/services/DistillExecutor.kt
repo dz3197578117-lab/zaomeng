@@ -31,6 +31,8 @@ import top.wkbin.zaomeng.platform.SimpleLock
 import top.wkbin.zaomeng.platform.dumpYaml
 import top.wkbin.zaomeng.platform.nowIsoString
 import top.wkbin.zaomeng.platform.parseYaml
+import top.wkbin.zaomeng.platform.RuntimeLogCoroutineFailures
+import top.wkbin.zaomeng.platform.DiagnosticsSink
 import top.wkbin.zaomeng.platform.platformIoDispatcher
 
 /**
@@ -99,7 +101,8 @@ class DistillExecutor(
     private val profileRepair = originalKnowledge?.let {
         ProfileRepairService(storage, llm, promptLoader, it)
     }
-    private val scope = CoroutineScope(SupervisorJob() + platformIoDispatcher)
+    // 协程未捕获异常纳入运行日志口径（记录后仍交回线程原处理器，不改变崩溃行为）。
+    private val scope = CoroutineScope(SupervisorJob() + platformIoDispatcher + RuntimeLogCoroutineFailures.handler)
     private val running = HashMap<String, Job>()
     private val runningLock = SimpleLock()
 
@@ -244,8 +247,18 @@ class DistillExecutor(
         val runDir = storage.getRunDirectory(runId)
         val sourcePath = resolveSourcePath(manifest, runDir)
         if (sourcePath.isBlank()) throw IllegalStateException("找不到小说源文件。")
-        val novelText = runCatching { storage.readText(sourcePath.toPath()) }.getOrNull()
-            ?: throw IllegalStateException("小说源文件读取失败。")
+        val sourceRead = runCatching { storage.readText(sourcePath.toPath()) }
+        val novelText = sourceRead.getOrNull() ?: run {
+            // 关键路径静默失败收口：源文本读不到会让整次蒸馏产出空档案，
+            // 以前这里只有一句异常，诊断里看不到「为什么读不到」。
+            DiagnosticsSink.recordFailure(
+                stage = "distill.source_read",
+                error = sourceRead.exceptionOrNull(),
+                retrying = false,
+                details = mapOf("run_id" to runId, "source_path" to sourcePath),
+            )
+            throw IllegalStateException("小说源文件读取失败。")
+        }
         val novelId = (manifest["novel_id"]?.jsonPrimitive?.contentOrNull ?: runId)
 
         applyDistillProgress(runId, "text_loaded", mapOf("source_path" to sourcePath))
@@ -359,6 +372,13 @@ class DistillExecutor(
                 }
             } else {
                 PlatformLog.e(TAG, "Write profile failed for $character: ${writeFailure.message}", writeFailure)
+                // 静默失败收口：写档案失败只会体现在「少了一个角色」，不补事件就查不出原因。
+                DiagnosticsSink.recordFailure(
+                    stage = "distill.profile_write",
+                    error = writeFailure,
+                    retrying = false,
+                    details = mapOf("run_id" to runId, "character" to character),
+                )
                 failed.add(character)
             }
             applyDistillProgress(runId, "character_done", mapOf("character" to character, "completed" to completed, "total" to characters.size))
@@ -881,12 +901,33 @@ class DistillExecutor(
         for (character in characters) {
             val profileFile = root / "${PathSafety.sanitizePathComponent(character, "character")}/PROFILE.md"
             if (!storage.isFile(profileFile)) continue
-            val text = runCatching { storage.readText(profileFile) }.getOrNull() ?: continue
+            val textResult = runCatching { storage.readText(profileFile) }
+            val text = textResult.getOrNull()
+            if (text == null) {
+                // 增量蒸馏会因此丢掉「上次已生成的角色」，必须留痕（阶段 + 原因）
+                DiagnosticsSink.recordFailure(
+                    stage = "distill.profile_read",
+                    error = textResult.exceptionOrNull(),
+                    retrying = false,
+                    details = mapOf("novel_id" to novelId, "character" to character),
+                )
+                continue
+            }
             val front = extractFrontMatter(text) ?: continue
-            val parsed = runCatching {
+            val parsedResult = runCatching {
                 @Suppress("UNCHECKED_CAST")
                 parseYaml(front) as? Map<String, Any>
-            }.getOrNull() ?: continue
+            }
+            val parsed = parsedResult.getOrNull()
+            if (parsed == null) {
+                DiagnosticsSink.recordFailure(
+                    stage = "distill.profile_parse",
+                    error = parsedResult.exceptionOrNull(),
+                    retrying = false,
+                    details = mapOf("novel_id" to novelId, "character" to character),
+                )
+                continue
+            }
             result[character] = parsed.mapValues { (_, value) -> value.toString() }
         }
         return result

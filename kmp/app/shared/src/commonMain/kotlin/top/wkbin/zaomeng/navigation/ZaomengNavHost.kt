@@ -3,6 +3,7 @@ package top.wkbin.zaomeng.navigation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.animation.AnimatedContentTransitionScope
@@ -12,12 +13,14 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
@@ -50,6 +53,8 @@ import top.wkbin.zaomeng.feature.settings.OnDeviceModelsScreen
 import top.wkbin.zaomeng.feature.settings.OnDeviceModelsViewModel
 import top.wkbin.zaomeng.feature.settings.PluginsScreen
 import top.wkbin.zaomeng.feature.pluginbuilder.PluginBuilderScreen
+import top.wkbin.zaomeng.feature.settings.RuntimeDiagnosticsScreen
+import top.wkbin.zaomeng.feature.settings.RuntimeDiagnosticsViewModel
 import top.wkbin.zaomeng.feature.settings.RuntimeLogScreen
 import top.wkbin.zaomeng.feature.settings.RuntimeLogViewModel
 import top.wkbin.zaomeng.feature.settings.SettingsViewModel
@@ -78,6 +83,7 @@ import top.wkbin.zaomeng.feature.redistill.RedistillScreen
 import top.wkbin.zaomeng.feature.redistill.RedistillViewModel
 import top.wkbin.zaomeng.feature.rundetail.RunDetailScreen
 import top.wkbin.zaomeng.feature.rundetail.RunDetailViewModel
+import top.wkbin.zaomeng.data.RuntimeCaptureStateStore
 import top.wkbin.zaomeng.platform.PlatformBackHandler
 /**
  * nav3 导航宿主：按窗口宽度自适应布局。
@@ -106,6 +112,10 @@ fun ZaomengNavHost(
     val backStack = remember { NavBackStack<NavKey>(BookshelfDestination) }
     val platform: AppPlatform = koinInject()
     val runDetailRefreshEpoch = remember { mutableStateOf(0) }
+    // 采集状态真源：「运行诊断」页的悬浮窗开关与「运行日志」页的采集开关共用同一份
+    val captureStore: RuntimeCaptureStateStore = koinInject()
+    val captureStatus by captureStore.status.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { captureStore.refresh() }
 
     val pendingLaunchRunId = remember(launchChaptersRunId) {
         launchChaptersRunId?.takeIf { it.isNotBlank() }
@@ -233,7 +243,15 @@ fun ZaomengNavHost(
                 AppSupportSettingsScreen(
                     viewModel = viewModel,
                     onBack = popBack,
+                    onOpenRuntimeDiagnostics = { backStack.add(RuntimeDiagnosticsDestination) },
                     onOpenRuntimeLog = { backStack.add(RuntimeLogDestination) },
+                )
+            }
+            entry(RuntimeDiagnosticsDestination) {
+                val viewModel: RuntimeDiagnosticsViewModel = koinViewModel()
+                RuntimeDiagnosticsScreen(
+                    viewModel = viewModel,
+                    onBack = popBack,
                 )
             }
             entry(RuntimeLogDestination) {
@@ -405,6 +423,7 @@ fun ZaomengNavHost(
             }
         }
 
+    Box(Modifier.fillMaxSize()) {
     if (wideLayout) {
         Row(Modifier.fillMaxSize()) {
             AppTopLevelRail(
@@ -447,6 +466,19 @@ fun ZaomengNavHost(
                     rememberSaveableStateHolderNavEntryDecorator(),
                     rememberViewModelStoreNavEntryDecorator(),
                 ),
+            )
+        }
+    }
+        // 应用内悬浮窗（不是系统悬浮窗）：浮在本应用界面之上，切页面也在
+        if (captureStatus.overlayEnabled) {
+            RuntimeCaptureOverlay(
+                status = captureStatus,
+                onClick = {
+                    // 已经在运行日志页就不重复压栈，避免越点越深
+                    if (backStack.lastOrNull() != RuntimeLogDestination) {
+                        backStack.add(RuntimeLogDestination)
+                    }
+                },
             )
         }
     }

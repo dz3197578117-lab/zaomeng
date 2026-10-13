@@ -13,6 +13,7 @@ import kotlinx.serialization.json.put
 import okio.Path
 import top.wkbin.zaomeng.data.api.ImportRunPackageRequest
 import top.wkbin.zaomeng.data.api.LibraryPackageImportDto
+import top.wkbin.zaomeng.platform.DiagnosticsSink
 import top.wkbin.zaomeng.platform.base64Decode
 import top.wkbin.zaomeng.platform.nowIsoString
 import top.wkbin.zaomeng.platform.randomUuid
@@ -36,7 +37,17 @@ class RunPackageService(private val storage: StorageService) {
             val sourceManifest = sourceRun / "run_manifest.json"
             require(storage.isDirectory(sourceRun) && storage.isFile(sourceManifest)) { "书卷包缺少有效的 run/run_manifest.json。" }
             check(!storage.exists(target)) { "新书卷目录已经存在，请重试。" }
-            check(runCatching { copyRecursively(sourceRun, target); true }.getOrDefault(false)) { "复制书卷数据失败。" }
+            val copyResult = runCatching { copyRecursively(sourceRun, target) }
+            if (copyResult.isFailure) {
+                // 原实现只回一句「复制书卷数据失败」，真实原因（磁盘满/权限/坏条目）被吞掉。
+                DiagnosticsSink.recordFailure(
+                    stage = "library.import_copy",
+                    error = copyResult.exceptionOrNull(),
+                    retrying = false,
+                    details = mapOf("filename" to request.filename, "target_run_id" to newRunId),
+                )
+                throw IllegalStateException("复制书卷数据失败。", copyResult.exceptionOrNull())
+            }
             storage.mkdirs(target / "dialogue")
             val manifestFile = target / "run_manifest.json"
             val original = json.parseToJsonElement(storage.readText(manifestFile)).jsonObject

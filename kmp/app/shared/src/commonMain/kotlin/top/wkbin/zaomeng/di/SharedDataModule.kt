@@ -27,6 +27,7 @@ import top.wkbin.zaomeng.data.RelationsRepositoryImpl
 import top.wkbin.zaomeng.data.RunRepository
 import top.wkbin.zaomeng.data.RunRepositoryImpl
 import top.wkbin.zaomeng.data.RunReviewRepositoryImpl
+import top.wkbin.zaomeng.data.RuntimeCaptureStateStore
 import top.wkbin.zaomeng.data.SessionRepository
 import top.wkbin.zaomeng.data.SessionRepositoryImpl
 import top.wkbin.zaomeng.data.WorldMemoryRepository
@@ -81,7 +82,9 @@ internal fun sharedDataModule(platform: AppPlatform) = module {
 
     single<AppRuntimeRepository> { AppRuntimeRepositoryImpl(get(), get()) }
     single<ModelSettingsRepository> { ModelSettingsRepositoryImpl(get(), get()) }
-    single<DiagnosticsRepository> { DiagnosticsRepositoryImpl(get()) }
+    single<DiagnosticsRepository> { DiagnosticsRepositoryImpl(get(), get()) }
+    // 采集状态真源：「运行日志」页开关与应用内悬浮窗共用，避免两边状态不一致。
+    single { RuntimeCaptureStateStore(get(), get()) }
     single<PluginRepository> { PluginRepositoryImpl(get()) }
     single<RunRepository> { get<RunRepositoryImpl>() }
     single<WorldMemoryRepository> { WorldMemoryRepositoryImpl(get()) }

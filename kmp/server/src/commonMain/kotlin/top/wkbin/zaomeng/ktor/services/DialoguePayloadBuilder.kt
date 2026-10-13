@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okio.Path
 import okio.Path.Companion.toPath
+import top.wkbin.zaomeng.platform.DiagnosticsSink
 import top.wkbin.zaomeng.platform.parseYaml
 import top.wkbin.zaomeng.platform.randomUuid
 import top.wkbin.zaomeng.platform.SimpleLock
@@ -466,9 +467,21 @@ class DialoguePayloadBuilder(
                 }
             }
         }
-        val text = file?.let { cachedFileResult(it.toString(), storage.lastModifiedMillis(it)) {
-            runCatching { storage.readText(it) }.getOrNull().orEmpty()
-        } }.orEmpty()
+        val text = file?.let { target ->
+            cachedFileResult(target.toString(), storage.lastModifiedMillis(target)) {
+                val read = runCatching { storage.readText(target) }
+                read.getOrNull() ?: run {
+                    // 关系正文读不到 → 提示词里这一节静默变空，模型表现变差但不会报错
+                    DiagnosticsSink.recordFailure(
+                        stage = "dialogue.payload_read",
+                        error = read.exceptionOrNull(),
+                        retrying = false,
+                        details = mapOf("run_id" to runId, "section" to "relations", "file" to target.name),
+                    )
+                    ""
+                }
+            }
+        }.orEmpty()
         // 去掉 front-matter 与 mermaid 图，保留正文段落
         val cleaned = text
             .replace(Regex("```mermaid[\\s\\S]*?```"), "")
@@ -490,9 +503,20 @@ class DialoguePayloadBuilder(
     }
 
     private fun loadWorldFactsUncached(file: Path): List<Map<String, Any?>> {
-        val facts = runCatching {
+        val factsRead = runCatching {
             Json.parseToJsonElement(storage.readText(file)).jsonObject["facts"]?.jsonArray
-        }.getOrNull() ?: return emptyList()
+        }
+        val facts = factsRead.getOrNull()
+        if (facts == null) {
+            // world_memory.json 解析失败 → 世界事实整段消失（静默降级，必须留痕）
+            DiagnosticsSink.recordFailure(
+                stage = "dialogue.payload_parse",
+                error = factsRead.exceptionOrNull(),
+                retrying = false,
+                details = mapOf("section" to "world_memory", "file" to file.name),
+            )
+            return emptyList()
+        }
         val parsed = facts.mapNotNull { item ->
             val obj = item.jsonObject
             if (obj["active"]?.jsonPrimitive?.contentOrNull == "false") return@mapNotNull null

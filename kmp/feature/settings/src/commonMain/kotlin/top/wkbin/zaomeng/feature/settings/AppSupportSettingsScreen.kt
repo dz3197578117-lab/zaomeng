@@ -21,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import top.wkbin.zaomeng.app.shared.AppMetadata
-import top.wkbin.zaomeng.platform.rememberFileExporter
 import top.wkbin.zaomeng.platform.rememberOpenExternalUrl
 import top.wkbin.zaomeng.platform.rememberToast
 
@@ -30,13 +29,11 @@ import top.wkbin.zaomeng.platform.rememberToast
 fun AppSupportSettingsScreen(
     viewModel: SettingsViewModel,
     onBack: () -> Unit,
+    /** 打开独立的「运行诊断」页（问题捕获 / 自检 / 悬浮窗开关 / 导出都在那里）。 */
+    onOpenRuntimeDiagnostics: () -> Unit = {},
     onOpenRuntimeLog: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val fileExporter = rememberFileExporter(
-        onSave = { sink -> viewModel.exportDiagnostics(sink) },
-        onCancelled = {},
-    )
     val openExternalUrl = rememberOpenExternalUrl()
     val toast = rememberToast()
     Scaffold(
@@ -61,7 +58,7 @@ fun AppSupportSettingsScreen(
             SettingsSupportGroup(
                 modifier = Modifier.fillMaxWidth(),
                 state = state,
-                onExportDiagnostics = { fileExporter("zaomeng-diagnostics.json", "application/json") },
+                onOpenRuntimeDiagnostics = onOpenRuntimeDiagnostics,
                 onOpenRuntimeLog = onOpenRuntimeLog,
                 onOpenOfficialWebsite = { openExternalUrl("https://dz3197578117-lab.github.io/zaomeng/") },
                 onOpenProject = { openExternalUrl("https://github.com/dz3197578117-lab/zaomeng") },
@@ -84,7 +81,7 @@ fun AppSupportSettingsScreen(
 private fun SettingsSupportGroup(
     modifier: Modifier,
     state: SettingsUiState,
-    onExportDiagnostics: () -> Unit,
+    onOpenRuntimeDiagnostics: () -> Unit,
     onOpenRuntimeLog: () -> Unit,
     onOpenOfficialWebsite: () -> Unit,
     onOpenProject: () -> Unit,
@@ -99,10 +96,9 @@ private fun SettingsSupportGroup(
         androidx.compose.foundation.layout.Column {
             SettingsRow(
                 title = "运行诊断",
-                subtitle = "导出启动自检、任务状态、模型连接摘要与运行日志，不包含密钥或小说内容。",
-                value = if (state.exportingDiagnostics) "导出中" else "导出",
-                enabled = !state.exportingDiagnostics,
-                onClick = onExportDiagnostics,
+                subtitle = "问题捕获（崩溃 / ANR / 进程死因）、启动自检、现场元信息与悬浮窗采集开关；可导出脱敏诊断。",
+                value = "查看",
+                onClick = onOpenRuntimeDiagnostics,
             )
             androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             SettingsRow(

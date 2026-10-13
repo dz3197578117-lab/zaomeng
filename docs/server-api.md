@@ -2,7 +2,7 @@
 
 本文档描述当前主实现中由 `LocalBackendController` 实际注册的 Ktor HTTP 接口。接口实现位于 `kmp/server`，客户端与服务端共享契约位于 `kmp/core/contracts`。旧 Python/Web 后端不在本文档范围内；标为“兼容别名”的路径仅用于兼容旧调用方。
 
-> 基线：2026-08-11 当前工作区。共 21 组路由、115 个有效的“HTTP 方法 + 路径”组合（卡片 CRUD 的三类路径分别计数）。
+> 基线：2026-08-11 当前工作区。共 21 组路由、119 个有效的“HTTP 方法 + 路径”组合（卡片 CRUD 的三类路径分别计数；诊断组自本轮起新增 `overview`、采集开关 GET/PUT 与 `DELETE runtime-log`，健康检查与诊断子表见第 2 节）。
 
 ## 1. 通用约定
 
@@ -95,8 +95,12 @@ Authorization: Bearer <token>
 | 方法 | 路径 | 请求 | 成功响应 |
 |---|---|---|---|
 | GET | `/api/web/health` | 无 | `200` `HealthResponse` |
-| GET | `/api/web/diagnostics/export` | 无 | `200` 诊断 JSON；下载名 `zaomeng-diagnostics.json` |
-| GET | `/api/web/diagnostics/runtime-log` | `lines`（可选，期望行数，服务端夹紧到 5000） | `200` `RuntimeLogDto` |
+| GET | `/api/web/diagnostics/export` | `run_id`、`session_id`（可选，客户端上报的现场上下文） | `200` 诊断 JSON；下载名 `zaomeng-diagnostics.json` |
+| GET | `/api/web/diagnostics/overview` | `run_id`、`session_id`（可选） | `200` `DiagnosticsOverviewDto`（自检 + 问题清单 + 统计，不含日志正文） |
+| GET | `/api/web/diagnostics/runtime-log` | `lines`（可选，期望行数，服务端夹紧到 5000）、`run_id`、`session_id`（可选） | `200` `RuntimeLogDto` |
+| GET | `/api/web/diagnostics/runtime-log/capture` | 无 | `200` `RuntimeCaptureStateDto` |
+| PUT | `/api/web/diagnostics/runtime-log/capture` | `{"enabled": true|false}`；请求体非法返回 `400` | `200` 生效后的 `RuntimeCaptureStateDto` |
+| DELETE | `/api/web/diagnostics/runtime-log` | 无 | `200` `RuntimeLogClearResultDto`；清除抛错时返回 `500` 且 body 仍是同一个 DTO |
 
 健康检查响应固定为：
 
@@ -148,12 +152,73 @@ URL 中的凭据一律替换为 `***`），超长行截断。
 | `unavailable` | 拿不到任何日志，此时 `available=false` 且 `note` 说明原因 |
 
 `truncated=true` 表示只返回了尾部若干行。诊断报告内嵌时 `lines` 上限为 1200 行、
-`crashes` 最多 5 条；单独拉取该接口时 `lines` 上限为 5000 行。
+`crashes` 最多 5 条、`processExits` 最多 5 条；单独拉取该接口时 `lines` 上限为 5000 行。
 诊断报告 `schemaVersion` 自 3 起包含 `runtimeLog` 段。
+
+自 `schemaVersion` 4 起，`RuntimeLogDto` 还带三个排查必需的附加段：
+
+| 字段 | 含义 |
+|---|---|
+| `capture` | 采集开关状态 `RuntimeCaptureStateDto`：`supported`（平台是否支持启停，桌面端为 `false` 常开）、`enabled`、`updatedAt`、`note` |
+| `environment` | 版本与现场元信息 `EnvironmentInfoDto`：`app`（`versionName`/`versionCode`，构建期从 `kmp/gradle.properties` 生成）、`device`（厂商/机型/系统/API level/ABI/CPU/是否 64 位）、`memory`（Java 堆、native 堆、系统可用内存）、`session`（客户端上报的最近 run/session） |
+| `processExits` / `processExitsNote` | 第 2 层「进程外补捕」：上次进程如何退出（Android 10+ `ApplicationExitInfo`）。含 `reason`/`reasonCode`/`status`/`importance`/`pssBytes`/`rssBytes`/`description`/`trace`/`source`。**这是降级信息**：native 崩溃只有信号与有限轨迹，不是完整 native 堆栈；API < 30 的平台返回空并在 `processExitsNote` 说明 |
+
+#### 采集开关（`RuntimeCaptureStateDto`）
+
+`PUT /api/web/diagnostics/runtime-log/capture` 控制后端是否**持续把日志写入应用私有日志文件**：
+
+- 状态**持久化**（Android 落在 `filesDir/zaomeng/logs/capture-state.txt`），重启后保持上次选择；
+- 幂等：重复/并发点击不会重复启停，也不改变日志文件结构；
+- **关闭采集不清除已采集内容**，`GET .../runtime-log` 仍会返回已有日志；
+- **未捕获异常与 ANR 卡顿记录不受该开关影响**，始终落盘（日志里会标注「采集已关闭期间」）。
+
+```json
+{"supported": true, "enabled": false, "updatedAt": "2026-10-13T01:00:00Z", "note": "采集已关闭：…"}
+```
+
+#### 清除日志（`RuntimeLogClearResultDto`）
+
+`DELETE /api/web/diagnostics/runtime-log` 清空日志文件并删除崩溃/卡顿记录：
+
+- **只清运行日志相关文件**，不触碰书卷、会话、记忆、模型档案等任何业务数据；
+- 幂等：日志本来就空、重复调用、采集中途调用都安全，且不改变采集开关；
+- 响应 `cleared` 表示是否清理成功，`clearedLines`/`clearedCrashes` 是清理量，
+  `captureEnabled` 回显开关状态，`note` 是可直接展示的说明。
+
+### 2.1.1 诊断概览（`DiagnosticsOverviewDto`）
+
+`GET /api/web/diagnostics/overview` 是同一批数据的轻量视图（**不含日志正文**），
+供应用内「运行诊断」页展示与一键复制：
+
+| 字段 | 含义 |
+|---|---|
+| `generatedAt` | 生成时间 |
+| `environment` | 同 `EnvironmentInfoDto` |
+| `capture` | 采集开关状态 |
+| `startup` | 启动自检：`backend_graph`、`data_root`/`data_root_writable`、`plugins_root`、`model_active_profile`/`model_configured`/`model_api_key_configured`、`on_device_runtime`、`runtime_log_capture`/`runtime_log_source`、`last_process_exit`、`process_uptime`、`app_version` |
+| `problems` | 可读问题清单（见下），按时间倒序 |
+| `eventStats` | 结构化事件统计：`category`/`count`/`lastAt`/`lastMessage`（样本已截断） |
+| `modelTests` | 最近几次「测试连接」结果 `ModelConnectivityRecordDto`：`testedAt`/`provider`/`model`/`baseUrl`（已去查询串）/`success`/`latencyMs`/`message` |
+| `copySummary` | 可直接复制给开发者的短摘要（不含密钥、提示词与正文） |
+
+`problems[]`（`DiagnosticsProblemDto`）：
+
+| 字段 | 含义 |
+|---|---|
+| `kind` | `crash`（含未捕获异常与协程未捕获异常）、`anr`、`process-exit`、`event`（结构化事件）、`self-check` |
+| `severity` | `fatal` / `error` / `warning` / `info` |
+| `occurredAt` | 发生时间（自检项为空字符串，排序时排在最后） |
+| `title` | 人可读摘要（已截断） |
+| `detail` | 完整（截断）堆栈/轨迹，展开查看 |
+| `source` | 来源标识，例如 `uncaught-handler`、`android-application-exit-info:ANR` |
 
 ### 2.2 诊断导出报告（`DiagnosticsReport`）
 
 导出报告的各段独立容错：单段读取失败只降级为空，不会让整个导出返回 500。
+
+`schemaVersion` 自 4 起额外包含：`environment`（版本与现场元信息，同 `EnvironmentInfoDto`）、
+`eventStats`（结构化事件统计）、`modelTests`（最近的模型连通性测试结果）；
+`startup` 段自 4 起由真实自检填充（此前恒为 `{}`）。
 
 `runs[]`（`RunSummary`）字段：
 

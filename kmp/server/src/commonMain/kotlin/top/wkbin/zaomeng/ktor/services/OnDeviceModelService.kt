@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import top.wkbin.zaomeng.platform.RuntimeLogCoroutineFailures
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
@@ -54,7 +55,8 @@ class OnDeviceModelService private constructor(
     private val runtime: OnDeviceRuntime?,
 ) {
     private val fileSystem = FileSystem.SYSTEM
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // 协程未捕获异常纳入运行日志口径（记录后仍交回线程原处理器，不改变崩溃行为）。
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default + RuntimeLogCoroutineFailures.handler)
 
     /** 串行化 start/stop/delete 这类会动进程的操作。 */
     private val lifecycleMutex = Mutex()

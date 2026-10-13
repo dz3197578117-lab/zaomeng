@@ -49,6 +49,8 @@ data class AppPreferences(
     val ttsEnabled: Boolean = true,
     val ttsSpeechRate: Float = 1.0f,
     val ttsAutoPlayObserve: Boolean = false,
+    /** 应用内悬浮窗（采集状态 + 快捷入口）开关；纯客户端 UI 偏好，默认关闭。 */
+    val runtimeCaptureOverlayEnabled: Boolean = false,
 )
 
 /** 跨平台偏好仓库：全部平台统一走官方 KMP DataStore（Preferences）。 */
@@ -87,6 +89,7 @@ class AppPreferencesRepository(
                 ttsEnabled = values[KEY_TTS_ENABLED] ?: true,
                 ttsSpeechRate = (values[KEY_TTS_SPEECH_RATE] ?: 1.0f).coerceIn(0.5f, 2.0f),
                 ttsAutoPlayObserve = values[KEY_TTS_AUTO_PLAY_OBSERVE] ?: false,
+                runtimeCaptureOverlayEnabled = values[KEY_RUNTIME_CAPTURE_OVERLAY] ?: false,
             )
         }
 
@@ -116,6 +119,11 @@ class AppPreferencesRepository(
 
     val ttsEnabled: Flow<Boolean> = preferences
         .map { it.ttsEnabled }
+        .distinctUntilChanged()
+
+    /** 应用内悬浮窗开关。 */
+    val runtimeCaptureOverlayEnabled: Flow<Boolean> = preferences
+        .map { it.runtimeCaptureOverlayEnabled }
         .distinctUntilChanged()
 
     /**
@@ -268,6 +276,10 @@ class AppPreferencesRepository(
         dataStore.edit { values -> values[KEY_TTS_AUTO_PLAY_OBSERVE] = enabled }
     }
 
+    suspend fun setRuntimeCaptureOverlayEnabled(enabled: Boolean) {
+        dataStore.edit { values -> values[KEY_RUNTIME_CAPTURE_OVERLAY] = enabled }
+    }
+
     private companion object {
         val KEY_DEFAULT_CHARACTERS = stringPreferencesKey("default_characters")
         val KEY_AUTO_DISTILL = booleanPreferencesKey("auto_distill")
@@ -292,6 +304,7 @@ class AppPreferencesRepository(
         val KEY_TTS_ENABLED = booleanPreferencesKey("tts_enabled")
         val KEY_TTS_SPEECH_RATE = floatPreferencesKey("tts_speech_rate")
         val KEY_TTS_AUTO_PLAY_OBSERVE = booleanPreferencesKey("tts_auto_play_observe")
+        val KEY_RUNTIME_CAPTURE_OVERLAY = booleanPreferencesKey("runtime_capture_overlay_enabled")
     }
 }
 

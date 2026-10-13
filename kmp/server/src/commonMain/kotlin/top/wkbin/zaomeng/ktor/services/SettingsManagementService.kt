@@ -8,9 +8,11 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import top.wkbin.zaomeng.platform.PlatformLog
+import top.wkbin.zaomeng.platform.nowIsoString
 import top.wkbin.zaomeng.platform.randomUuid
 import top.wkbin.zaomeng.ktor.models.*
 import top.wkbin.zaomeng.data.api.ModelCapabilityReportDto
+import top.wkbin.zaomeng.data.api.ModelConnectivityRecordDto
 import top.wkbin.zaomeng.data.api.ModelListResponseDto
 import kotlin.time.TimeSource
 
@@ -21,7 +23,12 @@ import kotlin.time.TimeSource
  */
 class SettingsManagementService(
     private val storageService: StorageService,
-    private val modelApiKeyService: ModelApiKeyService
+    private val modelApiKeyService: ModelApiKeyService,
+    /**
+     * 模型连通性测试记录；诊断导出会带上最近几次结果。
+     * 默认 null 便于测试与不关心诊断的调用方。
+     */
+    private val connectivityLog: ModelConnectivityLog? = null,
 ) {
     private val json = Json {
         prettyPrint = true
@@ -214,7 +221,20 @@ class SettingsManagementService(
         val effectiveApiKey = apiKey.ifBlank { modelApiKeyService.getApiKey(effectiveProfileId) ?: "" }
 
         if (effectiveApiKey.isBlank() && apiKeyRequired) {
-            return testResult(false, provider, model, 0, "API key not found for profile: $effectiveProfileId")
+            val missingKey = "API key not found for profile: $effectiveProfileId"
+            connectivityLog?.record(
+                ModelConnectivityRecordDto(
+                    testedAt = nowIsoString(),
+                    profileId = effectiveProfileId,
+                    provider = provider,
+                    model = model,
+                    baseUrl = baseUrl.substringBefore('?').take(200),
+                    success = false,
+                    latencyMs = 0,
+                    message = missingKey,
+                ),
+            )
+            return testResult(false, provider, model, 0, missingKey)
         }
 
         val resolvedBaseUrl = baseUrl.ifBlank { "https://api.openai.com/v1" }
@@ -229,10 +249,25 @@ class SettingsManagementService(
             .coerceAtLeast(1L)
             .coerceAtMost(Int.MAX_VALUE.toLong())
             .toInt()
-        return result.fold(
+        val response = result.fold(
             onSuccess = { testResult(true, provider, model, latencyMs, "Connection successful") },
             onFailure = { error -> testResult(false, provider, model, latencyMs, error.message ?: "Model connection failed") }
         )
+        // 结果落盘：诊断报告里的「模型」一节从此不只有 profile 摘要，还有真实连通性结论
+        connectivityLog?.record(
+            ModelConnectivityRecordDto(
+                testedAt = nowIsoString(),
+                profileId = effectiveProfileId,
+                provider = provider,
+                model = model,
+                // 去掉查询串：baseUrl 里可能带 api-version，但绝不能让带凭据的 URL 进诊断
+                baseUrl = resolvedBaseUrl.substringBefore('?').take(200),
+                success = result.isSuccess,
+                latencyMs = latencyMs,
+                message = result.exceptionOrNull()?.message ?: "Connection successful",
+            ),
+        )
+        return response
     }
 
     suspend fun detectModelCapabilities(

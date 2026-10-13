@@ -24,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import top.wkbin.zaomeng.platform.RuntimeLogCoroutineFailures
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -35,7 +36,10 @@ import org.koin.core.component.inject
 class DistillationForegroundService : Service(), KoinComponent {
     private val backend: BackendController by inject()
     private val repository: RunRepository by inject()
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // 前台服务是应用级长生命周期 scope：协程未捕获异常同样纳入运行日志口径。
+    private val serviceScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + RuntimeLogCoroutineFailures.handler,
+    )
     private var monitorJob: Job? = null
     @Volatile private var stopRequested = false
     private val observedRunIds = linkedSetOf<String>()

@@ -36,6 +36,9 @@ import top.wkbin.zaomeng.data.api.PackagePluginDraftRequest
 import top.wkbin.zaomeng.data.api.ValidatePluginDraftRequest
 import top.wkbin.zaomeng.data.api.PluginTemporaryNpcGeneratorRequest
 import top.wkbin.zaomeng.data.api.PluginTemporaryNpcGeneratorResponse
+import top.wkbin.zaomeng.data.api.DiagnosticsOverviewDto
+import top.wkbin.zaomeng.data.api.RuntimeCaptureStateDto
+import top.wkbin.zaomeng.data.api.RuntimeLogClearResultDto
 import top.wkbin.zaomeng.data.api.RuntimeLogDto
 import top.wkbin.zaomeng.data.api.SaveModelSettingsRequest
 import top.wkbin.zaomeng.data.api.TestModelSettingsRequest
@@ -127,14 +130,50 @@ class ModelSettingsRepositoryImpl(
 
 class DiagnosticsRepositoryImpl(
     private val ktorDiagnostics: KtorDiagnosticsClient,
+    private val appPreferences: AppPreferencesRepository,
 ) : DiagnosticsRepository {
     override suspend fun exportDiagnostics(destination: Sink): Long = repositoryRequest {
-        ktorDiagnostics.export(destination)
+        val context = currentSessionContext()
+        ktorDiagnostics.export(destination, context.runId, context.sessionId)
     }
 
     override suspend fun runtimeLog(maxLines: Int): RuntimeLogDto = repositoryRequest {
-        ktorDiagnostics.runtimeLog(maxLines)
+        val context = currentSessionContext()
+        ktorDiagnostics.runtimeLog(maxLines, context.runId, context.sessionId)
     }
+
+    override suspend fun overview(): DiagnosticsOverviewDto = repositoryRequest {
+        val context = currentSessionContext()
+        ktorDiagnostics.overview(context.runId, context.sessionId)
+    }
+
+    override suspend fun captureState(): RuntimeCaptureStateDto = repositoryRequest {
+        ktorDiagnostics.captureState()
+    }
+
+    override suspend fun setCaptureEnabled(enabled: Boolean): RuntimeCaptureStateDto = repositoryRequest {
+        ktorDiagnostics.setCaptureEnabled(enabled)
+    }
+
+    override suspend fun clearRuntimeLog(): RuntimeLogClearResultDto = repositoryRequest {
+        ktorDiagnostics.clearRuntimeLog()
+    }
+
+    /**
+     * 现场上下文：最近打开的 run/session。
+     *
+     * 服务端不知道 UI 状态，这两个值只能由客户端上报；读偏好失败时退化为空（诊断不应因此失败），
+     * 服务端会把它标注为「客户端上报」而不是「正在生成的会话」。
+     */
+    private suspend fun currentSessionContext(): SessionContext {
+        val preferences = runCatching { appPreferences.currentPreferences() }.getOrNull()
+        return SessionContext(
+            runId = preferences?.lastRunId.orEmpty(),
+            sessionId = preferences?.lastSessionId.orEmpty(),
+        )
+    }
+
+    private data class SessionContext(val runId: String, val sessionId: String)
 }
 
 class PluginRepositoryImpl(

@@ -83,6 +83,14 @@ interface ServerPlatform {
      * 返回 null 时诊断报告与「运行日志」页退化为「不可用」，不影响其余诊断字段。
      */
     fun runtimeLogSource(): RuntimeLogSource? = null
+
+    /**
+     * 进程已运行时长（毫秒）；无法获取时返回 -1。
+     *
+     * 用于诊断自检：崩溃与 OOM 现场里「进程活了多久」是判断「启动期就崩」还是
+     * 「跑久了才崩」的关键信息。
+     */
+    fun processUptimeMillis(): Long = -1L
 }
 
 /** 当前 UTC 时间的 ISO-8601 字符串（等价 Instant.now().toString()）。 */

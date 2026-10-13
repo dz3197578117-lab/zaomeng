@@ -21,6 +21,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import top.wkbin.zaomeng.data.api.ModelCapabilityReportDto
+import top.wkbin.zaomeng.platform.DiagnosticsSink
 import top.wkbin.zaomeng.platform.PlatformLog
 import top.wkbin.zaomeng.platform.PlatformStreamingResponse
 import top.wkbin.zaomeng.platform.createHttpClientEngine
@@ -1188,7 +1189,7 @@ class LlmClient(
         // 一键检测连续发多个探测请求极易触发，不重试会把"限流"误报成"不支持"）。
         repeat(3) { attempt ->
             if (attempt > 0) delay(1500L * attempt)
-            lastResult = runCatching {
+            val attemptResult = runCatching {
                     val response = httpClient.post(endpoint) {
                         contentType(ContentType.Application.Json)
                         authHeaders(kind, apiKey).forEach { (name, value) -> header(name, value) }
@@ -1196,7 +1197,17 @@ class LlmClient(
                     }
                 val body = response.bodyAsText()
                 response.status.isSuccess() to body
-            }.getOrElse { false to it.message.orEmpty() }
+            }
+            lastResult = attemptResult.getOrElse { error ->
+                // 探测失败以前只回一句 message；补一条结构化事件（阶段 + 原因 + 是否还会重试）
+                DiagnosticsSink.recordFailure(
+                    stage = "llm.capability_probe",
+                    error = error,
+                    retrying = attempt < 2,
+                    details = mapOf("provider" to kind.name, "attempt" to (attempt + 1).toString()),
+                )
+                false to error.message.orEmpty()
+            }
             if (lastResult.first || !isRateLimitBody(lastResult.second)) return lastResult
         }
         return lastResult

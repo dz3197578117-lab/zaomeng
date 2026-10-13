@@ -16,6 +16,9 @@ class AndroidServerPlatform(
 ) : ServerPlatform {
     private val appContext = context.applicationContext
 
+    /** 平台对象在 startKoin 时创建，与进程启动几乎同时，用它近似进程运行时长。 */
+    private val startedAtMillis = System.currentTimeMillis()
+
     override val dataRoot: Path =
         File(appContext.filesDir, "zaomeng").toOkioPath()
 
@@ -38,6 +41,9 @@ class AndroidServerPlatform(
      * 即便 install 还没跑到，[AndroidRuntimeLog.snapshot] 也会走一次性 logcat 兜底。
      */
     override fun runtimeLogSource(): RuntimeLogSource = AndroidRuntimeLog
+
+    override fun processUptimeMillis(): Long =
+        (System.currentTimeMillis() - startedAtMillis).coerceAtLeast(0L)
 }
 
 internal fun File.toOkioPath(): Path = absolutePath.toPath()

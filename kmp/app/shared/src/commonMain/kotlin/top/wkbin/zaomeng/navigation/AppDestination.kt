@@ -50,6 +50,15 @@ data object AppSupportSettingsDestination : NavKey
 @Serializable
 data object RuntimeLogDestination : NavKey
 
+/**
+ * 运行诊断页：问题捕获（崩溃/ANR/进程死因/结构化事件）、启动自检、现场元信息、
+ * 模型连通性、应用内悬浮窗开关与诊断导出。
+ *
+ * 与「运行日志」页职责分开：常规日志采集的启停与清除在 [RuntimeLogDestination]。
+ */
+@Serializable
+data object RuntimeDiagnosticsDestination : NavKey
+
 @Serializable
 data object AppUpdateDestination : NavKey
 

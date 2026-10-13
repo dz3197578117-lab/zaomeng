@@ -22,6 +22,9 @@ import top.wkbin.zaomeng.data.api.PluginPackageInspectionDto
 import top.wkbin.zaomeng.data.api.PluginBuilderValidationDto
 import top.wkbin.zaomeng.data.api.PluginDraft
 import top.wkbin.zaomeng.data.api.PluginTemporaryNpcGeneratorResponse
+import top.wkbin.zaomeng.data.api.DiagnosticsOverviewDto
+import top.wkbin.zaomeng.data.api.RuntimeCaptureStateDto
+import top.wkbin.zaomeng.data.api.RuntimeLogClearResultDto
 import top.wkbin.zaomeng.data.api.RuntimeLogDto
 import top.wkbin.zaomeng.data.api.SaveModelSettingsRequest
 import top.wkbin.zaomeng.data.api.TestModelSettingsRequest
@@ -74,6 +77,26 @@ interface DiagnosticsRepository {
      * @param maxLines 期望行数，服务端会夹紧到自己的上限。
      */
     suspend fun runtimeLog(maxLines: Int): RuntimeLogDto
+
+    /** 「运行诊断」概览：自检 + 可读问题清单 + 事件统计 + 模型连通性（不含日志正文）。 */
+    suspend fun overview(): DiagnosticsOverviewDto
+
+    /** 读取采集开关状态（不拉日志正文，轻量）。 */
+    suspend fun captureState(): RuntimeCaptureStateDto
+
+    /**
+     * 启停「持续把日志写入日志文件」。
+     *
+     * 服务端侧幂等：重复/并发点击不会重复启停，也不会写坏日志文件；关闭不清除已采集内容。
+     */
+    suspend fun setCaptureEnabled(enabled: Boolean): RuntimeCaptureStateDto
+
+    /**
+     * 清除已采集的运行日志与崩溃/卡顿记录。
+     *
+     * 只清日志，不触碰书卷、会话、记忆、模型档案等任何业务数据；重复调用安全。
+     */
+    suspend fun clearRuntimeLog(): RuntimeLogClearResultDto
 }
 
 interface PluginRepository {

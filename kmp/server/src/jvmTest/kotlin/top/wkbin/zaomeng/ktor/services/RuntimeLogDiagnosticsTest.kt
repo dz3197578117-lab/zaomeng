@@ -56,7 +56,7 @@ class RuntimeLogDiagnosticsTest {
 
         val report = serviceWith(source).buildDiagnosticsReport()
 
-        assertEquals(3, report.schemaVersion, "内嵌运行日志属于 schemaVersion 3")
+        assertEquals(4, report.schemaVersion, "schemaVersion 4 起内嵌运行日志并带现场元信息/统计")
         assertEquals(RuntimeLogDto.SOURCE_LOGCAT_FILE, report.runtimeLog.source)
         assertTrue(report.runtimeLog.available)
         assertEquals(42L, report.runtimeLog.totalLines)

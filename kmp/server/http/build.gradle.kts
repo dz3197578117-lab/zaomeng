@@ -22,7 +22,9 @@ val httpVersionDir = layout.buildDirectory.dir("generated/appVersion")
 val generateHttpAppVersion by tasks.registering {
     val outputDir = httpVersionDir
     val versionName = providers.gradleProperty("zaomeng.versionName")
+    val versionCode = providers.gradleProperty("zaomeng.versionCode")
     inputs.property("versionName", versionName)
+    inputs.property("versionCode", versionCode)
     outputs.dir(outputDir)
     doLast {
         val packageDir = outputDir.get().asFile.resolve("top/wkbin/zaomeng/ktor")
@@ -30,11 +32,16 @@ val generateHttpAppVersion by tasks.registering {
         packageDir.resolve("GeneratedAppVersion.kt").writeText(
             """
             |// 由 :server:http 的 generateHttpAppVersion 任务生成，请勿手改。
-            |// 来源：kmp/gradle.properties 的 zaomeng.versionName。
+            |// 来源：kmp/gradle.properties 的 zaomeng.versionName / zaomeng.versionCode。
             |package top.wkbin.zaomeng.ktor
             |
-            |internal object GeneratedAppVersion {
+            |/**
+            | * 构建期生成的版本号。公开是为了让 :server 的「版本与现场元信息」
+            | * 复用同一份，而不是再抄一遍版本号或再生成一份。
+            | */
+            |object GeneratedAppVersion {
             |    const val VERSION_NAME = "${versionName.get()}"
+            |    const val VERSION_CODE = ${versionCode.get()}
             |}
             |
             """.trimMargin(),
