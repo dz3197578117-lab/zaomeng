@@ -105,7 +105,8 @@ class LlmClient(
         const val CONTENT_REJECTED_CATEGORY = "dialogue.content_rejected"
 
         /**
-         * 上游错误体里的**内容审核措辞**（全部小写；英文按词边界、中文按子串匹配）。
+         * 上游错误体里的**内容审核措辞**（全部小写；单个英文单词按词边界、短语与中文按子串匹配，
+         * 见 [String.containsModerationMarker]）。
          *
          * ⚠️ 用途**只有一个：如实归因** —— 把「模型提供方的内容审核拒绝」从普通请求错误里分出来，
          * 让用户知道这是**提供方策略结果、不是应用故障**。
@@ -145,8 +146,9 @@ class LlmClient(
          * 保守性来自两点，也是「不误判普通 400」的保证：
          * 1. **只认明确措辞**（[CONTENT_MODERATION_MARKERS]），不做「凡 4xx 皆审核」之类的泛化——
          *    `inference request is invalid` 不含任何词条，因此必然走普通错误路径；
-         * 2. 英文词条按**词边界**匹配：`safety` 不会命中 `safety_settings` / `safety_identifier`
-         *    这类**参数名**（参数名错误属请求形状问题，不是审核拒绝）。
+         * 2. **单词按词边界、短语按子串**（见 [String.containsModerationMarker]）：
+         *    `safety` 不会命中 `safety_settings` 这类参数名，而 `content_policy_violation`
+         *    这类带后缀写法仍能被 `content_policy` 命中。
          */
         internal fun isContentModerationRejection(body: String): Boolean {
             val text = body.trim().lowercase()
@@ -154,11 +156,21 @@ class LlmClient(
             return CONTENT_MODERATION_MARKERS.any { marker -> text.containsModerationMarker(marker) }
         }
 
-        /** 单个词条的匹配：含非 ASCII（中文）按子串，纯 ASCII 英文按词边界。 */
+        /**
+         * 单个词条的匹配。
+         *
+         * - **单个 ASCII 单词**（`safety`、`moderation`）按**词边界**：`safety` 不得命中
+         *   `safety_settings` / `safety_identifier` 这类**参数名**（参数名错误是请求形状问题，
+         *   不是审核拒绝）；
+         * - **含空格 / 下划线 / 斜杠的短语**（`content policy`、`content_policy`、`blocked by`）
+         *   本身就是足够长的标识串，直接按**子串**匹配 —— 否则 `content_policy_violation`
+         *   这种带后缀的写法会被词边界挡掉（这正是首版实现的漏判，已用真实措辞复核）；
+         * - **中文**没有词边界，按子串（`审核` 要能命中「内容安全审核未通过」）。
+         */
         private fun String.containsModerationMarker(marker: String): Boolean {
             if (marker.isEmpty()) return false
-            // 中文没有词边界，且中文词条常嵌在更长的句子里（「内容审核未通过」），只能按子串。
-            if (marker.any { it.code >= 128 }) return contains(marker)
+            val singleAsciiWord = marker.all { it.code < 128 && it.isLetterOrDigit() }
+            if (!singleAsciiWord) return contains(marker)
             var from = 0
             while (true) {
                 val index = indexOf(marker, from)

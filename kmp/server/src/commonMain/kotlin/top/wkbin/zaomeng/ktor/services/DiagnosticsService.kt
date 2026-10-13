@@ -583,6 +583,23 @@ class DiagnosticsService(
             )
         }
         events.forEach { event ->
+            // 模型提供方的内容审核拒绝：**不是应用缺陷**，单独归到 provider-policy（info 级）。
+            // 与「参数写错」类 4xx（同一条流式路径抛出的 inference request is invalid）在问题清单里
+            // 一眼可分：那条仍是 `kind=event / warning`，这条是「提供方策略拒绝（非应用故障）」。
+            // 注意**不**把它混进 KIND_EVENT：生命周期过滤只作用于 KIND_EVENT，
+            // 而这条既不该被当成故障，也绝不能因此被丢掉。
+            if (event.category == LlmClient.CONTENT_REJECTED_CATEGORY) {
+                problems += RawDiagnosticsProblem(
+                    kind = DiagnosticsProblemTaxonomy.KIND_PROVIDER_POLICY,
+                    severity = DiagnosticsProblemTaxonomy.SEVERITY_INFO,
+                    occurredAt = event.ts,
+                    title = contentRejectedTitle(event),
+                    detail = event.details.entries.joinToString("\n") { "${it.key}=${it.value}" },
+                    source = "diagnostics-event-log",
+                    signature = "${event.category}|${event.message}",
+                )
+                return@forEach
+            }
             problems += RawDiagnosticsProblem(
                 kind = DiagnosticsProblemTaxonomy.KIND_EVENT,
                 severity = DiagnosticsProblemTaxonomy.SEVERITY_WARNING,
@@ -608,6 +625,19 @@ class DiagnosticsService(
             )
         }
         return problems
+    }
+
+    /**
+     * 提供方内容审核拒绝的问题标题。
+     *
+     * 用户要求标题里必须同时读出「**提供方拒绝**」与「**非应用故障**」两层意思，
+     * 因此这里对事件消息做一次前缀兜底：事件消息本身已由
+     * [ContentRejectedException] 写成同一句话，缺前缀时才补。
+     */
+    private fun contentRejectedTitle(event: DiagnosticsEvent): String {
+        val prefix = "内容被模型提供方拒绝（非应用故障）"
+        val message = event.message.trim().ifBlank { "上游以内容审核为由拒收了本轮请求。" }
+        return if (message.startsWith(prefix)) message else "$prefix：$message"
     }
 
 

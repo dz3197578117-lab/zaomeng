@@ -311,6 +311,38 @@ class DialogueStreamService(
                     "first_model_ms=${firstModelCompletedAt - modelStartedAt}, parse_retry_ms=${parsedAt - firstModelCompletedAt}, " +
                     "commit_ms=${committedAt - parsedAt}, prompt_chars=$promptChars",
             )
+        } catch (e: ContentRejectedException) {
+            // 提供方内容审核拒绝：**不是** `dialogue.stream_error`。
+            //
+            // 用户真机上两类 400（`inference request is invalid` 与
+            // `Inappropriate input/output rejected for security reasons`）此前都落成 stream_error，
+            // 用户因此以为应用坏了。审核拒绝单独记一条更准确的类别：
+            // 「运行诊断 → 事件统计 / 问题清单」把它算作 info 级的**提供方策略拒绝**（独立分组），
+            // 而不是应用缺陷。**只记这一条**，不重复记 stream_error，否则两类又会混在一起。
+            eventLog?.record(
+                category = LlmClient.CONTENT_REJECTED_CATEGORY,
+                message = e.message ?: "内容被模型提供方拒绝（非应用故障）",
+                details = buildMap {
+                    put("error_type", e::class.simpleName.orEmpty())
+                    put("status_code", e.statusCode.toString())
+                    put("provider_kind", e.providerKind)
+                    if (e.model.isNotBlank()) put("model", e.model)
+                    // endpoint 在 LlmClient 里已去掉 query（Gemini 的 key 不会进来）；
+                    // 写入侧仍有 LogRedactor 兜底。
+                    if (e.endpoint.isNotBlank()) put("endpoint", e.endpoint)
+                    if (e.upstreamMessage.isNotBlank()) put("upstream_message", e.upstreamMessage)
+                    put("retryable", "false")
+                    put("run_id", runId)
+                    put("session_id", sessionId)
+                    put("message_kind", messageKind)
+                },
+            )
+            PlatformLog.w(
+                TAG,
+                "Dialogue turn rejected by provider content moderation " +
+                    "(model=${e.model.ifBlank { "?" }}, endpoint=${e.endpoint}, http=${e.statusCode}); not retried",
+            )
+            throw e
         } catch (e: Exception) {
             eventLog?.record(
                 category = "dialogue.stream_error",

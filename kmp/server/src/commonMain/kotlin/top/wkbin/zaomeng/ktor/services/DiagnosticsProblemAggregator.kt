@@ -25,6 +25,14 @@ object DiagnosticsProblemTaxonomy {
     const val KIND_INTENTIONAL_EXIT = "intentional-exit"
     const val KIND_SELF_CHECK = "self-check"
 
+    /**
+     * **提供方策略拒绝**（模型提供方的内容审核）：一个独立分组。
+     *
+     * 它与 [KIND_EVENT] 分开，是因为它不是应用缺陷，也不该混在「结构化事件」里
+     * 被当成故障查看：用户看到的应是「这是提供方的策略结果」，而不是「我的应用又出问题了」。
+     */
+    const val KIND_PROVIDER_POLICY = "provider-policy"
+
     const val SEVERITY_FATAL = "fatal"
     const val SEVERITY_ERROR = "error"
     const val SEVERITY_WARNING = "warning"
@@ -32,6 +40,15 @@ object DiagnosticsProblemTaxonomy {
 
     /** 正常退出的权重：永远排在清单最后。 */
     const val INTENTIONAL_PRIORITY = 0
+
+    /**
+     * 提供方策略拒绝的权重。
+     *
+     * 低于所有故障（崩溃/ANR/卡死/卡顿/视觉）、所有结构化事件与自检，
+     * 只高于「正常退出」——它**必须被看到**（用户要求计数与明细可见），
+     * 但绝不能霸占清单最前面，因为它是**提供方策略结果、不是应用缺陷**。
+     */
+    const val PROVIDER_POLICY_PRIORITY = 15
 
     /**
      * 默认排序权重。
@@ -49,6 +66,7 @@ object DiagnosticsProblemTaxonomy {
         KIND_PROCESS_EXIT -> if (severity == SEVERITY_INFO) INTENTIONAL_PRIORITY else 40
         KIND_INTENTIONAL_EXIT -> INTENTIONAL_PRIORITY
         KIND_SELF_CHECK -> 30
+        KIND_PROVIDER_POLICY -> PROVIDER_POLICY_PRIORITY
         else -> 20
     }
 
@@ -63,6 +81,7 @@ object DiagnosticsProblemTaxonomy {
         KIND_PROCESS_EXIT -> "进程死因"
         KIND_INTENTIONAL_EXIT -> "正常退出"
         KIND_SELF_CHECK -> "自检"
+        KIND_PROVIDER_POLICY -> "提供方策略拒绝（非应用故障）"
         else -> kind
     }
 
@@ -76,7 +95,9 @@ object DiagnosticsProblemTaxonomy {
      * - `dialogue.parse_retry_ok`：第一次解析失败、重试成功，属于**恢复成功**；
      *   对应的失败本身已经由 `dialogue.parse_failed` / `dialogue.stream_error` 记账。
      *
-     * 这些事件仍然保留在「最近事件 / 事件统计」里（信息不丢），只是不再算作问题。
+     * ⚠️ 这里**只放**「不是问题」的类别。`dialogue.content_rejected`（提供方内容审核拒绝）
+     * **绝不能**加进来：它是提供方策略结果，用户明确要求看到次数与明细，
+     * 只是分级为 info、归到 [KIND_PROVIDER_POLICY] 独立分组（那个分支根本不走本过滤）。
      */
     val LIFECYCLE_EVENT_CATEGORIES: Set<String> = setOf(
         "backend.ready",

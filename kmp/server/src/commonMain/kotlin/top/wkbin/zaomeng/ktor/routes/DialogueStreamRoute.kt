@@ -14,6 +14,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import top.wkbin.zaomeng.data.api.DialogueReplyRequest
+import top.wkbin.zaomeng.ktor.services.ContentRejectedException
 import top.wkbin.zaomeng.ktor.services.DialogueStreamService
 import top.wkbin.zaomeng.ktor.services.leanSession
 import top.wkbin.zaomeng.ktor.services.StorageService
@@ -92,9 +93,14 @@ fun Route.dialogueStreamRoutes(dialogueStreamService: DialogueStreamService, sto
                 // application.log（SLF4J）在 logcat 默认不可见，用 android Log 保证可排查
                 PlatformLog.e("DialogueStreamRoute", "Streaming dialogue reply failed: ${error.message}", error)
                 call.application.log.error("Streaming dialogue reply failed", error)
+                // 提供方内容审核拒绝：明确「非应用故障」，且**不可重试**（重试只会再被拒一次）。
+                // 客户端按 `retryable` 决定是否给「重试」入口，按 `message` 原样展示给用户；
+                // 该 message 由 ContentRejectedException 写成
+                // 「内容被模型提供方拒绝（非应用故障）· 模型 … · 提供方 … · 上游原文：…」。
+                val contentRejected = error is ContentRejectedException
                 writeString(SseEncoder.encodeEvent("error", buildJsonObject {
                     put("message", error.message ?: "Dialogue reply failed")
-                    put("retryable", true)
+                    put("retryable", !contentRejected)
                 }))
             }
             flush()

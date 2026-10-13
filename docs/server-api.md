@@ -216,6 +216,39 @@ URL 中的凭据一律替换为 `***`），超长行截断。
 `problems[]` 会把每条事件摊成一个 `kind=event` 的问题（按 `category + message` 归组），
 因此「反复 400」在概览页就是一条带 `×N` 的问题。
 
+##### `dialogue.content_rejected`（提供方内容审核拒绝，2.1.13 起）
+
+`llm.http_error_payload` 回答「上游拒了什么」，**不区分拒收原因**；而「因为内容审核被拒」
+和「请求参数写错」是两回事，用户真机上它们此前都显示成同一条 `dialogue.stream_error`，
+于是被误读成应用缺陷。因此 `LlmClient` 在 **4xx + 上游错误体命中内容审核措辞**时，
+改抛 `ContentRejectedException`，由 `DialogueStreamService` 记一条独立事件：
+
+| 字段 | 含义 |
+|---|---|
+| `category` | 固定 `dialogue.content_rejected` |
+| `message` | `内容被模型提供方拒绝（非应用故障）· 模型 <model> · 提供方 <openai/azure/anthropic/gemini> · <endpoint> · HTTP <code> <reason> · 上游原文：<上游审核文案>` |
+| `details.status_code` / `provider_kind` / `model` / `endpoint` / `upstream_message` | 结构化留证；`endpoint` 已去掉 query（Gemini 的 `key` 不进事件） |
+| `details.retryable` | 固定 `false` |
+
+判据是 `LlmClient.isContentModerationRejection` 里的**固定措辞表**
+（`inappropriate input/output rejected`、`content policy`、`content_policy`、`content filter`、
+`moderation`、`safety`、`blocked by`、`敏感`、`违规`、`审核`、`不合规`、`内容安全`），
+英文词条按词边界匹配（`safety` 不命中 `safety_settings`），中文按子串。
+`inference request is invalid` 不含任何词条，因此**不会**被归入本类别——它仍走普通错误路径。
+
+该事件在诊断中的呈现：
+
+- `eventStats` 里单独一行 `dialogue.content_rejected × N`（默认精简档也有）；
+- `problems[]` 里归为**独立分类** `kind=provider-policy`、`severity=info`、`priority=15`
+  （低于全部故障/事件/自检，只高于正常退出），标题即上面那句
+  「内容被模型提供方拒绝（非应用故障）…」；
+- **不**进入 `LIFECYCLE_EVENT_CATEGORIES` 过滤（该过滤只作用于 `kind=event`），用户看得到。
+
+**审核拒绝不重试**：`LlmClient.retryableStatus` 显式把它排除（内容不变，重试只会再被拒一次），
+SSE `error` 事件随之返回 `"retryable": false`。
+
+**边界**：本类别**只用于如实归因**。应用不会因为命中它而改写提示词、重写内容或做编码变形去绕开审核。
+
 **API Key / 令牌 / 签名口令仍然绝不记录**：`DiagnosticsEventLog.record` 与
 `recordPayload` 在**写入侧**就对每个值执行 `LogRedactor.redactLine`（而不只是在导出时），
 因此即使调用方误传，密钥也不会落盘。
@@ -275,7 +308,7 @@ URL 中的凭据一律替换为 `***`），超长行截断。
 
 | 字段 | 含义 |
 |---|---|
-| `kind` | `crash`（含未捕获异常与协程未捕获异常）、`anr`、`freeze`（卡死/长任务）、`jank`（卡顿）、`visual`（视觉信号）、`event`（结构化事件）、`process-exit`、`intentional-exit`（正常退出）、`self-check` |
+| `kind` | `crash`（含未捕获异常与协程未捕获异常）、`anr`、`freeze`（卡死/长任务）、`jank`（卡顿）、`visual`（视觉信号）、`event`（结构化事件）、`provider-policy`（模型提供方内容审核拒绝，**非应用故障**）、`process-exit`、`intentional-exit`（正常退出）、`self-check` |
 | `severity` | `fatal` / `error` / `warning` / `info`；`info` 表示正常退出（被清理/被更新/用户主动退出），不计入崩溃 |
 | `occurredAt` | 最近一次发生时间（自检项为空字符串） |
 | `title` | 人可读摘要（已截断）。进程退出项直接带可读归因与系统原始 `description` |
@@ -284,7 +317,7 @@ URL 中的凭据一律替换为 `***`），超长行截断。
 | `fingerprint` | **分组稳定键**（`类型#FNV-1a`）。崩溃取规范化堆栈（去掉行号/内存地址），事件取 `类别 + 规范化消息`（抹掉 UUID/十六进制/数字） |
 | `count` | 该组累计发生次数（≥1）。同堆栈/同签名归为一组 |
 | `firstAt` / `lastAt` | 该组首次 / 最近一次发生时间 |
-| `priority` | 默认排序权重：崩溃 100 > ANR 90 > 卡死/长任务 80 > 卡顿 70 > 视觉信号 60 > 结构化事件 50 > 进程死因 40 > 自检 30 > 提示 20；**正常退出恒为 0** |
+| `priority` | 默认排序权重：崩溃 100 > ANR 90 > 卡死/长任务 80 > 卡顿 70 > 视觉信号 60 > 结构化事件 50 > 进程死因 40 > 自检 30 > 提示 20 > **提供方策略拒绝 15**；**正常退出恒为 0** |
 | `breadcrumbs` | 该问题**发生之前**的上下文（见下），时间正序，最多 12 条 |
 
 `problems[]` 的默认排序为 `priority` 降序 → `lastAt` 降序 → `fingerprint` 升序（末项保证刷新后顺序稳定）。
@@ -755,7 +788,7 @@ data: {"index":0,"speaker":"林黛玉","role":"character","field":"message","tex
 | `reset` | `message` | 丢弃此前增量并重置可见内容 |
 | `delta` | `index`, `speaker`, `role`, `field`, `text` | 某条角色响应的字段增量；`field` 常为 `message` 或 `inner_thought` |
 | `complete` | `session`, `replayed`, `transcript_count`, 可选 `appended_transcript` | 生成及持久化完成 |
-| `error` | `message`, `retryable` | 流中失败；HTTP 状态通常已是 `200`，应按事件处理 |
+| `error` | `message`, `retryable` | 流中失败；HTTP 状态通常已是 `200`，应按事件处理。**模型提供方内容审核拒绝**时 `message` 为「内容被模型提供方拒绝（非应用故障）…」且 `retryable=false`（重试结果不会变，白费额度） |
 
 `complete` 规则：
 

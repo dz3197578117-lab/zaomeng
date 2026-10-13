@@ -6,6 +6,41 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.1.14] - 未发布
+
+### 新增
+
+- **把「模型提供方内容审核拒绝」从普通请求错误里分出来**：此前所有失败都报成
+  `dialogue.stream_error`，用户无法分辨「我的请求有问题」与「内容被提供方按策略拒绝」。
+  现在命中审核措辞的上游错误会单独归为 `dialogue.content_rejected`，问题清单里是独立分组
+  （`kind=provider-policy`，信息级，**不排在崩溃/缺陷前面**），标题写明
+  「**内容被模型提供方拒绝（非应用故障）**」并带上提供方、模型、端点与上游原文。
+  聊天页显示该文案且**不出现「重试」按钮**（内容不变，重试只会再被拒一次）。
+- 判据保守可解释：只认明确审核措辞（`Inappropriate input/output rejected`、`content policy`、
+  `moderation`、`safety`、`敏感/违规/审核/不合规/内容安全` 等）；
+  单个英文单词按**词边界**匹配，所以 `safety_settings` 这类**参数名**不会被误判成审核。
+  经编译产物实测：真机那两条原文分别走**不同**路径——
+  `Inappropriate input/output rejected for security reasons` → 审核拒绝；
+  `inference request is invalid` → 普通错误（仍记 4xx 留证）。
+
+### 修复
+
+- **修正 2.1.13 里被误提交的半成品**：`1de1d65`（CHANGELOG 标日期的提交）因误用 `git add -A`
+  扫进了当时正在编写的 `LlmClient.kt`（首版分类器 + 新异常类型），导致 2.1.13 的发布包含
+  「异常会被抛出、但没有专门的捕获路径」的**半接线**状态——该功能在 2.1.13 中不产生可见效果。
+  本版补齐捕获侧、问题分组、中文标签与文档，使其真正生效。
+  **已发布的 `v2.1.13` tag 未改动**（不重写已发布历史）。
+- 分类用新异常携带 `statusCode` / `providerKind` / `endpoint` / `model` / `upstreamMessage`；
+  端点先过 `sanitizeEndpoint`（Gemini 的 key 在 query 里，绝不进异常与事件）。
+- 重试逻辑显式排除该异常（原 400 本就不重试，现加显式分支并注释原因），
+  并给超时文案翻译加保护，避免准确文案被改写成「模型响应超时」。
+
+### 已知限制
+
+- 探针 `ChatGenerationProbe` 与 `RuleEngineProbe` 只统计 `dialogue.stream_error`，
+  审核拒绝不再计入——这是「不再混为一谈」的必然结果，本版未改探针判定逻辑。
+- 非流式路径（蒸馏/章节/建议等）也会抛同一异常且文案一致，但未逐个审计各调用方对错误的包装。
+
 ## [2.1.13] - 2026-10-13
 
 ### 新增
@@ -427,7 +462,8 @@
 早期版本（含从上游造梦 2.0 继续改动的部分）逐文件清单见
 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)。
 
-[2.1.13]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.12...HEAD
+[2.1.14]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.13...HEAD
+[2.1.13]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.12...v2.1.13
 [2.1.12]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.11...v2.1.12
 [2.1.11]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.10...v2.1.11
 [2.1.10]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.9...v2.1.10

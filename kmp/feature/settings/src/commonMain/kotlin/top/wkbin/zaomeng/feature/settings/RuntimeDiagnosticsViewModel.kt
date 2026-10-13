@@ -261,5 +261,7 @@ internal fun problemKindLabel(kind: String): String = when (kind) {
     "intentional-exit" -> "正常退出"
     "event" -> "结构化事件"
     "self-check" -> "自检"
+    // 提供方内容审核拒绝：独立分组，文案与服务端 kindLabel 一致。
+    "provider-policy" -> "提供方策略拒绝（非应用故障）"
     else -> kind
 }
