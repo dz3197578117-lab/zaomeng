@@ -244,3 +244,39 @@ tag 推送后 [`.github/workflows/release.yml`](../.github/workflows/release.yml
 自动构建、校验签名指纹与版本号、上传 Release 附件。
 
 **不需要**本地构建 APK 再提交——`dist/*.apk` 已移出版本控制。
+
+## 七、仓库 About（不在仓库里，换机器要重建）
+
+GitHub 仓库页顶部的 **About 区（描述 / 主页 / topics）不随仓库同步**——它只存在 GitHub 上，
+换机器 clone 不会带过来。当前设定的值如下，需要时用命令重建。
+
+描述：
+
+> 造梦 — 把中文小说蒸馏成可对话的人物。KMP + Compose Multiplatform：多角色对话、逐章人设弧线与时间线推进、剧情导演与第四面墙、插件系统、端侧 llama.cpp 推理（GGUF），可完全离线运行
+
+主页：<https://dz3197578117-lab.github.io/zaomeng/>
+
+topics：`android` `compose-multiplatform` `gguf` `kotlin-multiplatform` `llama-cpp`
+`local-llm` `novel` `offline` `persona` `roleplay`
+
+重建命令（需要一个有 `repo` 权限的令牌）：
+
+```bash
+REPO=dz3197578117-lab/zaomeng
+TOKEN=<有 repo 权限的令牌>
+
+curl -sS -X PATCH -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/$REPO" \
+  -d '{"description":"造梦 — 把中文小说蒸馏成可对话的人物。KMP + Compose Multiplatform：多角色对话、逐章人设弧线与时间线推进、剧情导演与第四面墙、插件系统、端侧 llama.cpp 推理（GGUF），可完全离线运行","homepage":"https://dz3197578117-lab.github.io/zaomeng/"}' >/dev/null
+
+curl -sS -X PUT -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/repos/$REPO/topics" \
+  -d '{"names":["android","compose-multiplatform","gguf","kotlin-multiplatform","llama-cpp","local-llm","novel","offline","persona","roleplay"]}' >/dev/null
+```
+
+两个我实际踩到的坑：
+
+- **写操作必须带 `Authorization` 头**。读仓库信息是公开接口、不带令牌也能成功，
+  所以只测「读」会误以为令牌没问题，直到 PATCH 返回 401 才发现。
+- **`topics` 不能用 PATCH 设**，要用专门的 `PUT /repos/{owner}/{repo}/topics`
+  （用 PATCH 传 `topics` 会被静默忽略，返回体里 topics 仍是空）。
