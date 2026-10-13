@@ -84,7 +84,9 @@ import top.wkbin.zaomeng.feature.redistill.RedistillViewModel
 import top.wkbin.zaomeng.feature.rundetail.RunDetailScreen
 import top.wkbin.zaomeng.feature.rundetail.RunDetailViewModel
 import top.wkbin.zaomeng.data.RuntimeCaptureStateStore
+import top.wkbin.zaomeng.platform.ClientDiagnostics
 import top.wkbin.zaomeng.platform.PlatformBackHandler
+import top.wkbin.zaomeng.ui.diagnostics.diagnosticsVisualProbe
 /**
  * nav3 导航宿主：按窗口宽度自适应布局。
  *
@@ -127,6 +129,14 @@ fun ZaomengNavHost(
         }
     }
 
+    // R6：导航历史进操作轨迹（环形缓冲，随诊断导出）。
+    // 放在这里而不是每个页面里：新增页面**不改任何诊断代码**就会自动出现在轨迹中。
+    // 只记录，不参与导航决策。
+    val currentDestination = backStack.lastOrNull()
+    LaunchedEffect(currentDestination) {
+        currentDestination?.let { ClientDiagnostics.recordNavigation(destinationLabel(it)) }
+    }
+
     val windowSizeClass = currentWindowAdaptiveInfoV2().windowSizeClass
     val wideLayout = windowSizeClass.isWidthAtLeastBreakpoint(WindowSizeClass.WIDTH_DP_MEDIUM_LOWER_BOUND)
 
@@ -154,16 +164,18 @@ fun ZaomengNavHost(
     val navEntryProvider = entryProvider<NavKey> {
             entry(BookshelfDestination) {
                 val viewModel: BookshelfViewModel = koinViewModel()
-                BookshelfScreen(
-                    viewModel = viewModel,
-                    showTopBarActions = !wideLayout,
-                    onImport = { backStack.add(ImportBookDestination) },
-                    onOpenSettings = { backStack.add(ModelSettingsDestination) },
-                    onOpenCards = { backStack.add(CardLibraryDestination) },
-                    onOpenSessions = { backStack.add(SessionsDestination()) },
-                    onOpenCrossover = { backStack.add(CrossoverDestination) },
-                    onOpenRun = { runId -> backStack.add(RunDetailDestination(runId)) },
-                )
+                PageRecompositionProbe("书卷架") {
+                    BookshelfScreen(
+                        viewModel = viewModel,
+                        showTopBarActions = !wideLayout,
+                        onImport = { backStack.add(ImportBookDestination) },
+                        onOpenSettings = { backStack.add(ModelSettingsDestination) },
+                        onOpenCards = { backStack.add(CardLibraryDestination) },
+                        onOpenSessions = { backStack.add(SessionsDestination()) },
+                        onOpenCrossover = { backStack.add(CrossoverDestination) },
+                        onOpenRun = { runId -> backStack.add(RunDetailDestination(runId)) },
+                    )
+                }
             }
             entry(ImportBookDestination) {
                 val viewModel: ImportBookViewModel = koinViewModel()
@@ -249,17 +261,21 @@ fun ZaomengNavHost(
             }
             entry(RuntimeDiagnosticsDestination) {
                 val viewModel: RuntimeDiagnosticsViewModel = koinViewModel()
-                RuntimeDiagnosticsScreen(
-                    viewModel = viewModel,
-                    onBack = popBack,
-                )
+                PageRecompositionProbe("运行诊断") {
+                    RuntimeDiagnosticsScreen(
+                        viewModel = viewModel,
+                        onBack = popBack,
+                    )
+                }
             }
             entry(RuntimeLogDestination) {
                 val viewModel: RuntimeLogViewModel = koinViewModel()
-                RuntimeLogScreen(
-                    viewModel = viewModel,
-                    onBack = popBack,
-                )
+                PageRecompositionProbe("运行日志") {
+                    RuntimeLogScreen(
+                        viewModel = viewModel,
+                        onBack = popBack,
+                    )
+                }
             }
             entry(AppUpdateDestination) {
                 AppUpdateScreen(
@@ -336,26 +352,28 @@ fun ZaomengNavHost(
             addEntryProvider(clazz = ChatDestination::class) { destination ->
                 val viewModel: ChatViewModel =
                     koinViewModel(parameters = { parametersOf(destination.runId, destination.sessionId) })
-                ChatScreen(
-                    viewModel = viewModel,
-                    runId = destination.runId,
-                    sessionId = destination.sessionId,
-                    onBack = popBack,
-                    onOpenBranch = { runId, sessionId ->
-                        backStack.add(ChatDestination(runId, sessionId))
-                    },
-                    onOpenStoryRecap = {
-                        backStack.add(StoryRecapDestination(destination.runId, destination.sessionId))
-                    },
-                    onSelectSession = { newSessionId ->
-                        if (newSessionId != destination.sessionId) {
-                            // 桌面端主从布局：原地替换当前聊天条目，per-entry ViewModelStore
-                            // 会重建 VM 并加载新会话
-                            backStack.removeLastOrNull()
-                            backStack.add(ChatDestination(destination.runId, newSessionId))
-                        }
-                    },
-                )
+                PageRecompositionProbe("对话") {
+                    ChatScreen(
+                        viewModel = viewModel,
+                        runId = destination.runId,
+                        sessionId = destination.sessionId,
+                        onBack = popBack,
+                        onOpenBranch = { runId, sessionId ->
+                            backStack.add(ChatDestination(runId, sessionId))
+                        },
+                        onOpenStoryRecap = {
+                            backStack.add(StoryRecapDestination(destination.runId, destination.sessionId))
+                        },
+                        onSelectSession = { newSessionId ->
+                            if (newSessionId != destination.sessionId) {
+                                // 桌面端主从布局：原地替换当前聊天条目，per-entry ViewModelStore
+                                // 会重建 VM 并加载新会话
+                                backStack.removeLastOrNull()
+                                backStack.add(ChatDestination(destination.runId, newSessionId))
+                            }
+                        },
+                    )
+                }
             }
             addEntryProvider(clazz = ChaptersDestination::class) { destination ->
                 val viewModel: ChaptersViewModel =
@@ -505,4 +523,27 @@ private fun NavKey.isTopLevelDestination(): Boolean = when (this) {
 
     is SessionsDestination -> runId.isBlank()
     else -> false
+}
+
+/**
+ * 页面级视觉探针（R7）：重组计数 + 布局跳动 + 重绘计数。
+ *
+ * 重绘那一半（`diagnosticsVisualProbe` 里的 `diagnosticsRedrawProbe`）补的是
+ * 「组合没变、但绘制每帧都在发生」——而后者恰恰是闪烁与掉帧最常见的根因，
+ * 重组计数对它完全无感。
+ *
+ * 原文档：
+ *
+ * 为什么放在导航层：新增页面**不改任何诊断代码**就能被计数（只要它走到这个包装里），
+ * 而且不需要给每个页面都加 Modifier。
+ *
+ * 为什么用 lambda 参数而不是「直接调用一个无参 @Composable」：无参 Composable 是可跳过的，
+ * 父级重组时它会被跳过，计数就永远是 1——包一层 lambda 参数才能让每次父级重组都真的执行到。
+ *
+ * 只记录，不改变任何布局与行为：它只发出 [content]。
+ */
+@Composable
+private fun PageRecompositionProbe(name: String, content: @Composable () -> Unit) {
+    ClientDiagnostics.recordRecomposition(name)
+    Box(Modifier.fillMaxSize().diagnosticsVisualProbe(name)) { content() }
 }

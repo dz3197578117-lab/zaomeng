@@ -7,6 +7,7 @@ import okio.Sink
 import top.wkbin.zaomeng.backend.BackendState
 import top.wkbin.zaomeng.data.api.DialogueSessionDto
 import top.wkbin.zaomeng.data.api.DownloadOnDeviceModelRequest
+import top.wkbin.zaomeng.data.api.FeatureProbeReportDto
 import top.wkbin.zaomeng.data.api.ModelCapabilityReportDto
 import top.wkbin.zaomeng.data.api.ModelConnectionTestDto
 import top.wkbin.zaomeng.data.api.ModelListResponseDto
@@ -69,7 +70,14 @@ interface ModelSettingsRepository {
 }
 
 interface DiagnosticsRepository {
-    suspend fun exportDiagnostics(destination: Sink): Long
+    /**
+     * 导出诊断 JSON。
+     *
+     * @param tier 导出分级（R3）：`compact`（默认，概览 + 问题摘要 + 探针结论）或
+     *   `full`（额外含运行日志、完整堆栈与事件明细）。默认必须是精简档——
+     *   几十 MB 的导出在真机上根本传不出去。
+     */
+    suspend fun exportDiagnostics(destination: Sink, tier: String = DiagnosticsExportTier.COMPACT): Long
 
     /**
      * 拉取运行日志快照（服务端已脱敏），供应用内「运行日志」页展示与单独导出。
@@ -80,6 +88,14 @@ interface DiagnosticsRepository {
 
     /** 「运行诊断」概览：自检 + 可读问题清单 + 事件统计 + 模型连通性（不含日志正文）。 */
     suspend fun overview(): DiagnosticsOverviewDto
+
+    /**
+     * 重新执行功能自检探针（显式「重新自检」）。
+     *
+     * 概览里的探针结果是**上一轮快照**，且不受运行日志采集开关影响；
+     * 只有本调用会真正重跑探针。
+     */
+    suspend fun refreshFeatureProbes(): FeatureProbeReportDto
 
     /** 读取采集开关状态（不拉日志正文，轻量）。 */
     suspend fun captureState(): RuntimeCaptureStateDto
@@ -139,4 +155,18 @@ interface PluginRepository {
         enhancerId: String,
         enabled: Boolean,
     ): DialogueSessionDto
+}
+
+/**
+ * 导出分级常量（R3）。
+ *
+ * 放在契约层而不是设置页：服务端、客户端与导出文件里的 `tier` 字段必须用同一批字面量，
+ * 否则「导出的是哪一档」会出现三种说法。
+ */
+object DiagnosticsExportTier {
+    /** 精简：概览 + 问题清单摘要 + 探针结论。默认。 */
+    const val COMPACT = "compact"
+
+    /** 完整：额外包含运行日志、完整堆栈、完整事件明细与完整载荷。 */
+    const val FULL = "full"
 }

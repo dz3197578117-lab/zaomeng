@@ -116,22 +116,40 @@ val modelCatalogs = listOf(
     ),
     // ---------------- 国内 OpenAI 兼容（补齐） ----------------
     // 商汤日日新 SenseNova 平台（OpenAI 兼容，Bearer 鉴权）。
-    // 模型清单以 GET https://token.sensenova.cn/v1/models 实测为准（2026-10-11）：
-    // 接口共返回 7 个模型，其中 sensenova-u1.5-lite 的 output_modalities=image（图片生成），
-    // 不能用于对话/蒸馏，故不列入；其余 6 个均为对话模型（deepseek-v4.1-flash 与 deepseek-flash 是不同模型）。
-    // 均为推理模型，默认开启思考；造梦蒸馏会自动以 reasoning_effort=none 关闭思考。
+    // 依据：官方文档《SenseNova AI API 文档》（https://platform.sensenova.cn/docs，快照 2026-10-05；
+    // 仓库副本 docs/notes/sensenova-api-reference.txt）。行号均指该文档。
+    //  - Base URL 全篇只有 https://token.sensenova.cn/v1（36 行；快速开始 44 行；AI 工具接入 3926 行）。
+    //  - 模型总览（135-163 行）共 7 个 model id，其中 2 个是图片创作模型：sensenova-u1.5-lite（143 行）、
+    //    sensenova-u1.5-fast（146 行）。它们走 /v1/images/generations 与 /v1/images/edits（700-706、951-957 行），
+    //    不是 Chat Completions；文档 3960-3961 行明确"U 系列模型不支持作为对话模型使用"——故不列入对话清单。
+    //    其余 5 个为对话模型，全部列在下面（顺序同模型总览）。
+    //  - "DeepSeek V4.1 Flash" 的官方 model id 是 deepseek-flash（152 行），不存在 deepseek-v4.1-flash：
+    //    后者是早期按 /v1/models 实测记录（docs/notes/sensenova-models.json）写进来的，与官方文档不符，已移除。
+    //  - 上下文长度：sensenova-6.8-flash-lite 为 256K（/models 示例 context_length=262144，2907 行；
+    //    另见 4140 行 256000），其余 4 个均为 1M（1460-1461、1891、2297、2743 行）。
+    //  - 多模态/图片输入：sensenova-6.8-flash-lite 支持公网 URL 与 Base64 图片（214-221 行）；
+    //    deepseek-flash 支持 JPEG/PNG/GIF/WebP 图片（1628-1646 行）；kimi-k3 支持图片但仅 Base64、不支持公网 URL
+    //    （2469-2473、2768-2771 行）；deepseek-v4-flash 与 glm-5.2 章节没有图片输入。
+    //  - 5 个模型都是推理模型，默认开启思考（thinking 默认 enabled），非流式思考字段为 reasoning
+    //    （6.8-flash-lite，533 行）或 reasoning_content（其余，1451、1882、2288、2734 行）。
+    //    造梦在设置 reasoning_effort=off 时改发 "none" 关闭思考（LlmClient.resolveReasoningParams）。
     ModelCatalog(
         "sensetime",
         "商汤 SenseNova",
         "openai-compatible",
         "https://token.sensenova.cn/v1",
         listOf(
+            // reasoning_effort 允许值逐模型不同（下面是各模型章节的原文取值范围）：
+            //   sensenova-6.8-flash-lite：low/medium/high/max，默认 high；none 可关闭思考（491-493、587-589 行）
+            //   deepseek-v4-flash：low/medium/high/max，默认 high；none 可关闭思考（1428-1430、1476-1478 行）
+            //   deepseek-flash：原生 none/low/high/max，默认 high；兼容映射 minimal→low、medium/xhigh→high、ultra→max（1854-1861、1922-1929 行）
+            //   glm-5.2：max/xhigh/high/medium/low/minimal/none，默认 max；thinking.type=disabled 会让请求失败（2265-2267、2305-2307、2413-2415 行）
+            //   kimi-k3：low/medium/high/max，默认 max；none 可关闭推理（2693-2694、2711-2713、2760-2761 行）
             ModelChoice("sensenova-6.8-flash-lite", "SenseNova 6.8 Flash-Lite（多模态·256K）"),
-            ModelChoice("deepseek-v4.1-flash", "DeepSeek V4.1 Flash（1M）"),
             ModelChoice("deepseek-v4-flash", "DeepSeek V4 Flash（1M）"),
-            ModelChoice("deepseek-flash", "DeepSeek Flash（1M）"),
+            ModelChoice("deepseek-flash", "DeepSeek V4.1 Flash（1M·多模态）"),
             ModelChoice("glm-5.2", "GLM-5.2（1M 上下文）"),
-            ModelChoice("kimi-k3", "Kimi K3（1M）")
+            ModelChoice("kimi-k3", "Kimi K3（1M·图片仅 Base64）")
         ),
     ),
     ModelCatalog(
@@ -201,6 +219,16 @@ data class SettingsUiState(
     val configured: Boolean = false,
     val message: String = "",
     val error: String = "",
+    /**
+     * 「运行诊断」入口行的问题计数（R3）。
+     *
+     * 只放**计数**，不把整份概览塞进设置页状态：入口行只需要一个数字，
+     * 详情在诊断页里看。`null` 表示还没读到（例如服务端未就绪），
+     * 此时入口行显示「查看」而不是显示 0——把「没读到」显示成 0 会让人以为一切正常。
+     */
+    val diagnosticsProblemGroups: Int? = null,
+    val diagnosticsProblemTotal: Int? = null,
+    val diagnosticsProbeFails: Int? = null,
 )
 
 class SettingsViewModel(
@@ -212,6 +240,29 @@ class SettingsViewModel(
 
     init {
         load()
+        // 入口行的问题计数与模型配置无关：并行拉一次概览，失败不影响任何业务。
+        refreshDiagnosticsSummary()
+    }
+
+    /**
+     * 刷新「运行诊断」入口行的问题计数（R3）。
+     *
+     * 与诊断页共用同一个概览端点，口径天然一致；失败时保持 `null`（显示「查看」），
+     * **不显示 0**——「没读到」和「没有问题」必须能区分。
+     */
+    fun refreshDiagnosticsSummary() {
+        viewModelScope.launch {
+            runCatching { diagnostics.overview() }
+                .onSuccess { overview ->
+                    mutableState.update {
+                        it.copy(
+                            diagnosticsProblemGroups = overview.problemGroupCount,
+                            diagnosticsProblemTotal = overview.problemTotalCount,
+                            diagnosticsProbeFails = overview.probeFailCount,
+                        )
+                    }
+                }
+        }
     }
 
     fun load() = launchRequest(

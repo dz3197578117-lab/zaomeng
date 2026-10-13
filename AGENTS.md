@@ -58,7 +58,15 @@
 - 流式链路必须从模型响应体到应用 UI 全程增量读取。禁止使用会把响应缓存到 EOF 的调用方式，也不要为了视觉效果伪造模型打字速度。
 - 第一个可见 `message` 增量应立即进入 UI；后续可做很短的帧级合批以减少 Compose 重组。
 - 解析失败重试可以保留，但不能用纯文本兜底掩盖多人场景的结构错误。
-- 不要记录完整模型输出、完整提示词、密钥或超长原文。诊断日志应使用长度限制，并记录阶段耗时、TTFT、重试次数等指标。
+- 诊断日志默认使用长度限制，并记录阶段耗时、TTFT、重试次数等指标。
+
+**例外（用户明确要求，2.1.13 起）**：诊断允许在**最终失败**等必要场景记录**完整提示词与完整模型输出**，
+按**工程上限**截断（单字段上限 + 文件字节上限 + 超限轮转），用于事后复盘生成质量；
+完整载荷**只在 `tier=full` 的导出**中出现，默认 `compact` 档不含。
+
+**无论何时都不得记录密钥**：API Key / 令牌 / 签名口令**绝不**进入日志、事件、导出或测试快照——
+这是**凭证安全**，不是隐私偏好（诊断文件是要发给开发者看的）。
+脱敏必须发生在**写入侧**（每个 detail 值过 `LogRedactor`），不能只依赖导出时遮蔽。
 
 ## 提示词同步
 
@@ -79,30 +87,30 @@
 
 ## 验证命令
 
-命令默认从 `kmp/` 目录运行。Windows 使用 `gradlew.bat`，Unix/macOS 使用 `./gradlew`。需要 JDK 17+，CI 使用 JDK 21。
+命令默认从 `kmp/` 目录运行，使用 `./gradlew`（本项目不再维护 Windows 构建）。需要 JDK 17+，CI 使用 JDK 21。
 
 快速验证服务端改动（含子模块）：
 
-```powershell
-.\gradlew.bat :server:storage:jvmTest :server:llm:jvmTest :server:http:jvmTest :server:jvmTest :server:compileKotlinJvm :server:compileAndroidMain
+```bash
+./gradlew :server:storage:jvmTest :server:llm:jvmTest :server:http:jvmTest :server:jvmTest :server:compileKotlinJvm :server:compileAndroidMain
 ```
 
 共享应用改动（涉及独立 feature 模块时追加对应 `:feature:*:jvmTest`）：
 
-```powershell
-.\gradlew.bat :app:shared:jvmTest :app:shared:compileKotlinJvm :app:shared:compileAndroidMain
+```bash
+./gradlew :app:shared:jvmTest :app:shared:compileKotlinJvm :app:shared:compileAndroidMain
 ```
 
 Android 完整检查：
 
-```powershell
-.\gradlew.bat testDebugUnitTest jvmTest lintDebug assembleDebug
+```bash
+./gradlew testDebugUnitTest jvmTest lintDebug assembleDebug
 ```
 
 Desktop 编译：
 
-```powershell
-.\gradlew.bat :app:desktopApp:compileKotlin
+```bash
+./gradlew :app:desktopApp:compileKotlin
 ```
 
 若明确修改旧 Python 基线、脚本或仓库级检查，再从仓库根目录运行：

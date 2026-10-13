@@ -118,7 +118,12 @@ class LocalBackendController(
                 routing {
                     healthRoute()
                     runsRoute(storage)
-                    diagnosticsRoute(storage, services.diagnostics)
+                    diagnosticsRoute(
+                        storage,
+                        services.diagnostics,
+                        // 功能自检「重新自检」：显式丢弃缓存后重跑全部探针。
+                        featureProbeRefresh = { services.featureProbeExecutor.refreshForced() },
+                    )
                     dialogueRoutes(services.dialogue, storage)
                     sessionManagementRoutes(services.sessionManagement)
                     runManagementRoutes(services.runManagement, services.runPackages)

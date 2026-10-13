@@ -28,7 +28,11 @@
 - 流式 HTTP 响应必须逐行/逐块消费，不能调用会缓冲到 EOF 的便捷 API。
 - SSE route 每次发送可见 delta 后需要及时 flush；不要在服务端制造打字机延时。
 - 解析器必须支持未闭合 `message` 字符串的增量投影，并兼容旧数组/`responses` 格式的最终解析。
-- 完整输出只可在错误日志中截断记录，禁止记录密钥、完整提示词、完整原文或用户数据库内容。
+- 完整输出允许在**最终失败**等必要场景按**工程上限**记录（用户明确要求，用于复盘生成质量），
+且只在 `tier=full` 导出中出现；禁止记录用户数据库内容。
+
+**禁止记录密钥**：API Key / 令牌 / 签名口令绝不进入日志、事件或导出；脱敏在**写入侧**完成
+（`DiagnosticsEventLog.append` 对每个 detail 值过 `LogRedactor`），不能只依赖导出时遮蔽。
 
 ## 并发与性能
 
@@ -49,6 +53,6 @@
 
 从 `kmp/` 运行最小验证：
 
-```powershell
-.\gradlew.bat :server:storage:jvmTest :server:llm:jvmTest :server:http:jvmTest :server:jvmTest :server:compileKotlinJvm :server:compileAndroidMain
+```bash
+./gradlew :server:storage:jvmTest :server:llm:jvmTest :server:http:jvmTest :server:jvmTest :server:compileKotlinJvm :server:compileAndroidMain
 ```

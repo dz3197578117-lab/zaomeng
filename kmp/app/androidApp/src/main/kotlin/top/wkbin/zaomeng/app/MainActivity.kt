@@ -51,6 +51,9 @@ class MainActivity : ComponentActivity() {
             GlobalContext.get().get<AppPreferencesRepository>().currentPreferences()
         }
         super.onCreate(savedInstanceState)
+        // R7：挂上帧指标 / 主线程长任务看门狗 / 疑似闪烁（默认关闭）采样；
+        // R6：定期采样可访问性语义树。全部只采样、只上报，失败不影响启动。
+        top.wkbin.zaomeng.platform.AndroidClientDiagnostics.install(this)
         enableEdgeToEdge()
         startupUpdateCheckDisabled = AppUpdatePreferences.isStartupCheckDisabled(this)
         pendingChaptersRunId = intent.getStringExtra("open_run_id")

@@ -47,6 +47,61 @@ object DiagnosticsSink {
         }
     }
 
+    // ------------------------------------------------------------------
+    // R4：通用功能事件上报
+    // ------------------------------------------------------------------
+
+    /**
+     * 通用功能事件上报（R4）：`report(功能, 操作, 成功/降级/失败, 耗时, 详情)`。
+     *
+     * **成功也要报**：只有失败被记录时，「某功能成功率 100%」和「某功能从没被调用过」
+     * 在报告里长得一模一样。这里把三种结局都收进来，另按 `功能 × 操作` 聚合出
+     * 次数 / 成功率 / 平均与最长耗时。
+     *
+     * 与 [record] 的分工：[record] 是「一件事出错了」的叙事；[report] 是「一次操作结束了」
+     * 的计量。两者最终都进同一份诊断，但用途不同。
+     *
+     * 该调用**只记录**：不改控制流、不吞异常、失败时安静返回。
+     */
+    fun report(
+        feature: String,
+        action: String,
+        status: FeatureReportStatus,
+        durationMs: Long = 0,
+        detail: String = "",
+    ) {
+        recordFeature(feature, action, status.wireName, durationMs, detail)
+    }
+
+    /** 字符串状态版本（给无法引用枚举的调用点，例如 Ktor 拦截器里的字符串分支）。 */
+    fun report(
+        feature: String,
+        action: String,
+        status: String,
+        durationMs: Long = 0,
+        detail: String = "",
+    ) {
+        recordFeature(feature, action, status, durationMs, detail)
+    }
+
+    private fun recordFeature(
+        feature: String,
+        action: String,
+        status: String,
+        durationMs: Long,
+        detail: String,
+    ) {
+        runCatching {
+            ClientDiagnostics.report(
+                feature = feature,
+                action = action,
+                status = status,
+                durationMs = durationMs,
+                detail = detail,
+            )
+        }
+    }
+
     /**
      * 记录一次被捕获的失败。
      *
@@ -71,4 +126,17 @@ object DiagnosticsSink {
             details = details + mapOf("stage" to stage, "retrying" to retrying.toString()),
         )
     }
+}
+
+/**
+ * 一次功能事件的结局（R4）。
+ *
+ * [DEGRADED] 必须与 [FAILED] 分开：降级是「能继续，但结果不是最优」（走了兜底路径、
+ * 解析退化成兼容格式、超时后重试成功）。把它算成失败会让成功率失去意义，
+ * 算成成功又会让「一直在走兜底」永远不被发现。
+ */
+enum class FeatureReportStatus(val wireName: String) {
+    OK("OK"),
+    DEGRADED("DEGRADED"),
+    FAILED("FAILED"),
 }

@@ -63,13 +63,32 @@ object ProviderPresets {
     fun find(id: String): ProviderPreset? = all.firstOrNull { it.id == id }
 
     // ============ 商汤 SenseTime · 日日新 SenseNova ============
-    // 官方 OpenAI 兼容模式文档：
-    // https://www.sensecore.cn/help/docs/model-as-a-service/nova/overview/compatible-mode
-    // 兼容模式 baseUrl（OpenAI SDK）= https://api.sensenova.cn/compatible-mode/v2
-    // 另有 https://token.sensenova.cn/v1 也走 OpenAI 兼容，二者择一。
-    // 鉴权：Bearer，sk- 开头 API Key（https://platform.sensenova.cn/console/keys 申请）。
-    // 推理模型会以 delta.reasoning 先吐思考再吐 content —— 原生支持 reasoning。
-    // SenseChat-Character / -Character-Pro 是"拟人对话"专用模型，与造梦的角色扮演场景高度契合。
+    // ⚠️ 商汤有两套并存的 OpenAI 兼容入口，本预设目前混列了两边的模型，处置方案待定（见下）。
+    //
+    // 【A】token.sensenova.cn/v1 —— 已被官方文档证实，本次按文档补入（模型 = 5 个对话模型）：
+    //   官方文档《SenseNova AI API 文档》（https://platform.sensenova.cn/docs，快照 2026-10-05；
+    //   仓库副本 docs/notes/sensenova-api-reference.txt）。行号均指该文档。
+    //   - Base URL 全篇只有 https://token.sensenova.cn/v1（36、44、3926 行）。
+    //   - 模型总览 135-163 行共 7 个 model id：5 个对话模型 + 2 个图片创作模型
+    //     （sensenova-u1.5-lite / sensenova-u1.5-fast 走 /v1/images/generations、/v1/images/edits，
+    //     700-706、951-957 行；3960-3961 行明确"U 系列模型不支持作为对话模型使用"，故不入对话清单）。
+    //   - "DeepSeek V4.1 Flash" 的官方 id 是 deepseek-flash（152 行），不存在 deepseek-v4.1-flash。
+    //   - 鉴权同为 Bearer，sk- 开头 API Key（43-44、62 行；控制台 https://platform.sensenova.cn/console/keys）。
+    //   - 思考：5 个模型默认开启思考；thinking 是 string（"enabled"/"disabled"，489-490、585-586、2691-2692 行），
+    //     只有 deepseek-flash 额外接受对象形态 {"type":"enabled"/"disabled"}（1850-1853、1919-1921 行）；
+    //     reasoning_effort 允许值逐模型不同（各模型章节"请求参数"表）：
+    //       6.8-flash-lite：low/medium/high/max（+none 关闭），默认 high（491-493、587-589 行）
+    //       deepseek-v4-flash：low/medium/high/max（+none 关闭），默认 high（1428-1430、1476-1478 行）
+    //       deepseek-flash：原生 none/low/high/max，默认 high，minimal→low、medium/xhigh→high、ultra→max（1854-1861、1922-1929 行）
+    //       glm-5.2：max/xhigh/high/medium/low/minimal/none，默认 max；thinking.type=disabled 会失败（2265-2267、2305-2307、2413-2415 行）
+    //       kimi-k3：low/medium/high/max，默认 max（2693-2694、2711-2713、2760-2761 行）
+    //   - 非流式思考字段：6.8-flash-lite 用 reasoning（533 行），其余用 reasoning_content（1451、1882、2288、2734 行）。
+    //     文档没有给 OpenAI 兼容 SSE 的 delta 字段样例；我们的流式解析目前只读 delta.reasoning_content。
+    //
+    // 【B】api.sensenova.cn/compatible-mode/v2 —— 旧兼容模式入口，本次文档里完全不存在：
+    //   文档全篇没有 "compatible-mode"、没有 "api.sensenova.cn"、没有 SenseChat-* / SenseNova-V6.5-*
+    //   （逐字检索 4501 行全文，0 命中）。因此下面这组 SenseChat / V6.5 条目的可用性与上下文长度
+    //   都无法用本文件核对，仅保留原样、标注为"未证实"，等确认后再决定删除或迁移。
     val sensetime = ProviderPreset(
         id = "sensetime",
         label = "商汤 SenseTime · 日日新 SenseNova",
@@ -79,22 +98,34 @@ object ProviderPresets {
         apiKeyHint = "sk-...（SenseNova 控制台 API Key）",
         capabilities = ProviderCapabilities(
             streaming = true,
-            tools = true,       // 官方标注支持工具调用
-            vision = true,      // V6.5 / Vision 系列支持多模态
-            reasoning = true,   // delta.reasoning 思考增量
-            structuredOutput = false
+            tools = true,       // 5 个官方对话模型都有 tools/函数调用章节（310、1243、1666、2087、2513 行）
+            vision = true,      // 6.8-flash-lite 与 deepseek-flash 有图像输入章节（214-221、1628-1646 行），kimi-k3 仅 Base64（2469-2473 行）；glm-5.2 未标注
+            reasoning = true,   // 全部默认开启思考；思考字段 reasoning / reasoning_content（533、1451、1882、2288、2734 行）
+            structuredOutput = false // 文档只保证 response_format={"type":"json_object"}（各章"结构化输出"）；json_schema 仅 deepseek-flash 与 kimi-k3（3610-3613 行）
         ),
         models = listOf(
-            ModelEntry("SenseChat-5", "SenseChat-5（V5 旗舰，128K）", 128_000),
-            ModelEntry("SenseChat-Turbo", "SenseChat-Turbo（高速低成本）"),
-            ModelEntry("SenseNova-V6.5-Pro", "SenseNova-V6.5-Pro（多模态 128K）", 128_000, "含视觉"),
-            ModelEntry("SenseNova-V6.5-Turbo", "SenseNova-V6.5-Turbo（多模态高速）"),
-            ModelEntry("SenseChat-Vision", "SenseChat-Vision（图文感知）", note = "视觉"),
-            ModelEntry("SenseChat-Character-Pro", "SenseChat-Character-Pro（拟人对话·角色扮演，32K）", 32_000, "推荐用于造梦"),
-            ModelEntry("SenseChat-Character", "SenseChat-Character（角色对话标准版，8K）", 8_000, "推荐用于造梦")
+            // —— 【B】compatible-mode 旧条目：本文件未证实（见上方说明），原样保留待确认 ——
+            ModelEntry("SenseChat-5", "SenseChat-5（V5 旗舰，128K，未证实）", 128_000),
+            ModelEntry("SenseChat-Turbo", "SenseChat-Turbo（高速低成本，未证实）"),
+            ModelEntry("SenseNova-V6.5-Pro", "SenseNova-V6.5-Pro（多模态 128K，未证实）", 128_000, "未证实"),
+            ModelEntry("SenseNova-V6.5-Turbo", "SenseNova-V6.5-Turbo（多模态高速，未证实）"),
+            ModelEntry("SenseChat-Vision", "SenseChat-Vision（图文感知，未证实）", note = "未证实"),
+            ModelEntry("SenseChat-Character-Pro", "SenseChat-Character-Pro（拟人对话·角色扮演，32K，未证实）", 32_000, "未证实"),
+            ModelEntry("SenseChat-Character", "SenseChat-Character（角色对话标准版，8K，未证实）", 8_000, "未证实"),
+            // —— 【A】token.sensenova.cn/v1 官方文档已证实的 5 个对话模型（总览 135-163 行）；
+            // 使用本组模型必须把 defaultBaseUrl 换成 https://token.sensenova.cn/v1（36 行），
+            // compatible-mode 下这些 id 是否可用未证实。图片创作模型 sensenova-u1.5-lite / -fast
+            // 不是对话模型，故不列入（143、146、700-706、951-957、3960-3961 行）。
+            ModelEntry("sensenova-6.8-flash-lite", "SenseNova 6.8 Flash-Lite（多模态·256K，141 行）", 262_144, "文档已证实"),
+            ModelEntry("deepseek-v4-flash", "DeepSeek V4 Flash（1M，148 行）", 1_048_576),
+            ModelEntry("deepseek-flash", "DeepSeek V4.1 Flash（1M·多模态，152 行）", 1_048_576, "文档已证实"),
+            ModelEntry("glm-5.2", "GLM-5.2（1M 上下文，156 行）", 1_048_576),
+            ModelEntry("kimi-k3", "Kimi K3（1M·图片仅 Base64，160 行）", 1_048_576, "文档已证实")
         ),
-        notes = "商汤自带角色对话模型，接造梦几乎零提示词改造。兼容模式需 baseUrl 带 /compatible-mode/v2；" +
-                "若用 token.sensenova.cn/v1 需改 baseUrl。推理模型会先吐 reasoning 增量，建议开启 reasoning 解析。"
+        notes = "【A】token.sensenova.cn/v1：官方文档（快照 2026-10-05）证实，5 个对话模型见 models 末组，" +
+                "用它们需要把 defaultBaseUrl 换成该地址；图片创作模型（sensenova-u1.5-*）不是对话模型。" +
+                "【B】api.sensenova.cn/compatible-mode/v2 及 SenseChat-* / SenseNova-V6.5-* 在这份文档里查不到，未证实。" +
+                "推理模型思考字段为 reasoning（6.8-flash-lite）或 reasoning_content（其余），建议开启 reasoning 解析。"
     )
 
     // ============ DeepSeek ============

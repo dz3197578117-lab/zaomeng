@@ -6,6 +6,103 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.1.13] - 未发布
+
+### 新增
+
+- **功能自检（健康探针）**：运行诊断新增「功能自检」区块，由 **27 个探针**检查各功能是否真的在正常运行，
+  每项给出 ✅/⚠️/❌ + 一句话结论 + **可核对的数字证据**（如「ok 章 12/15」「期望时间点 5、实际 3」）。
+  覆盖：书卷导入/列表/整理/人物档案/人设弧线/弧线索引/关系图/章节索引/原文证据、会话创建/生成/
+  首字延迟/转录完整性/长期记忆/世界记忆/场景进度/派生状态、插件生命周期/内置插件动作/规则引擎/
+  声明式校验、模型配置/端侧推理/密钥存储、提示词加载完整性/更新检查/TTS。
+- **探针注册机制 + 「未注册」可见**：探针由注册表统一登记，诊断页与导出自动列出；
+  并用 `KnownFeatures`（33 项）算出**有哪些功能还没有探针**并在界面上显示——
+  以后新增功能若忘了注册，界面会直接暴露，而不是靠人记得。
+- **画面与流畅度**（R7）：帧指标（掉帧率分档 >16.7/32/100ms、最长帧、按页面分桶）、
+  主线程长任务（次数 + 当时栈）、**过度重组 + 过度重绘计数**、图片同 URL 重复请求、布局跳动；
+  截图差分「疑似闪烁」**默认关闭**，且**只在内存中比较——不落盘、不上传、不进导出**，
+  措辞固定为「疑似」而非「检测到 bug」。
+- **问题清单可用性**：**面包屑**（每条问题自动附带发生之前的上下文；
+  未捕获异常与 ANR 时**同步把面包屑落盘**，所以崩溃重启后仍能还原现场）、
+  **聚合去重**（同堆栈/同签名归为一组，显示次数与首次/最近时间）、
+  严重度分级与默认排序（正常退出恒排末尾）、**崩溃类与常规事件分别设保留上限**并暴露占用。
+- **导出分级**：`tier=compact`（默认，概览 + 问题摘要 + 探针结论）/ `tier=full`（含日志正文、
+  完整堆栈、完整载荷）；报告自带 `tier` 字段说明档位；新增「诊断自身状态」区块
+  （丢事件/写入失败/读取失败/采样开销/当前占用）。
+- **通用功能事件上报 + 统一入口兜底**：新增 `report(功能, 操作, 成功/降级/失败, 耗时, 详情)`，
+  **成功也上报**；在已有统一入口（Ktor 路由拦截器、`repositoryRequest`、`runTool`）接入，
+  于是**新增功能不改诊断代码也会被记录**；关键路径上被 `runCatching` 吞掉的静默失败改走该通道。
+- **诊断覆盖面如实标注**：进程模型、是否有 WebView、以及**未覆盖的面**（native 完整堆栈、
+  被系统 `kill -9` 的场景）逐条列出，不省略。
+- **操作轨迹与数据损坏审计**：导航历史 + 关键操作序列；关键文件可解析性检查与写入审计。
+
+### 变更
+
+- **诊断允许记录完整提示词与完整模型输出**（用户明确要求）：只保留**工程上限**
+  （单字段 200000 字符 + 文件字节上限 + 超限轮转），且**只在 `tier=full` 导出中出现**。
+  **API Key / 令牌 / 签名口令仍然绝不记录**——这是凭证安全而非隐私偏好；脱敏在**写入侧**完成
+  （每个 detail 值过 `LogRedactor`），不依赖导出时遮蔽。相关规则已同步进两份 `AGENTS.md`。
+- **4xx 时记录实际发出的请求体**（此前只记解析失败，上游拒收时反而没有证据）：
+  `llm.http_error_payload` 记录 http 状态、endpoint（**整段剥离 query**，避免 key 泄漏）、
+  provider、**线上真实顶层字段名 `request_keys`**、model/stream/token 参数/temperature/
+  `reasoning_effort`/`thinking`/`response_format`、messages 的 role 序列与字符数、字节数、
+  上游原始错误体（截断）。**留证函数签名里没有 headers 参数**，调用点从不传 `spec.headers`，
+  因此鉴权信息在类型层面就进不来。**决定性摘要同时写进事件标题**，
+  所以**精简档导出也能直接看到发了什么**。
+- **模型运行时长与启动耗时**：后端服务图启动从 `init` 的**同步调用**移到 `Dispatchers.Default`，
+  消除启动期主线程约 1.4 秒的阻塞。
+
+### 修复
+
+- **商汤 SenseNova 内置清单按官方文档校对**：移除文档中不存在的 `deepseek-v4.1-flash`；
+  `deepseek-flash` 的显示名修正为「DeepSeek V4.1 Flash」；顺序对齐官方模型总览；
+  服务端预设补入文档证实的 5 个对话模型（此前一个都没有）；图片生成模型继续排除。
+- **`reasoning_effort` 改为逐模型白名单**：商汤各模型允许值不同（`glm-5.2` 有 `xhigh/minimal`，
+  `6.8-flash-lite` 没有），此前只按端点判断、原值透传；现在**不在白名单的值不发**，
+  并按文档为 `deepseek-flash` 实现兼容映射（`minimal→low`、`medium/xhigh→high`、`ultra→max`）。
+- **`kimi-k3` 改用 `max_completion_tokens`**：其官方请求参数表里没有 `max_tokens`。
+- **流式思考增量兼容 `reasoning` 字段**：商汤 `sensenova-6.8-flash-lite` 把思考吐在 `reasoning`，
+  DeepSeek 系吐在 `reasoning_content`，此前只解析后者会丢思考增量（正文不受影响）。
+- **保存模型档案时校验 `reasoning_effort`**：此前校验了 maxTokens/tokenParameter/responseFormatMode，
+  唯独漏了它，绕开编辑器的写入路径能把非法值送到线上。
+- **修正三个探针的误报**（它们此前报出的问题并不存在）：
+  - **关系图 front-matter「解析失败」**：探针用 JSON 解析器去解 YAML，正常文件必然失败；
+    生成侧与真实解析侧本就一致（且对话侧根本不解析 front-matter，关系上下文从未丢失）。
+    解析侧另补：失败留痕（区分 read_failed / no_front_matter / yaml_parse_failed / body_fallback_used）、
+    正文兜底提取、兼容 **BOM / 开头空行 / CRLF** 的旧文件。
+  - **「8/8 人物档案缺必需字段」**：探针要求的 `identity`/`personality` 在真实 schema 里不存在
+    （真实字段是 `core_identity`/`core_traits`/`temperament_type`/`speech_style`）。
+  - **「场景进度未写入」**：真实落点是会话 manifest 的 `state`（`state.scene/progression`），
+    探针却在顶层找 `scene_progress`；张力是读时计算、本就不落盘的。
+    这也解释了探针证据 `state_written=1` 却 `present=0` 的自相矛盾。
+- **人设弧线阶段补留痕**：此前阶段抛错只写 `PlatformLog`，且清单已被标成 `stage=completed`，
+  用户无从知道弧线只做了一部分。现在失败/未完成都记事件，并把 `progress.persona_arc`
+  （status/已完成章数/失败章数/缺哪些角色）写进书卷 manifest。
+- **弧线索引以磁盘为准**：此前只在收尾成功路径重算一次，进程被中途杀死就永远滞后
+  （出现「arc.json 有 174 章、索引却写 has_arc=false」）。现在逐章每 5 章刷当前角色，
+  阶段结束/抛错后无条件全量重算。
+- **正常生命周期事件不再被当成「问题」**：`backend.ready`、`ondevice.*`、
+  `dialogue.parse_retry_ok` 等此前会进问题清单（真机导出里 `backend.ready` 出现 17 次），
+  现已从问题聚合中排除（仍保留在「最近事件 / 事件统计」里）。
+- **模型配置探针不再依赖 `configured` 标志**（该标志的计算有缺陷、会误报），
+  改为直接检查字段本身，并新增「**模型名与端点是否般配**」的检查。
+- **诊断看门狗栈不再截掉应用帧**：此前 `stackTrace.take(24)` 取的是栈顶（框架帧），
+  真正触发卡顿的应用调用点位于栈底、被裁掉了——这正是「定位不到谁触发的」的原因。
+  现在保留最内层 24 帧 + 应用包名帧，并标注省略帧数。
+- **诊断导出的 `model.profiles[]` 补上三个决定请求形状的字段**：
+  `reasoning_effort` / `token_parameter` / `response_format_mode`（均非密钥）。
+
+### 已知限制
+
+- **每轮自动一致性审校尚未实现**（上游 Python 的 `update_monitor_state` 未移植）；
+  目前只有用户显式点「深度审校」才写 `consistency_monitor`。探针已如实标注，未伪造写入。
+- 知识台账按「披露句」正则过滤，**本次会话没有匹配句子时为空属正常**。
+- **书卷标题缺失（1 个）** 属旧数据缺口：判据已接受 `novel_name` 等四个键，仍报缺说明四个键全空。
+- **截图差分默认关闭**，阈值与采样率（500ms / 2fps）**需要真机校准**。
+- 可访问性对比度检测**未做**（只做语义标签缺失与点击目标尺寸）。
+- **无真机验证的部分**：帧指标、主线程长任务、重绘计数、布局跳动、闪烁采样、
+  可访问性反射、崩溃上下文落盘、悬浮窗拖动——本版仅经编译 + JVM 单测 + APK 打包验证。
+
 ## [2.1.12] - 2026-10-13
 
 ### 新增
@@ -330,7 +427,8 @@
 早期版本（含从上游造梦 2.0 继续改动的部分）逐文件清单见
 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)。
 
-[2.1.12]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.11...HEAD
+[2.1.13]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.12...HEAD
+[2.1.12]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.11...v2.1.12
 [2.1.11]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.10...v2.1.11
 [2.1.10]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.9...v2.1.10
 [2.1.9]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.8...v2.1.9

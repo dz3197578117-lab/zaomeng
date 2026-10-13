@@ -39,7 +39,7 @@ compose.desktop {
         }
 
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            targetFormats(TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "造梦"
             // 版本号唯一来源：kmp/gradle.properties
             packageVersion = providers.gradleProperty("zaomeng.versionName").get()

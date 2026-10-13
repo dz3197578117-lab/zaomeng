@@ -6,7 +6,7 @@
 
 在仓库根目录打包：
 
-```powershell
+```bash
 python scripts/package_plugin.py examples/plugin-template
 ```
 

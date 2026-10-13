@@ -95,8 +95,9 @@ Authorization: Bearer <token>
 | 方法 | 路径 | 请求 | 成功响应 |
 |---|---|---|---|
 | GET | `/api/web/health` | 无 | `200` `HealthResponse` |
-| GET | `/api/web/diagnostics/export` | `run_id`、`session_id`（可选，客户端上报的现场上下文） | `200` 诊断 JSON；下载名 `zaomeng-diagnostics.json` |
-| GET | `/api/web/diagnostics/overview` | `run_id`、`session_id`（可选） | `200` `DiagnosticsOverviewDto`（自检 + 问题清单 + 统计，不含日志正文） |
+| GET | `/api/web/diagnostics/export` | `run_id`、`session_id`（可选，客户端上报的现场上下文）、`tier`（可选，`compact`（默认）/`full`；未知值一律退回 `compact`） | `200` 诊断 JSON；下载名 `zaomeng-diagnostics.json` |
+| GET | `/api/web/diagnostics/overview` | `run_id`、`session_id`（可选） | `200` `DiagnosticsOverviewDto`（自检 + 功能自检 + 去重问题清单 + 功能事件 + 自身状态 + 盲区与流畅度，不含日志正文） |
+| POST | `/api/web/diagnostics/feature-probes/refresh` | 无 | `200` `FeatureProbeReportDto`；探针执行抛错时 `500` |
 | GET | `/api/web/diagnostics/runtime-log` | `lines`（可选，期望行数，服务端夹紧到 5000）、`run_id`、`session_id`（可选） | `200` `RuntimeLogDto` |
 | GET | `/api/web/diagnostics/runtime-log/capture` | 无 | `200` `RuntimeCaptureStateDto` |
 | PUT | `/api/web/diagnostics/runtime-log/capture` | `{"enabled": true|false}`；请求体非法返回 `400` | `200` 生效后的 `RuntimeCaptureStateDto` |
@@ -153,6 +154,71 @@ URL 中的凭据一律替换为 `***`），超长行截断。
 
 `truncated=true` 表示只返回了尾部若干行。诊断报告内嵌时 `lines` 上限为 1200 行、
 `crashes` 最多 5 条、`processExits` 最多 5 条；单独拉取该接口时 `lines` 上限为 5000 行。
+
+**保留策略（2.1.13 起写入概览的 `selfStatus.retention`）**：崩溃与常规事件**分别设限**——
+- Android：常规日志单文件上限 2 MiB（超限裁到尾部 1 MiB）；崩溃与 ANR 各自独立目录、
+  各保留 5 个文件，因此**一次日志风暴不会把崩溃记录顶掉**；
+- 结构化事件环形缓冲：常规事件 400 条 / 崩溃类事件 120 条 / 文件上限 8 MiB，
+  超限自动裁剪并把丢弃条数写进 `selfStatus.droppedEvents`。
+
+#### 完整载荷（2.1.13 起）
+
+用户明确要求**允许记录完整提示词、完整模型输出与完整原文**（这是取消隐私截断，
+不是忽略工程上限）。`DiagnosticsEventLog.recordPayload(...)` 与
+`DiagnosticsPayloadSink.record(...)`（`:core:runtime` 的收口，由服务图 `attach`）提供独立于常规事件的通道：
+
+- 单字段上限 `200_000` 字符（工程上限；超限时值尾写明「已按工程上限截断」）；
+- 单条最多 16 个字段；写入侧与导出侧都会过一遍 `LogRedactor`；
+- 目前只在两类**出错**路径上记录，不是每轮都记——否则日志量会随对话轮数线性膨胀：
+  1. **对话解析最终失败**（首次 + 重试都失败）：完整提示词与完整模型输出；
+  2. **上游拒收（HTTP 4xx / 非重试状态）**：实际发送的请求形状与上游原始错误体，
+     事件类别 `llm.http_error_payload`（见下）。
+
+##### `llm.http_error_payload`（上游拒收留证）
+
+`LlmClient` 在流式生成与非流式生成两条路径上**先留证再抛异常**：遇到非重试状态码
+（即 4xx；重试码 408/429/5xx 交由重试逻辑处理，不在此留证）时记录一条完整载荷事件。
+这条路径此前一个字节都不记，而上游拒收时「我们实际发了什么」正是唯一能终结猜测的信息。
+
+`message`（事件标题）**自身就带决定性字段**，形如：
+
+```
+上游拒收请求（HTTP 400 Bad Request）：model=glm-5.2 · endpoint=https://token.sensenova.cn/v1/chat/completions · 字段=[model,messages,temperature,max_tokens,stream,reasoning_effort,response_format] · max_tokens=8192 · reasoning_effort=max · messages=2 条/1420 字符
+```
+
+之所以把摘要放进标题：载荷明细只在 `tier=full` 导出里出现，而标题会出现在
+`eventStats.lastMessage`、`problems[].title` 与一键复制摘要中——**默认的精简导出**
+因此也能直接看到「发了哪个模型、打到哪个端点、带了哪些字段、token 参数与思考力度是什么」，
+不必先切到完整档。
+
+载荷字段（全部来自**已序列化的请求体**，实现见 `LlmClient.recordHttpErrorPayload`）：
+
+| 字段 | 含义 |
+|---|---|
+| `http_status` | 状态码 + 原因短语（如 `400 Bad Request`） |
+| `endpoint` | 实际请求的 `base_url` + 路径，**已去掉整个 query**（Gemini 的 `key`、Azure 的 `api-version` 都在 query 里，故不会落盘） |
+| `provider_kind` | `OPENAI` / `AZURE` / `ANTHROPIC` / `GEMINI`（本端适配层判定的协议形态） |
+| `request_keys` | 线上真实携带的**顶层字段名**（按序列化顺序），多一个/少一个参数一眼可见 |
+| `model` / `stream` / `temperature` | 请求体里的原值 |
+| `max_tokens` / `max_completion_tokens` | **实际发出的那一个**（未发出的字段没有该键） |
+| `reasoning_effort` / `thinking` / `response_format` | 实际发出的推理与结构化输出参数（未发出则无该键） |
+| `messages` | **形状**而非正文：role 序列 + 每条 content 的字符数，如 `system(1204 字符) → user(88 字符)` |
+| `request_bytes` | 请求体字符数 |
+| `upstream_error` | 上游返回的原始错误体（截断到 4000 字符） |
+
+**鉴权头绝不进入这条载荷**：留证函数的入参只有「状态码 / 端点 / 请求体」，
+`Authorization`、`api-key`、`x-api-key` 在调用点就不参与构造
+（`LlmClient.openStreamWithRetry` 只传 `spec.url` 与 `spec.body`，不传 `spec.headers`），
+因此不依赖写入侧 `LogRedactor` 兜底；Gemini 放在 URL query 里的 key 也随 `endpoint` 的 query 剥离一并丢弃。
+
+导出中的可见性：`tier=compact`（默认）不含事件明细，但 `eventStats` 会出现
+`category=llm.http_error_payload` 的计数与最近样本；`tier=full` 才带完整载荷明细。
+`problems[]` 会把每条事件摊成一个 `kind=event` 的问题（按 `category + message` 归组），
+因此「反复 400」在概览页就是一条带 `×N` 的问题。
+
+**API Key / 令牌 / 签名口令仍然绝不记录**：`DiagnosticsEventLog.record` 与
+`recordPayload` 在**写入侧**就对每个值执行 `LogRedactor.redactLine`（而不只是在导出时），
+因此即使调用方误传，密钥也不会落盘。
 诊断报告 `schemaVersion` 自 3 起包含 `runtimeLog` 段。
 
 自 `schemaVersion` 4 起，`RuntimeLogDto` 还带三个排查必需的附加段：
@@ -161,7 +227,7 @@ URL 中的凭据一律替换为 `***`），超长行截断。
 |---|---|
 | `capture` | 采集开关状态 `RuntimeCaptureStateDto`：`supported`（平台是否支持启停，桌面端为 `false` 常开）、`enabled`、`updatedAt`、`note` |
 | `environment` | 版本与现场元信息 `EnvironmentInfoDto`：`app`（`versionName`/`versionCode`，构建期从 `kmp/gradle.properties` 生成）、`device`（厂商/机型/系统/API level/ABI/CPU/是否 64 位）、`memory`（Java 堆、native 堆、系统可用内存）、`session`（客户端上报的最近 run/session） |
-| `processExits` / `processExitsNote` | 第 2 层「进程外补捕」：上次进程如何退出（Android 10+ `ApplicationExitInfo`）。含 `reason`/`reasonCode`/`status`/`importance`/`pssBytes`/`rssBytes`/`description`/`trace`/`source`。**这是降级信息**：native 崩溃只有信号与有限轨迹，不是完整 native 堆栈；API < 30 的平台返回空并在 `processExitsNote` 说明 |
+| `processExits` / `processExitsNote` | 第 2 层「进程外补捕」：上次进程如何退出（Android 10+ `ApplicationExitInfo`）。**自 `schemaVersion` 5 起**每个条目额外带 `reasonLabel`（中文可读原因）、`reasonMapped`（该 reason 码是否已映射）、`severity`、`attribution`、`attributionSource`、`problemKind`、`isCrash`（详见 2.1.2）。基础字段：`reason`/`reasonCode`/`status`/`importance`/`pssBytes`/`rssBytes`/`description`/`trace`/`source`。**这是降级信息**：native 崩溃只有信号与有限轨迹，不是完整 native 堆栈；API < 30 的平台返回空并在 `processExitsNote` 说明 |
 
 #### 采集开关（`RuntimeCaptureStateDto`）
 
@@ -196,26 +262,224 @@ URL 中的凭据一律替换为 `***`），超长行截断。
 | `environment` | 同 `EnvironmentInfoDto` |
 | `capture` | 采集开关状态 |
 | `startup` | 启动自检：`backend_graph`、`data_root`/`data_root_writable`、`plugins_root`、`model_active_profile`/`model_configured`/`model_api_key_configured`、`on_device_runtime`、`runtime_log_capture`/`runtime_log_source`、`last_process_exit`、`process_uptime`、`app_version` |
-| `problems` | 可读问题清单（见下），按时间倒序 |
+| `problems` | 可读问题清单（见下），按 severity + 时间倒序 |
 | `eventStats` | 结构化事件统计：`category`/`count`/`lastAt`/`lastMessage`（样本已截断） |
 | `modelTests` | 最近几次「测试连接」结果 `ModelConnectivityRecordDto`：`testedAt`/`provider`/`model`/`baseUrl`（已去查询串）/`success`/`latencyMs`/`message` |
 | `copySummary` | 可直接复制给开发者的短摘要（不含密钥、提示词与正文） |
+| `featureProbes` | **功能自检报告** `FeatureProbeReportDto`（见 2.1.3）。**上一轮快照**，不受采集开关影响 |
+| `crashCount` | 问题清单里 `crash`/`crash-native`/`anr`/`process-exit` 且 `severity` 为 `fatal`/`error` 的条数 |
+| `intentionalExitCount` | 正常退出条数（被系统/OEM 清理、被更新、用户主动退出）——**与 `crashCount` 分开计数** |
+| `probeFailCount` | 探针 FAIL 数（与 `problems` 并列展示，两者**不合并**） |
 
 `problems[]`（`DiagnosticsProblemDto`）：
 
 | 字段 | 含义 |
 |---|---|
-| `kind` | `crash`（含未捕获异常与协程未捕获异常）、`anr`、`process-exit`、`event`（结构化事件）、`self-check` |
-| `severity` | `fatal` / `error` / `warning` / `info` |
-| `occurredAt` | 发生时间（自检项为空字符串，排序时排在最后） |
-| `title` | 人可读摘要（已截断） |
-| `detail` | 完整（截断）堆栈/轨迹，展开查看 |
+| `kind` | `crash`（含未捕获异常与协程未捕获异常）、`anr`、`freeze`（卡死/长任务）、`jank`（卡顿）、`visual`（视觉信号）、`event`（结构化事件）、`process-exit`、`intentional-exit`（正常退出）、`self-check` |
+| `severity` | `fatal` / `error` / `warning` / `info`；`info` 表示正常退出（被清理/被更新/用户主动退出），不计入崩溃 |
+| `occurredAt` | 最近一次发生时间（自检项为空字符串） |
+| `title` | 人可读摘要（已截断）。进程退出项直接带可读归因与系统原始 `description` |
+| `detail` | 完整（按工程上限截断）堆栈/轨迹，展开查看 |
 | `source` | 来源标识，例如 `uncaught-handler`、`android-application-exit-info:ANR` |
+| `fingerprint` | **分组稳定键**（`类型#FNV-1a`）。崩溃取规范化堆栈（去掉行号/内存地址），事件取 `类别 + 规范化消息`（抹掉 UUID/十六进制/数字） |
+| `count` | 该组累计发生次数（≥1）。同堆栈/同签名归为一组 |
+| `firstAt` / `lastAt` | 该组首次 / 最近一次发生时间 |
+| `priority` | 默认排序权重：崩溃 100 > ANR 90 > 卡死/长任务 80 > 卡顿 70 > 视觉信号 60 > 结构化事件 50 > 进程死因 40 > 自检 30 > 提示 20；**正常退出恒为 0** |
+| `breadcrumbs` | 该问题**发生之前**的上下文（见下），时间正序，最多 12 条 |
+
+`problems[]` 的默认排序为 `priority` 降序 → `lastAt` 降序 → `fingerprint` 升序（末项保证刷新后顺序稳定）。
+`DiagnosticsOverviewDto.problemGroupCount` 是**组数**，`problemTotalCount` 是分组前的**原始条数**；
+两者都给出来，因为「3 条崩溃」可能是同一个堆栈崩了 3 次。
+
+`breadcrumbs[]`（`DiagnosticsBreadcrumbDto`，R2）：
+
+| 字段 | 含义 |
+|---|---|
+| `at` | 时间（ISO-8601 UTC，可直接按字典序比较先后） |
+| `source` | `nav`（页面跳转）/ `operation`（关键操作）/ `event`（结构化事件）/ `system`（进程检查点：内存水位、采集开关、run/session） |
+| `label` | 页面名 / 事件类别 / 检查点名称 |
+| `detail` | 细节（已截断） |
+
+面包屑来自**环形缓冲**（客户端轨迹 200 条 + 结构化事件 + 服务端系统检查点），
+按时间合并后为每条问题取「首次发生之前」的最近 12 条。
+时间戳不可比对（例如 logcat 风格的 `MM-dd HH:mm:ss`）时**降级**为「取最近若干条」，
+不假装匹配成功。
+
+#### 崩溃 / ANR 前的上下文冲刷（2.1.13 起，R2 闭环）
+
+内存环形缓冲会随进程一起消失，而**崩溃正是面包屑唯一要服务的场景**。因此：
+
+- **未捕获异常**与 **ANR 看门狗触发**时，把当时的轨迹（+ 功能事件计数、重组计数、图片重复计数）
+  **同步冲刷**到 `filesDir/zaomeng/logs/context/context-<时间戳>.log`
+  （同步写盘、不走协程、不依赖缓冲；独立目录与独立配额，保留最近 5 份，
+  **不会挤掉 `crashes/` 与 `anr/` 的崩溃堆栈**）；
+- 冲刷文件里带 `flushed_at` 与 `dropped_events`，用来判断这份上下文是否完整；
+- **启动后**这些上下文文件会被读回（`RuntimeLogSource.crashContexts()`），
+  按文件名时间戳**精确匹配**对应崩溃/ANR 条目并挂到 `problems[].breadcrumbs` 上。
+  匹配不上时宁可不挂——**挂错问题的上下文比没有上下文更糟**（ANR 来自系统的
+  `ApplicationExitInfo`，时间戳与看门狗对不上，只有在「只有一份 ANR 上下文」时才兜底挂上）。
+
+**不做定期落盘**：面包屑是为崩溃服务的，为了「观测卡顿」而高频写盘本身就是制造卡顿。
+
+### 2.1.2 进程退出归因（`processExits[]` / `processExitAttribution`）
+
+`ApplicationExitInfo.reason` 的映射表放在公共代码里（**不依赖编译期 SDK 里有没有对应常量**）：
+此前只 `when` 了 API 30 就存在的常量，系统给 `16`（`REASON_PACKAGE_UPDATED`，应用被覆盖安装）
+时直接显示成 `UNKNOWN(16)`，一次正常的升级看起来像故障。
+
+已映射的 reason 码（与 Android `ApplicationExitInfo` 常量逐一对齐；android-36 / android-37.0
+两个平台包已用 `javap -constants` 核对一致）：`1` EXIT_SELF、`2` SIGNALED、`3` LOW_MEMORY、
+`4` CRASH、`5` CRASH_NATIVE、`6` ANR、`7` INITIALIZATION_FAILURE、`8` PERMISSION_CHANGE、
+`9` EXCESSIVE_RESOURCE_USAGE、`10` USER_REQUESTED、`11` USER_STOPPED、`12` DEPENDENCY_DIED、
+`13` OTHER、`14` FREEZER、`15` PACKAGE_STATE_CHANGE、
+`16` **PACKAGE_UPDATED（中文「应用更新（覆盖安装）」）**；
+`0`（`REASON_UNKNOWN`）与其余未映射码保留 `UNKNOWN(n)` 兜底，并把原始码放在最前面。
+
+`processExits[]` 每条记录的字段：
+
+| 字段 | 含义 |
+|---|---|
+| `reason` | 映射名（`CRASH` / `PACKAGE_UPDATED` …），映射不到时 `UNKNOWN(n)` |
+| `reasonCode` | 原始 `reason` 码 |
+| `description` | **一等字段**：系统原始描述（如 `stop … due to o-stop(40)`）。OEM 后台清理、覆盖安装常常只在这里 |
+| `reasonLabel` | 中文可读原因（如「应用更新（覆盖安装）」） |
+| `reasonMapped` | 该 reason 码是否已映射（`false` = 走了 `UNKNOWN(n)` 兜底） |
+| `severity` | `fatal` / `error` / `warning` / `info`；**`info` 表示正常退出，不计入崩溃数** |
+| `attribution` | 中文归因（如「系统/OEM 后台清理」「应用被更新（覆盖安装）」） |
+| `attributionSource` | `description`（由系统描述判定）或 `reason`（由 reason 码判定） |
+| `problemKind` | `crash` / `crash-native` / `anr` / `process-exit` / `intentional-exit` |
+| `isCrash` | 是否计入崩溃数（被系统/OEM 清理、被更新、用户主动退出一律为 `false`） |
+
+归因规则：① `reason` 本身就是致命崩溃（CRASH / CRASH_NATIVE / INITIALIZATION_FAILURE）时
+直接按崩溃处理，**不允许被 `description` 降级**；② 否则用 `description` 关键字判定
+（`killDueToPackageUpdate` → 应用被更新；`o-stop`/`ostop` → 系统/OEM 后台清理；
+`force-stop` → 被强制停止；`anr` → 无响应被杀；`low memory` → 内存不足被杀；
+`native`/`crash`/`death` → 崩溃；`user request` → 用户主动退出；`background` → 后台清理）；
+③ 都没有时按 reason 码的默认定义。
+
+> `description` 是系统/OEM 的自由文本，没有稳定契约，因此上述匹配都是宽松包含匹配；
+> 匹配不到就退化为按 reason 码的默认归因。
+
+诊断导出报告的 `processExitAttribution` 段（`schemaVersion` 5 起）说明映射覆盖情况：
+
+| 字段 | 含义 |
+|---|---|
+| `mappedReasonCodes` | 已映射的 reason 码（升序） |
+| `mappedReasons` | 已映射原因的展示行（`code NAME：中文说明`） |
+| `unmappedObservedCodes` | 本次实测到但尚未映射的原始码（升序去重） |
+| `note` | 归因依据说明 |
+
+### 2.1.3 功能自检（`FeatureProbeReportDto`）
+
+**每个功能自己注册检查项**，诊断页与诊断导出自动列出所有已注册探针；
+`KnownFeatures`（单一来源清单）里没有任何探针覆盖的功能会被计入「未注册」并列出名字——
+新增功能忘了注册探针时界面上会直接暴露，而不是靠人记得。
+
+| 字段 | 含义 |
+|---|---|
+| `generatedAt` | 本快照生成时间 |
+| `registeredCount` | 已注册探针数 |
+| `knownFeatureCount` / `coveredFeatureCount` / `unregisteredCount` | 已知功能总数 / 已被覆盖 / 未注册 |
+| `unregisteredFeatures` | 未注册功能列表（`id`/`title`/`domain`） |
+| `items` | 探针结果 `FeatureProbeDto[]` |
+| `okCount` / `warnCount` / `failCount` / `noDataCount` / `skippedCount` | 结论计数 |
+| `multiProbeFeatures` / `unknownFeatureRefs` | 一个功能被多个探针覆盖；探针引用了清单里不存在的 id（注册处漂移） |
+| `durationMs` / `cachedCount` | 本轮耗时；缓存命中数（未重新执行） |
+
+`FeatureProbeDto`：
+
+| 字段 | 含义 |
+|---|---|
+| `id` / `title` / `domain` | 探针 id / 一句话功能名 / 所属域 |
+| `features` | 该探针覆盖的 `KnownFeatures` id 列表 |
+| `status` | `OK` / `WARN` / `FAIL` / `NO_DATA` / `SKIPPED` |
+| `summary` | 一句话结论 |
+| `evidence` | 证据数据（键值对，**只放数字或短文本**；值上限 120 字符、最多 16 条） |
+| `details` | 可选细节（每行一条，最多 40 行 × 400 字符） |
+| `checkedAt` / `durationMs` | 结果生成时间 / 耗时 |
+| `error` | 探针自身出错时的异常摘要（此时 `status=FAIL`） |
+
+状态语义（**关键**）：
+
+| 状态 | 含义 |
+|---|---|
+| `OK` | 检查通过 |
+| `WARN` | 能跑但有可疑之处（截断、覆盖率不足、索引与文件不一致等） |
+| `FAIL` | 明确不可用或与预期不符；**只有它计入「问题」** |
+| `NO_DATA` | 无样本可判定（该功能还没被使用过） |
+| `SKIPPED` | 环境性缺失样本，原因已知（目前只有「运行日志采集已关闭，无日志样本」一类） |
+
+**采集开关与功能自检的关系（硬性）**：
+`PUT /api/web/diagnostics/runtime-log/capture` **只控制常规 logcat 是否持续落盘**，
+对功能自检**没有任何影响**：
+
+- 探针读的是书卷清单/人物档案/会话 manifest 等业务文件，以及**独立的**结构化事件环形缓冲
+  （`DiagnosticsSink` → `DiagnosticsEventLog`，不是运行日志文件）；
+- 采集关闭时「已注册/未注册计数」、各探针的 ✅/⚠️/❌、概览、启动自检、模型连通性、
+  问题清单里的崩溃与结构化事件**一个都不少**；
+- 确实需要日志样本的项在无样本时返回 `NO_DATA`/`SKIPPED`，**绝不返回 `FAIL`**——
+  把「没数据」显示成 ❌ 会让用户去修一个根本没坏的功能。
+
+概览与导出读的是**上一轮快照**（同步、无 IO，不会被慢探针拖住 HTTP 请求）；
+`POST /api/web/diagnostics/feature-probes/refresh` 才会真正重跑全部探针（丢弃缓存）。
+单个探针抛异常/超时只影响它自己（转成 `FAIL` + 异常摘要），不影响其它探针或整个诊断。
+
+### 2.1.4 诊断自身状态、功能事件、盲区与流畅度（2.1.13 起）
+
+`DiagnosticsOverviewDto` 自 2.1.13 起新增以下字段（`DiagnosticsReport` 同名字段同口径）：
+
+| 字段 | 含义 |
+|---|---|
+| `selfStatus` | **诊断自身状态**（`DiagnosticsSelfStatusDto`）：`droppedEvents`（因上限被丢弃的事件数）、`writeFailures`、`readFailures`、`samplingOverheadMs`/`samplingSamples`（帧/重组/布局/可访问性采样开销）、`retention`（各类环形缓冲当前占用与上限）。**这一节存在的意义是区分「真的没问题」与「事件根本没记上」** |
+| `featureEvents` | **通用功能事件统计**（`FeatureEventStatDto[]`）：按 `功能 × 操作` 累计 `total`/`okCount`/`degradedCount`/`failedCount`/`successRate`/`avgDurationMs`/`maxDurationMs`/`firstAt`/`lastAt`/`lastStatus`/`lastDetail`。**成功率的分母只算「成功 + 失败」，降级不计入** |
+| `operationTrail` | **操作轨迹**（`OperationTrailEntryDto[]`）：`at`/`kind`（`navigation`/`operation`）/`label`/`detail`，最多 120 条 |
+| `coverage` | **覆盖范围**（`DiagnosticsCoverageDto`）：`processModel`（`single-process`/`multi-process`/`unknown`，取不到时为 `unknown`，**不假装单进程**）、`processNames`、`webViewPresent`、`webViewNote`、`coveredSurfaces`、`uncoveredSurfaces` |
+| `accessibility` | **可访问性审计**（`AccessibilityAuditDto`）：`sampledNodes`/`clickableNodes`/`missingLabelCount`/`smallTargetCount`/`findings[]`。`contrastChecked` 恒为 `false`（**对比度审计本版未做**，界面上写「未做」） |
+| `dataIntegrity` | **数据损坏审计**（`DataIntegrityAuditDto`）：`keyFilesChecked`/`keyFilesParsable`/`keyFilesFailing[]`/`parseFailures[]`/`writeFailures[]`。只读，**不做修复** |
+| `smoothness` | **画面与流畅度**（`SmoothnessReportDto`）：帧分档 `over16Count`/`over32Count`/`over100Count`、`longestFrameMs`、`mainThreadBlockCount`/`mainThreadBlocks[]`（每次阻塞**当时的主线程栈**）、`pageBuckets[]`（按页面分桶）、`recompositions[]`、`imageRequests[]`、`layoutJitter[]`、`flicker` |
+| `problemGroupCount` / `problemTotalCount` | 问题**组数**与分组前的**原始条数**（见 2.1.1） |
+
+启动自检 `startup` 新增两个键：`key_files_parsable`（关键文件可解析性：`ok（n/m 可解析）`
+或 `损坏 k/m：<路径>`）与 `coverage_scope`（`single-process（覆盖 4 面，未覆盖 3 面）` 形式）。
+
+#### 通用功能事件上报（R4）
+
+上报入口是公共代码里的 `DiagnosticsSink.report(功能, 操作, 状态, 耗时, 详情)`，
+状态取 `OK` / `DEGRADED` / `FAILED`；**成功也会上报**——只记失败时，
+「这个功能从没被调用过」与「每次都成功」在报告里长得一模一样。
+
+目前已接入的**统一入口**（新功能只要走这些入口，**不需要写任何诊断代码**就会自动出现）：
+
+| 统一入口 | 功能名 | 操作名 |
+|---|---|---|
+| 服务端 Ktor 路由拦截器（覆盖全部 `/api/**`，含将来新增的端点） | `route` | `METHOD /api/规范化路径`（去掉查询串；UUID/长十六进制段收敛为 `{id}`，纯数字段收敛为 `{n}`） |
+| 客户端 `repositoryRequest(...)`（覆盖全部 Repository 调用） | `repository` | 调用点标签（由 lambda 类名推导，失败时退化为 `repository.request`） |
+| 客户端聊天工具分发 `runTool(name)` | `chat.tool` | 工具名 |
+
+状态映射（路由）：`5xx → FAILED`、`4xx → DEGRADED`、其余 `OK`、无状态码 `FAILED`。
+客户端 `CancellationException` → `DEGRADED`（取消不是「功能坏了」，算失败会污染成功率）。
+两者都**只记录**：不改控制流、不吞异常（异常照原样抛出）。
+
+#### 截图差分「疑似闪烁」（R7）
+
+默认**关闭**；开启后为 500ms 低频采样，像素只在本地内存的 `Bitmap` 上逐格比较，
+**不落盘、不外传、不进导出**；导出里只有 `region` + `changes` + `windowMs` + `at`。
+`FlickerReportDto.pixelStoredToDisk` 恒为 `false`（采样实现里没有任何文件写入调用，
+也没有 `PixelCopy` / `MediaProjection`）。
+
+**措辞约定（硬性）**：只允许写「疑似闪烁（区域(x,y) 300ms 内变化 7 次）」，
+不允许写「检测到 bug」——截图差分给不出因果。
 
 ### 2.2 诊断导出报告（`DiagnosticsReport`）
 
 导出报告的各段独立容错：单段读取失败只降级为空，不会让整个导出返回 500。
 
+`schemaVersion` 自 6 起额外包含：`tier`（`compact`/`full`，报告自己声明是哪一档——
+否则读者无法区分「日志为空」与「这是精简档，日志被有意省略」）、`problems`（去重后的可读问题清单）、
+`featureEvents`、`selfStatus`、`operationTrail`、`coverage`、`accessibility`、`dataIntegrity`、`smoothness`；
+精简档（默认）下 `recentEvents` 为空、`runtimeLog` 不含日志正文与崩溃堆栈，`eventStats` 与探针结论照常保留。
+`schemaVersion` 自 5 起额外包含 `featureProbes`（功能自检报告，同 `FeatureProbeReportDto`）
+与 `processExitAttribution`（进程退出原因映射覆盖情况，见 2.1.2）。
 `schemaVersion` 自 4 起额外包含：`environment`（版本与现场元信息，同 `EnvironmentInfoDto`）、
 `eventStats`（结构化事件统计）、`modelTests`（最近的模型连通性测试结果）；
 `startup` 段自 4 起由真实自检填充（此前恒为 `{}`）。
@@ -235,6 +499,26 @@ URL 中的凭据一律替换为 `***`），超长行截断。
 > `errorMessage` 自 `schemaVersion` 3 起提供。此前只导出 `errorType`，
 > 而蒸馏失败走的是 `progress.error`，导致导出包里所有失败 run 都看不出失败原因，
 > 只显示一个空的 `errorType`。
+
+`model.profiles[]`（`ProfileSummary`）字段：
+
+| 字段 | 含义 |
+|---|---|
+| `profileId` / `provider` / `model` | 档案标识与模型 |
+| `baseUrl` | 端点（已去掉 query） |
+| `apiKeyConfigured` | 安全存储里是否**真的**有 Key（不看 `ModelProfile.apiKeyConfigured` 这个从不被保存路径写入的标记） |
+| `configured` | 是否可用（有 provider/model，且 Key 已配或不需要） |
+| `reasoningEffort` | **思考力度设置**（`off` / `auto` / `low` / `medium` / `high` / `max` / `xhigh` …；缺省 `off`） |
+| `tokenParameter` | **token 参数**：`auto` / `max_tokens` / `max_completion_tokens`（`auto` 表示由模型 id 推导） |
+| `responseFormatMode` | **结构化输出模式**：`auto` / `json_object` / `prompt_only` |
+
+> 后三个字段是**决定请求体形状**的开关，三者此前都不在导出里。缺了它们，拿到一份
+> 诊断也判断不出上游为什么拒收：`max_tokens` 与 `max_completion_tokens` 发错字段、
+> `reasoning_effort` 超出该模型允许值、`response_format` 被下发——三种都会得到 400，
+> 而导出里一个都看不到。三者都不是密钥，与 `GET /api/web/settings/model` 的
+> `putProfileFields` 同口径。注意这里记的是**设置值**；`LlmClient` 转换后的线上实际值
+> （例如 `off` → `reasoning_effort=none`、白名单过滤后「不发」）只出现在
+> `llm.http_error_payload` 事件里。
 
 ## 3. 书卷与蒸馏运行
 
@@ -800,6 +1084,32 @@ data: {"index":0,"speaker":"林黛玉","role":"character","field":"message","tex
 ```
 
 连接测试/能力检测请求字段相同，但没有 `profile_name`、`create_profile`、`activate_profile`。响应只返回 `api_key_configured`，绝不回传明文 API Key。
+
+保存接口的字段校验（不通过返回 `400`，`message` 说明原因）：
+
+| 字段 | 允许值 |
+|---|---|
+| `max_tokens` | `0..16000` |
+| `token_parameter` | `auto` / `max_tokens` / `max_completion_tokens` |
+| `response_format_mode` | `auto` / `json_object` / `prompt_only` |
+| `reasoning_effort` | `auto` / `off` / `low` / `medium` / `high` / `max` / `xhigh` / `minimal` / `ultra` / `none`；空串放行（等同未设置） |
+
+> `reasoning_effort` 的校验是后补的：此前它是唯一不受校验的请求字段，绕开编辑器的写入路径
+> 能把任意值存进档案。校验的是**设置值的词汇表**（各提供方允许值的并集），
+> 「该模型到底接受哪个值」属于请求侧——`LlmClient` 对商汤模型按**逐模型白名单**过滤，
+> 白名单外的值**不发**而不是照发（平台逐模型校验，官方 FAQ 有 400 实证：
+> `output_config.effort must be one of: low, medium, high; got "xhigh"`）。
+
+`token_parameter=auto` 的推导：`gpt-5` / `o1` / `o3` / `o4` 与 **`kimi-k3`** 用 `max_completion_tokens`，
+其余模型用 `max_tokens`。`kimi-k3` 的官方请求参数表只有 `max_completion_tokens`、没有 `max_tokens`，
+此前它会落到 `max_tokens` 分支——一个该模型表单里不存在的字段。
+显式配置 `token_parameter` 时以配置为准。
+
+`reasoning_effort=off`（关闭思考）在各提供方的落法：DeepSeek 直连（`api.deepseek.com`）发
+`thinking={"type":"disabled"}`；商汤模型发 `reasoning_effort=none`
+（官方关思考的写法；`glm-5.2` 明确 `thinking.type=disabled` 会让请求失败）——
+但若该模型的允许值白名单不含 `none`（目前只有 `kimi-k3` 因文档自相矛盾被保守排除），
+则**不发该字段**，思考保持默认开启。
 
 能力检测响应包括连接状态、TTFT、总耗时、真实流式支持、SSE 分块统计、NDJSON 遵循度、结构化响应与 reasoning-off 支持，以及推荐的 token/响应格式设置。
 

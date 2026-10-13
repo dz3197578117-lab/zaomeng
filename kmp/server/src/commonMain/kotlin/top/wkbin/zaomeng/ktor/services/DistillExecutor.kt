@@ -428,6 +428,14 @@ class DistillExecutor(
                 )
             }.onFailure { e ->
                 PlatformLog.e(TAG, "Relation graph failed for run=$runId: ${e.message}", e)
+                // R4 静默失败迁移：关系图失败此前只写 logcat + 清单状态，
+                // 诊断导出里看不到「这一步失败过几次、什么原因」。
+                DiagnosticsSink.recordFailure(
+                    stage = "distill.relation_graph",
+                    error = e,
+                    retrying = false,
+                    details = mapOf("run_id" to runId),
+                )
                 patchManifest(runId) { current ->
                     val progress = (current["progress"]?.jsonObject ?: JsonObject(emptyMap())).let { old ->
                         buildJsonObject {
@@ -1418,7 +1426,7 @@ class DistillExecutor(
         if (characters.isEmpty()) return
         val service = PersonaArcService(storage, llm, NovelChapterIndexService(storage))
         val manifest = storage.readRunManifest(runId) ?: return
-        val summary = runCatching {
+        val summaryResult = runCatching {
             service.generate(
                 runId = runId,
                 runManifest = manifest,
@@ -1431,19 +1439,146 @@ class DistillExecutor(
                     val total = (details["chapter_total"] as? Number)?.toInt() ?: 0
                     if (index == 1 || index == total || (index > 0 && index % 5 == 0)) {
                         applyDistillProgress(runId, stage, details)
+                        // 弧线是「逐章落盘」的：索引若只在收尾成功路径更新，
+                        // 一旦这一阶段被中断（进程被杀 / 停机），就会出现
+                        // 「arc.json 有 174 章、artifact_index 却写 has_arc=false」的假象。
+                        // 所以随同一个节拍按磁盘真相回填**当前角色**的索引。
+                        refreshArcIndex(runId, novelId, service, only = listOfNotNull(characterOf(details)))
                     }
                 },
             )
-        }.getOrElse { error ->
-            PlatformLog.w(TAG, "Persona arc stage skipped for run=$runId: ${error.message}")
+        }
+        val summary = summaryResult.getOrNull()
+        if (summary == null) {
+            // 之前这里只写 PlatformLog：阶段失败在诊断里完全看不到（用户只看到「弧线不全」）。
+            val error = summaryResult.exceptionOrNull()
+            PlatformLog.w(TAG, "Persona arc stage skipped for run=$runId: ${error?.message}")
+            DiagnosticsSink.recordFailure(
+                stage = "distill.persona_arc",
+                error = error,
+                retrying = false,
+                details = mapOf("run_id" to runId, "characters" to characters.size.toString()),
+            )
+        } else {
+            PlatformLog.i(
+                TAG,
+                "Persona arc for run=$runId: characters=${summary.charactersProcessed} " +
+                    "generated=${summary.generated} skipped=${summary.skipped} failed=${summary.failed}",
+            )
+        }
+
+        // 无论成功、失败还是被中断，都把「磁盘上的真相」写回索引：
+        // 索引一致性以文件为准，而不是以「阶段有没有跑到收尾」为准。
+        val reconcile = runCatching { refreshArcIndex(runId, novelId, service, only = null) }
+        if (reconcile.isFailure) {
+            DiagnosticsSink.recordFailure(
+                stage = "distill.persona_arc_index",
+                error = reconcile.exceptionOrNull(),
+                retrying = false,
+                details = mapOf("run_id" to runId),
+            )
+        }
+
+        if (summary == null) {
+            recordArcIncomplete(runId, characters, emptyMap(), 0, summary)
             return
         }
-        PlatformLog.i(
-            TAG,
-            "Persona arc for run=$runId: characters=${summary.charactersProcessed} " +
-                "generated=${summary.generated} skipped=${summary.skipped} failed=${summary.failed}",
+        val arcCounts = characters.associateWith { name ->
+            runCatching {
+                service.readArc(runId, novelId, name)?.get("chapter_count")?.jsonPrimitive?.intOrNull ?: 0
+            }.getOrDefault(0)
+        }
+        recordArcIncomplete(runId, characters, arcCounts, summary.chaptersPerCharacter, summary)
+    }
+
+    /** `onProgress` 里的角色名（探针/上报都用同一个键名）。 */
+    private fun characterOf(details: Map<String, Any?>): String? =
+        (details["character"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+
+    /**
+     * 弧线阶段收尾：把「哪些角色没跑完、失败了多少章」**留下来**，
+     * 并写进 manifest 的 `progress.persona_arc`，让用户在书卷页就能看到弧线是 partial 而不是 done。
+     *
+     * 逐章失败（模型不可用、单章解析失败）本来就被设计成「不升级为整体失败」，
+     * 但**不能因此不留痕**：174/983 这种覆盖率必须能被看到。
+     */
+    private fun recordArcIncomplete(
+        runId: String,
+        characters: List<String>,
+        arcCounts: Map<String, Int>,
+        plannedChapters: Int,
+        summary: PersonaArcService.ArcSummary?,
+    ) {
+        val withArc = arcCounts.count { it.value > 0 }
+        val withoutArc = arcCounts.filterValues { it == 0 }.keys.toList()
+        val minCount = arcCounts.values.minOrNull() ?: 0
+        val maxCount = arcCounts.values.maxOrNull() ?: 0
+        val shortCharacters = if (plannedChapters > 0) {
+            arcCounts.filterValues { it in 1 until plannedChapters }.keys.toList()
+        } else {
+            emptyList()
+        }
+        val failedChapters = summary?.failed ?: 0
+        val incomplete = withoutArc.isNotEmpty() || shortCharacters.isNotEmpty() || failedChapters > 0
+        if (plannedChapters > 0) {
+            patchManifest(runId) { current ->
+                val progress = current["progress"]?.jsonObject ?: JsonObject(emptyMap())
+                buildJsonObject {
+                    current.forEach { (key, value) -> if (key != "progress") put(key, value) }
+                    put(
+                        "progress",
+                        buildJsonObject {
+                            progress.forEach { (key, value) -> put(key, value) }
+                            put(
+                                "persona_arc",
+                                buildJsonObject {
+                                    put("status", if (incomplete) "partial" else "done")
+                                    put("characters_total", characters.size)
+                                    put("characters_with_arc", withArc)
+                                    put("chapter_total", plannedChapters)
+                                    put("chapter_min", minCount)
+                                    put("chapter_max", maxCount)
+                                    put("failed_chapters", failedChapters)
+                                    put("updated_at", nowIsoString())
+                                },
+                            )
+                        },
+                    )
+                }
+            }
+        }
+        if (!incomplete) return
+        DiagnosticsSink.recordFailure(
+            stage = "distill.persona_arc_incomplete",
+            error = null,
+            retrying = false,
+            details = buildMap {
+                put("run_id", runId)
+                put("characters", characters.size.toString())
+                put("characters_with_arc", withArc.toString())
+                put("chapter_total", plannedChapters.toString())
+                put("chapter_min", minCount.toString())
+                put("chapter_max", maxCount.toString())
+                put("failed_chapters", failedChapters.toString())
+                if (withoutArc.isNotEmpty()) put("characters_without_arc", withoutArc.take(12).joinToString("、"))
+                if (shortCharacters.isNotEmpty()) put("characters_short", shortCharacters.take(12).joinToString("、"))
+                put("resume", "重新蒸馏可续跑（已完成的章会跳过）")
+            },
         )
-        if (!summary.hasArc) return
+    }
+
+    /**
+     * 以磁盘上的 `arc.json` 为准回填 `artifact_index.characters[].has_arc / arc_count`。
+     *
+     * @param only 只回填这些角色（逐章节拍用，避免每次重写全部角色）；null 表示全部。
+     */
+    private fun refreshArcIndex(
+        runId: String,
+        novelId: String,
+        service: PersonaArcService,
+        only: List<String>?,
+    ) {
+        val wanted = only?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()
         patchManifest(runId) { current ->
             val artifactIndex = current["artifact_index"]?.jsonObject ?: JsonObject(emptyMap())
             val known = artifactIndex["characters"] as? JsonArray ?: JsonArray(emptyList())
@@ -1451,14 +1586,23 @@ class DistillExecutor(
                 known.forEach { raw ->
                     val entry = runCatching { raw.jsonObject }.getOrNull() ?: return@forEach
                     val name = entry["name"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                    val arc = if (name.isBlank()) null else service.readArc(runId, novelId, name)
-                    val arcCount = arc?.get("chapter_count")?.jsonPrimitive?.intOrNull ?: 0
+                    val patch = wanted == null || name in wanted
+                    val arcCount = if (patch && name.isNotBlank()) {
+                        runCatching {
+                            service.readArc(runId, novelId, name)?.get("chapter_count")?.jsonPrimitive?.intOrNull ?: 0
+                        }.getOrDefault(0)
+                    } else if (patch) {
+                        0
+                    } else {
+                        entry["arc_count"]?.jsonPrimitive?.intOrNull ?: 0
+                    }
+                    val hasArc = if (patch) arcCount > 0 else entry["has_arc"]?.jsonPrimitive?.contentOrNull == "true"
                     add(
                         buildJsonObject {
                             entry.forEach { (key, value) ->
                                 if (key != "has_arc" && key != "arc_count") put(key, value)
                             }
-                            put("has_arc", arcCount > 0)
+                            put("has_arc", hasArc)
                             put("arc_count", arcCount)
                         },
                     )

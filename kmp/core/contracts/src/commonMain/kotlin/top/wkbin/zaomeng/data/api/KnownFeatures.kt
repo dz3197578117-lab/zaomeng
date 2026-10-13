@@ -15,6 +15,7 @@ package top.wkbin.zaomeng.data.api
  * - 本文件位于 `core/contracts`，因此服务端（算未注册）与设置页（显示未注册）
  *   共用同一份清单，不存在两份漂移。
  */
+@kotlinx.serialization.Serializable
 data class KnownFeature(
     val id: String,
     val title: String,
@@ -208,6 +209,12 @@ data class FeatureProbeReportDto(
     /** 结论计数（含 NO_DATA / SKIPPED），便于页面顶部一行展示。 */
     val okCount: Int = 0,
     val warnCount: Int = 0,
+    /**
+     * 计入「问题」的探针数。
+     *
+     * **与 `items` 里 `status == FAIL` 的条数同源**（服务端一次算出，界面不再各算一遍），
+     * 避免「计数」与「列表」出现不同数字这种最容易被怀疑的假象。
+     */
     val failCount: Int = 0,
     val noDataCount: Int = 0,
     /** 因环境原因主动跳过（目前只有「运行日志采集已关闭、无样本」一类）。 */
@@ -220,7 +227,12 @@ data class FeatureProbeReportDto(
     val durationMs: Long = 0,
     /** 缓存命中数（探针结果允许缓存最近一次，未重新执行的不计入耗时）。 */
     val cachedCount: Int = 0,
-)
+) {
+    /** 一句话汇总，页面顶部与复制摘要共用同一口径。 */
+    fun headline(): String =
+        "已注册 $registeredCount 项探针 · ✅$okCount ⚠️$warnCount ❌$failCount" +
+            " · 无数据 $noDataCount · 无样本 $skippedCount · $unregisteredCount/$knownFeatureCount 个功能未注册"
+}
 
 /**
  * 计算「未注册」：已知功能里没有任何探针引用的那些。

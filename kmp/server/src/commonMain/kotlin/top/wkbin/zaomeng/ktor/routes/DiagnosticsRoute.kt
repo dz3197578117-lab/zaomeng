@@ -6,8 +6,10 @@ import io.ktor.server.application.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import top.wkbin.zaomeng.data.api.FeatureProbeReportDto
 import top.wkbin.zaomeng.data.api.RuntimeCaptureRequestDto
 import top.wkbin.zaomeng.ktor.services.DiagnosticsService
+import top.wkbin.zaomeng.ktor.services.DIAGNOSTICS_TIER_COMPACT
 import top.wkbin.zaomeng.ktor.services.StorageService
 import top.wkbin.zaomeng.platform.RuntimeLogSource
 
@@ -18,16 +20,26 @@ import top.wkbin.zaomeng.platform.RuntimeLogSource
  */
 fun Route.diagnosticsRoute(
     storageService: StorageService,
-    diagnosticsService: DiagnosticsService
+    diagnosticsService: DiagnosticsService,
+    /**
+     * 功能自检「重新执行」入口。
+     *
+     * 概览与导出都只读**上一轮快照**（同步、不被慢探针拖住）；只有本端点会真正重跑探针。
+     * 为 null 时该端点仍存在但返回空报告（测试装配简化用）。
+     */
+    featureProbeRefresh: (suspend () -> FeatureProbeReportDto)? = null,
 ) {
     route("/api/web/diagnostics") {
         // GET /api/web/diagnostics/export - 导出诊断报告
         // run_id / session_id 可选：客户端带上「最近打开的会话」，服务端不知道 UI 状态
+        // tier 可选：compact（默认，概览 + 问题摘要 + 探针结论）/ full（含日志与完整堆栈）
         get("/export") {
             try {
                 val report = diagnosticsService.buildDiagnosticsReport(
                     runId = call.request.queryParameters["run_id"].orEmpty(),
                     sessionId = call.request.queryParameters["session_id"].orEmpty(),
+                    tier = call.request.queryParameters["tier"].orEmpty()
+                        .ifBlank { DIAGNOSTICS_TIER_COMPACT },
                 )
 
                 call.response.headers.append(
@@ -53,6 +65,21 @@ fun Route.diagnosticsRoute(
                 )
             } catch (e: Exception) {
                 call.respondError(HttpStatusCode.InternalServerError, (e.message ?: "Failed to build diagnostics overview"))
+            }
+        }
+
+        // POST /api/web/diagnostics/feature-probes/refresh - 重新执行功能自检探针
+        // 概览/导出读的是「上一轮快照」（不被慢探针拖住）；只有本端点会真正重跑。
+        post("/feature-probes/refresh") {
+            try {
+                call.respond(
+                    HttpStatusCode.OK,
+                    diagnosticsService.refreshFeatureProbes(
+                        refresh = featureProbeRefresh,
+                    ),
+                )
+            } catch (e: Exception) {
+                call.respondError(HttpStatusCode.InternalServerError, (e.message ?: "Failed to refresh feature probes"))
             }
         }
 

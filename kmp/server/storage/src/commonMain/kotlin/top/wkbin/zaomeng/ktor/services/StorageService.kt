@@ -21,6 +21,8 @@ import top.wkbin.zaomeng.db.DomainStore
 import top.wkbin.zaomeng.db.DocumentStore
 import top.wkbin.zaomeng.db.FileSystemDocumentStore
 import top.wkbin.zaomeng.ktor.models.*
+import top.wkbin.zaomeng.platform.DataIntegrityCategories
+import top.wkbin.zaomeng.platform.DiagnosticsSink
 import top.wkbin.zaomeng.platform.nowEpochMillis
 import top.wkbin.zaomeng.platform.SimpleLock
 import top.wkbin.zaomeng.platform.toHex
@@ -87,9 +89,67 @@ class StorageService(
 
     private fun writeBytesLocked(target: Path, bytes: ByteArray) {
         val mtime = nowEpochMillis()
-        store.writeBytes(target, bytes, mtime)
+        // R6 写入审计：业务写入失败此前是「抛出去就完了」，重启后没人知道某次写入曾经失败过。
+        // 这里只补一条痕再**原样抛出**——不吞异常、不改控制流。
+        try {
+            store.writeBytes(target, bytes, mtime)
+        } catch (error: Throwable) {
+            reportWriteFailure(target, bytes.size.toLong(), error)
+            throw error
+        }
         domain?.onWrite(target, bytes, mtime)
         sessionManifestCacheLock.withLock { sessionManifestCache.remove(target.toString()) }
+    }
+
+    /** 记一条写入失败（R6 数据损坏审计）。失败本身不允许影响主流程。 */
+    private fun reportWriteFailure(target: Path, sizeBytes: Long, error: Throwable) {
+        runCatching {
+            DiagnosticsSink.record(
+                category = DataIntegrityCategories.WRITE_FAILURE,
+                message = "${target} 写入失败：${error::class.simpleName ?: "Throwable"}: ${error.message.orEmpty()}",
+                details = mapOf(
+                    "path" to safeAuditPath(target),
+                    "size" to sizeBytes.toString(),
+                    "reason" to (error.message.orEmpty().take(200)),
+                ),
+            )
+        }
+    }
+
+    /**
+     * 记一条解析失败（R6 数据损坏审计）。
+     *
+     * 由读路径与启动自检调用：路径 / 原因 / 大小 / mtime / 损坏样本都要能对上，
+     * 否则「文件坏了」这句话对排查毫无帮助。
+     */
+    fun reportParseFailure(target: Path, reason: String, sample: String = "") {
+        runCatching {
+            val size = runCatching { fileSize(target) }.getOrDefault(0L)
+            val mtime = runCatching { lastModifiedMillis(target) }.getOrDefault(0L)
+            DiagnosticsSink.record(
+                category = DataIntegrityCategories.PARSE_FAILURE,
+                message = "${safeAuditPath(target)} 解析失败：${reason.take(200)}",
+                details = mapOf(
+                    "path" to safeAuditPath(target),
+                    "reason" to reason.take(300),
+                    "size" to size.toString(),
+                    "mtime" to mtime.toString(),
+                    "sample" to sample.take(PARSE_SAMPLE_CHARS),
+                ),
+            )
+        }
+    }
+
+    /**
+     * 审计用路径：只保留相对存储根的部分。
+     *
+     * 绝对路径会带出用户的目录结构，而诊断导出是要发出去的——相对路径足够定位文件，
+     * 又不会泄露「用户把应用装在哪」。
+     */
+    fun safeAuditPath(target: Path): String {
+        val absolute = target.toString()
+        val root = storageRoot.toString().trimEnd('/')
+        return absolute.removePrefix(root).trimStart('/').ifBlank { absolute }
     }
 
     /** 读取文本文件；不存在返回 null。 */
@@ -712,3 +772,6 @@ class StorageService(
         get() = runsRoot
 
 }
+
+/** 损坏样本的字符上限（R6）：够看出「是截断还是编码坏了」。 */
+private const val PARSE_SAMPLE_CHARS = 400

@@ -16,6 +16,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okio.Path
 import okio.Path.Companion.toPath
+import top.wkbin.zaomeng.platform.DiagnosticsSink
 import top.wkbin.zaomeng.platform.dumpYaml
 import top.wkbin.zaomeng.platform.nowEpochMillis
 import top.wkbin.zaomeng.platform.parseYaml
@@ -34,7 +35,7 @@ class RelationsService(private val storage: StorageService) {
     fun list(runId: String): JsonObject {
         val manifest = storage.readRunManifest(runId) ?: throw NoSuchElementException("Run not found: $runId")
         val file = resolveRelationsFile(runId, manifest) ?: return emptyDetails(runId, manifest)
-        val payload = loadPayload(file) ?: return emptyDetails(runId, manifest)
+        val payload = loadPayload(file, runId) ?: return emptyDetails(runId, manifest)
         val relations = payload["relations"]?.jsonObject ?: JsonObject(emptyMap())
         val conflicts = payload["conflicts"]?.jsonArray ?: JsonArray(emptyList())
         val items = buildJsonArray {
@@ -95,7 +96,7 @@ class RelationsService(private val storage: StorageService) {
     ): JsonObject {
         val manifest = storage.readRunManifest(runId) ?: throw NoSuchElementException("Run not found: $runId")
         val file = resolveRelationsFile(runId, manifest) ?: throw NoSuchElementException("关系图谱不存在，请先导入或生成人物关系。")
-        val payload = loadPayload(file) ?: throw IllegalStateException("关系图谱解析失败。")
+        val payload = loadPayload(file, runId) ?: throw IllegalStateException("关系图谱解析失败。")
         val relations = (payload["relations"]?.jsonObject ?: JsonObject(emptyMap())).toMutableMap()
         val existing = relations[pairKey]?.jsonObject
             ?: throw NoSuchElementException("Pair not found: $pairKey")
@@ -128,7 +129,7 @@ class RelationsService(private val storage: StorageService) {
     fun removeCharacter(runId: String, character: String): JsonObject? {
         val manifest = storage.readRunManifest(runId) ?: return null
         val file = resolveRelationsFile(runId, manifest) ?: return null
-        val payload = loadPayload(file) ?: return null
+        val payload = loadPayload(file, runId) ?: return null
         val relations = (payload["relations"]?.jsonObject ?: JsonObject(emptyMap())).toMutableMap()
         val removed = relations.keys.filter { character in splitPair(it) }
         if (removed.isEmpty()) return null
@@ -180,22 +181,142 @@ class RelationsService(private val storage: StorageService) {
             .firstOrNull { storage.isFile(it) && it.name.endsWith(".md") && it.name.contains("relation") && !it.name.endsWith(".mermaid.md") }
     }
 
-    private fun loadPayload(file: Path): JsonObject? {
-        val text = storage.readText(file)
-        val frontMatter = extractFrontMatter(text) ?: return null
-        return runCatching {
+    /**
+     * 读取并解析关系文件。
+     *
+     * **静默降级的收口**：front-matter 解析失败以前直接返回 null，上层退化成「空关系图」，
+     * 用户看到的是「关系图谱不见了」，诊断里却一条记录都没有。现在：
+     * 1. 失败一律走 [DiagnosticsSink.recordFailure]（阶段 `relations.front_matter_parse`）；
+     * 2. 尽量从正文兜底提取（手改过 / 没有 front-matter 的旧文件）；
+     * 3. 兜底也失败才返回 null，且**已经留痕**，不是静默。
+     */
+    private fun loadPayload(file: Path, runId: String): JsonObject? {
+        val textResult = runCatching { storage.readText(file) }
+        val text = textResult.getOrNull()
+        if (text == null) {
+            DiagnosticsSink.recordFailure(
+                stage = "relations.front_matter_parse",
+                error = textResult.exceptionOrNull(),
+                retrying = false,
+                details = mapOf("run_id" to runId, "file" to file.name, "reason" to "read_failed"),
+            )
+            return null
+        }
+        val frontMatter = extractFrontMatter(text)
+        if (frontMatter == null) {
+            // 旧文件/手工文件可能根本没有 `---` 包裹：降级但不静默。
+            DiagnosticsSink.recordFailure(
+                stage = "relations.front_matter_parse",
+                error = null,
+                retrying = false,
+                details = mapOf(
+                    "run_id" to runId,
+                    "file" to file.name,
+                    "reason" to "no_front_matter",
+                    "chars" to text.length.toString(),
+                ),
+            )
+            return bodyFallback(text, runId, file.name) ?: return null
+        }
+        val parsedResult = runCatching {
             @Suppress("UNCHECKED_CAST")
-            val loaded = parseYaml(frontMatter) as? Map<String, Any> ?: return@runCatching null
-            toJsonElement(loaded).jsonObject
+            parseYaml(frontMatter) as? Map<String, Any>
+        }
+        val loaded = parsedResult.getOrNull()
+        if (loaded == null) {
+            DiagnosticsSink.recordFailure(
+                stage = "relations.front_matter_parse",
+                error = parsedResult.exceptionOrNull(),
+                retrying = false,
+                details = mapOf(
+                    "run_id" to runId,
+                    "file" to file.name,
+                    "reason" to "yaml_parse_failed",
+                    "front_matter_chars" to frontMatter.length.toString(),
+                ),
+            )
+            return bodyFallback(text, runId, file.name) ?: return null
+        }
+        return runCatching { toJsonElement(loaded).jsonObject }.getOrNull()
+    }
+
+    /**
+     * 正文兜底提取：把 `## <pairKey>` + `- key: value` 段落还原成关系表。
+     *
+     * 生成侧写盘的 front-matter 本来就来自这种 Markdown 形状，所以对「front-matter 被手改坏、
+     * 但正文还在」的文件能救回大部分关系；救不回来时也已经留痕。
+     */
+    private fun bodyFallback(text: String, runId: String, fileName: String): JsonObject? {
+        val relations = parseRelationSections(text) ?: return null
+        DiagnosticsSink.recordFailure(
+            stage = "relations.front_matter_parse",
+            error = null,
+            retrying = false,
+            details = mapOf(
+                "run_id" to runId,
+                "file" to fileName,
+                "reason" to "body_fallback_used",
+                "relations" to relations.size.toString(),
+            ),
+        )
+        return runCatching {
+            toJsonElement(
+                mapOf(
+                    "novel_id" to runId,
+                    "relations" to relations,
+                ),
+            ).jsonObject
         }.getOrNull()
     }
 
+    /** 解析 `## pairKey` 段落里的 `- key: value` 行；没有可用段落时返回 null。 */
+    private fun parseRelationSections(text: String): Map<String, Any?>? {
+        val relations = linkedMapOf<String, Any?>()
+        var currentKey = ""
+        var current: MutableMap<String, Any?>? = null
+        for (rawLine in text.lines()) {
+            val line = rawLine.trim()
+            if (line.isEmpty()) continue
+            if (line.startsWith("## ")) {
+                val key = line.removePrefix("## ").trim()
+                // mermaid / 说明性小节不是关系对：必须含至少两个角色名才认。
+                if (key.contains('_') || key.contains('→')) {
+                    currentKey = key
+                    current = linkedMapOf()
+                    relations[currentKey] = current
+                } else {
+                    currentKey = ""
+                    current = null
+                }
+                continue
+            }
+            if (current == null || !line.startsWith("- ") || !line.contains(':')) continue
+            val body = line.removePrefix("- ")
+            val key = body.substringBefore(':').trim()
+            if (key.isEmpty()) continue
+            val value = body.substringAfter(':').trim()
+            current[key] = value.toIntOrNull() ?: value
+        }
+        return relations.takeIf { it.isNotEmpty() }
+    }
+
+    /**
+     * 抽 front-matter。
+     *
+     * 兼容性（旧文件必须能读）：
+     * - 容忍 BOM（Windows / 手工编辑）与开头空行；
+     * - 容忍 CRLF（[String.trim] 会去掉 `\r`）；
+     * - 结束符缺失时返回 null（由调用方留痕 + 走正文兜底）。
+     */
     private fun extractFrontMatter(text: String): String? {
-        val lines = text.lines()
-        if (lines.firstOrNull()?.trim() != "---") return null
-        val end = lines.drop(1).indexOfFirst { it.trim() == "---" }
+        val normalized = text.removePrefix("\uFEFF")
+        val lines = normalized.lines()
+        val start = lines.indexOfFirst { it.isNotBlank() }
+        if (start < 0 || lines[start].trim() != "---") return null
+        val rest = lines.drop(start + 1)
+        val end = rest.indexOfFirst { it.trim() == "---" }
         if (end < 0) return null
-        return lines.drop(1).take(end).joinToString("\n")
+        return rest.take(end).joinToString("\n")
     }
 
     private fun writePayload(file: Path, payload: JsonObject) {

@@ -11,6 +11,8 @@ import top.wkbin.zaomeng.data.ReusableCardKind
 import top.wkbin.zaomeng.data.SessionRepository
 import top.wkbin.zaomeng.data.api.DialogueMemoryDto
 import top.wkbin.zaomeng.data.api.DialogueSessionDto
+import top.wkbin.zaomeng.platform.DiagnosticsSink
+import top.wkbin.zaomeng.platform.FeatureReportStatus
 
 /** Owns Chat tool execution, stale-request guards, and recovery-aware mutations. */
 internal class ChatToolsDelegate(
@@ -507,11 +509,36 @@ internal class ChatToolsDelegate(
             }
         }
         toolJob = scope.launch {
+            // R4：聊天工具分发是客户端第二个统一入口。
+            // **新增一个工具（runTool("xxx") { ... }），不改任何诊断代码，它就会自动
+            // 出现在「运行诊断 → 功能事件」里**：功能 = `chat.tool`，操作 = 工具名。
+            // 只记录，不改控制流、不吞异常。
+            val startedAt = kotlin.time.TimeSource.Monotonic.markNow()
             try {
                 request.block()
+                DiagnosticsSink.report(
+                    feature = FEATURE_CHAT_TOOL,
+                    action = name,
+                    status = FeatureReportStatus.OK,
+                    durationMs = startedAt.elapsedNow().inWholeMilliseconds,
+                )
             } catch (cancelled: CancellationException) {
+                DiagnosticsSink.report(
+                    feature = FEATURE_CHAT_TOOL,
+                    action = name,
+                    status = FeatureReportStatus.DEGRADED,
+                    durationMs = startedAt.elapsedNow().inWholeMilliseconds,
+                    detail = "工具被取消",
+                )
                 throw cancelled
             } catch (error: Throwable) {
+                DiagnosticsSink.report(
+                    feature = FEATURE_CHAT_TOOL,
+                    action = name,
+                    status = FeatureReportStatus.FAILED,
+                    durationMs = startedAt.elapsedNow().inWholeMilliseconds,
+                    detail = "${error::class.simpleName ?: "Throwable"}: ${error.message.orEmpty().take(200)}",
+                )
                 request.updateState {
                     it.copy(error = error.readableMessage("操作失败，请稍后重试。"))
                 }
@@ -648,3 +675,6 @@ internal class ChatToolsDelegate(
         }
     }
 }
+
+/** 功能事件里的功能名：聊天工具分发共用。 */
+private const val FEATURE_CHAT_TOOL = "chat.tool"

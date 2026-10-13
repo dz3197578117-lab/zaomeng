@@ -44,7 +44,8 @@ class FeatureProbeContext(
     val connectivityLog: ModelConnectivityLog?,
     val onDeviceSnapshot: (() -> Map<String, String>)? = null,
     val apiKeyConfiguredOf: ((String) -> Boolean?)? = null,
-    val keystoreHealth: KeystoreHealth? = null,
+    /** 安全存储健康度探测（只读；**只返回成败与条目数，绝不返回内容**）。 */
+    val keystoreHealth: (() -> KeystoreHealth)? = null,
     val maxRunsPerProbe: Int = DEFAULT_MAX_RUNS,
     val maxSessionsPerProbe: Int = DEFAULT_MAX_SESSIONS,
 ) {
@@ -62,6 +63,14 @@ class FeatureProbeContext(
         runIds()
             .sortedByDescending { runCatching { storage.lastModifiedMillis(storage.getRunManifestPath(it)) }.getOrDefault(0L) }
             .take(maxRunsPerProbe)
+
+    /**
+     * 探针的「焦点书卷」：最近改动的那一本。
+     *
+     * 多数明细探针（弧线、档案、章节索引）只对焦点书卷做深查，
+     * 否则 N 本书卷 × 每本 M 个档案会把诊断页拖慢——而探针必须廉价。
+     */
+    fun focusRunId(): String? = runIdsForProbe().firstOrNull()
 
     fun readRunManifest(runId: String): JsonObject? = runCatching { storage.readRunManifest(runId) }.getOrNull()
 
@@ -81,6 +90,15 @@ class FeatureProbeContext(
     fun readRunText(runId: String, vararg relativePath: String): String? = runCatching {
         storage.readTextOrNull(runFile(runId, *relativePath))
     }.getOrNull()
+
+    /**
+     * 同 [readRunText]，但只取前 [maxChars] 个字符。
+     *
+     * 探针只需要判断字段完整性与占位词，不需要整份档案：
+     * 封顶读取能保证「人物档案很多、很有钱」时探针依然是廉价操作。
+     */
+    fun readRunTextLimited(runId: String, maxChars: Int, vararg relativePath: String): String? =
+        readRunText(runId, *relativePath)?.take(maxChars)
 
     /** `runs/{runId}` 下的相对路径（只读；每段都过 PathSafety）。 */
     fun runFile(runId: String, vararg relativePath: String): Path {
@@ -172,7 +190,7 @@ internal fun JsonObject.str(key: String): String =
 
 /** 安全取整数（缺失/非法返回 null）。 */
 internal fun JsonObject.intOrNull(key: String): Int? =
-    runCatching { this[key]?.jsonPrimitive?.intOrNull() }.getOrNull()
+    runCatching { this[key]?.jsonPrimitive?.intOrNull }.getOrNull()
 
 /** 安全取对象（缺失/非法返回 null）。 */
 internal fun JsonObject.obj(key: String): JsonObject? = runCatching { this[key]?.jsonObject }.getOrNull()

@@ -177,7 +177,7 @@
 | `src/web/review/persona_completion.py` | User-Agent 中的仓库地址 |
 | `zaomeng-skill/README.md` / `README_EN.md` | OpenClaw 安装段原为 `openclaw skills install wkbin/zaomeng-skill`（会装到上游那份），改用仓库自带的 `scripts/install_skill.py --openclaw-dir` |
 | `tests/test_web_run_lifecycle.py` | `_discover_launcher_metadata` 夹具里的 `repo_slug` 与 `install.sh` / `DEFAULT_REPO_SLUG` 实际写入的值对齐 |
-| `kmp/app/desktopApp/build.gradle.kts` | 桌面安装包（MSI/DMG）的 `vendor` 由 `"wkbin"` 改为 `"dz3197578117-lab"`——安装时这个值会显示给用户 |
+| `kmp/app/desktopApp/build.gradle.kts` | 桌面安装包（DMG/Deb）的 `vendor` 由 `"wkbin"` 改为 `"dz3197578117-lab"`——安装时这个值会显示给用户 |
 
 > `docs/notes/real-app-guide.md` 的三条安装指令也曾指向上游，但该文件本身属于新增，已计入第九节。
 

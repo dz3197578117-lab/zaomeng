@@ -25,18 +25,18 @@
 
 从 `kmp/` 目录执行：
 
-```powershell
+```bash
 # 服务端（含 storage/llm/http 子模块）
-.\gradlew.bat :server:storage:jvmTest :server:llm:jvmTest :server:http:jvmTest :server:jvmTest :server:compileKotlinJvm :server:compileAndroidMain
+./gradlew :server:storage:jvmTest :server:llm:jvmTest :server:http:jvmTest :server:jvmTest :server:compileKotlinJvm :server:compileAndroidMain
 
 # 共享客户端
-.\gradlew.bat :app:shared:jvmTest :app:shared:compileKotlinJvm :app:shared:compileAndroidMain
+./gradlew :app:shared:jvmTest :app:shared:compileKotlinJvm :app:shared:compileAndroidMain
 
 # Android CI 等价检查
-.\gradlew.bat testDebugUnitTest jvmTest lintDebug assembleDebug
+./gradlew testDebugUnitTest jvmTest lintDebug assembleDebug
 
 # Desktop
-.\gradlew.bat :app:desktopApp:compileKotlin
+./gradlew :app:desktopApp:compileKotlin
 ```
 
 仅当修改旧 Python 基线、脚本或仓库级检查时，从根目录执行：

@@ -260,3 +260,11 @@ class FeatureProbeRegistry {
 fun interface FeatureProbeModule {
     fun registerInto(registry: FeatureProbeRegistry)
 }
+
+/** 把「短文本键值对」转成证据表（探针里最常见的一步）。 */
+fun Map<String, String>.toProbeEvidence(): ProbeEvidence =
+    ProbeEvidence.build { this@toProbeEvidence.forEach { (key, value) -> text(key, value) } }
+
+/** 在已有结果上追加证据（键冲突时后加的值覆盖旧的）。 */
+fun ProbeResult.withEvidence(extra: Map<String, String>): ProbeResult =
+    copy(evidence = (evidence.render() + extra).toProbeEvidence())

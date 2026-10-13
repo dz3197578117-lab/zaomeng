@@ -98,6 +98,13 @@ class SettingsManagementService(
         if (responseFormatMode !in setOf("auto", "json_object", "prompt_only")) {
             throw IllegalArgumentException("Unsupported response format mode")
         }
+        // 唯漏的一个：reasoning_effort 此前完全不校验，绕开编辑器的写入路径能把任意值
+        // 送到线上（请求侧只会做逐模型白名单过滤，非法值在那里变成「不发」而不是报错），
+        // 于是「设了 high 却没生效」这种问题在服务端没有任何痕迹。空串放行：语义等同未设置（auto）。
+        val normalizedEffort = reasoningEffort.trim().lowercase()
+        if (normalizedEffort.isNotEmpty() && normalizedEffort !in SUPPORTED_REASONING_EFFORTS) {
+            throw IllegalArgumentException("Unsupported reasoning effort")
+        }
 
         // 读取现有设置
         val existingSettings = storageService.readModelSettings()
@@ -370,5 +377,28 @@ class SettingsManagementService(
 
     companion object {
         private const val TAG = "SettingsManagementService"
+
+        /**
+         * 允许保存的思考力度取值（**设置值**的词汇表，不是逐模型的线上白名单）。
+         *
+         * 「该模型到底接受哪个值」属于请求侧的事，由 `LlmClient.resolveSenseNovaEffort`
+         * 按逐模型白名单决定（含官方兼容映射）；这里只拦住编辑器之外的写入路径
+         * 送上来的、谁也解释不了的值。
+         *
+         * - `auto` / `off`：控制值（`off` = 关闭思考；商汤侧落到 `reasoning_effort=none`，
+         *   因为 glm-5.2 明确 `thinking.type=disabled` 会让请求失败 ——
+         *   见 sensenova-api-reference.txt 2413-2415 行）；
+         * - `low` / `medium` / `high` / `max`：商汤与多数提供方的原生档位
+         *   （491-493、1428-1430、1854-1861、2265-2267、2693-2694、2760-2761 行）；
+         * - `xhigh` / `minimal`：glm-5.2 原生档位（2265-2267 行），OpenAI/DeepSeek 侧亦在用；
+         * - `ultra`：DeepSeek 侧档位，商汤 deepseek-flash 有 ultra → max 的兼容映射（1857-1858 行）；
+         * - `none`：线上原生值本身，多个商汤模型直接接受（491-493、1854-1861、2265-2267 行）。
+         *
+         * 取值集合是「各提供方允许值的并集」：保存时无法知道最终会打到哪个端点
+         * （档案可改 provider/model），过度收紧会把合法配置挡在门外。
+         */
+        private val SUPPORTED_REASONING_EFFORTS = setOf(
+            "auto", "off", "low", "medium", "high", "max", "xhigh", "minimal", "ultra", "none",
+        )
     }
 }

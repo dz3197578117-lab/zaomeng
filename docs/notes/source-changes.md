@@ -37,7 +37,7 @@
 
 ```bash
 cd zaomeng-main/kmp
-.\gradlew.bat :server:llm:jvmTest :server:compileKotlinJvm :app:shared:compileKotlinJvm
+./gradlew :server:llm:jvmTest :server:compileKotlinJvm :app:shared:compileKotlinJvm
 ```
 
 改动的 Kotlin 文件若需逐行 diff，直接对比 `zaomeng-main/` 与上游 `wkbin/zaomeng@main` 即可。

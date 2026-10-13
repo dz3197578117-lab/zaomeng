@@ -29,7 +29,7 @@ cd zaomeng
 ### 桌面端（推荐，无需 Android SDK）
 ```bash
 # Windows
-.\gradlew.bat :app:desktopApp:run
+./gradlew :app:desktopApp:run
 # macOS / Linux
 ./gradlew :app:desktopApp:run
 ```
@@ -37,7 +37,7 @@ cd zaomeng
 
 ### Android
 ```bash
-.\gradlew.bat :app:androidApp:assembleDebug   # 生成 APK（需 signing + SDK）
+./gradlew :app:androidApp:assembleDebug   # 生成 APK（需 signing + SDK）
 ```
 
 ### 旧版 Web UI（不再维护，仍可用）
@@ -76,7 +76,7 @@ npx clawhub@latest install zaomeng-skill
 3. **输出侧不动**：`DialogueResponseParser` / `DialogueStreamParser` 是造梦自有 NDJSON 协议，provider 无关，保持原样。
 4. **验证**（从 `kmp/` 目录）：
    ```bash
-   .\gradlew.bat :server:llm:jvmTest :server:llm:compileKotlinJvm :app:shared:compileKotlinJvm
+   ./gradlew :server:llm:jvmTest :server:llm:compileKotlinJvm :app:shared:compileKotlinJvm
    ```
 
 ## 五、商汤（SenseTime）接入要点（已核实 2026-10）

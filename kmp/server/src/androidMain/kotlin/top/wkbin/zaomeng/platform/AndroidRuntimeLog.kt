@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Process
 import top.wkbin.zaomeng.data.api.CrashRecordDto
+import top.wkbin.zaomeng.data.api.DiagnosticsBreadcrumbDto
 import top.wkbin.zaomeng.data.api.RuntimeCaptureStateDto
 import top.wkbin.zaomeng.data.api.RuntimeLogDto
 import top.wkbin.zaomeng.ktor.services.PathSafety
@@ -61,6 +62,9 @@ object AndroidRuntimeLog : RuntimeLogSource {
     private const val MAX_ANR_FILES = 5
     private const val MAX_SNAPSHOT_LINES = 5_000
     private const val MAX_CRASH_RECORDS = 8
+    private const val MAX_CONTEXT_FILES = 5
+    private const val MAX_CONTEXT_TRAIL_ENTRIES = 120
+    private const val MAX_CONTEXT_FIELD_CHARS = 400
     private const val STACK_LIMIT_CHARS = 16_000
     private const val MAX_CAPTURE_FAILURES = 5
     private const val MAX_PROCESS_EXIT_RECORDS = 5
@@ -90,6 +94,7 @@ object AndroidRuntimeLog : RuntimeLogSource {
 
     private const val LOG_FILE_NAME = "runtime-log.txt"
     private const val CRASH_DIR_NAME = "crashes"
+    private const val CONTEXT_DIR_NAME = "context"
     private const val ANR_DIR_NAME = "anr"
     private const val CAPTURE_STATE_FILE_NAME = "capture-state.txt"
 
@@ -118,6 +123,15 @@ object AndroidRuntimeLog : RuntimeLogSource {
 
     @Volatile
     private var anrDir: File? = null
+
+    /**
+     * 面包屑上下文目录（R2）。
+     *
+     * 刻意**独立于** `crashes/` 与 `anr/`：上下文与崩溃堆栈各有独立配额，
+     * 谁都不会把谁挤掉——「上下文被常规崩溃挤没了」正是这次要修的问题。
+     */
+    @Volatile
+    private var contextDir: File? = null
 
     @Volatile
     private var stateFile: File? = null
@@ -151,6 +165,7 @@ object AndroidRuntimeLog : RuntimeLogSource {
             logsDir.mkdirs()
             logFile = validatedChild(logsDir, LOG_FILE_NAME)
             crashDir = validatedChild(logsDir, CRASH_DIR_NAME)
+            contextDir = validatedChild(logsDir, CONTEXT_DIR_NAME)
             anrDir = validatedChild(logsDir, ANR_DIR_NAME)
             stateFile = validatedChild(logsDir, CAPTURE_STATE_FILE_NAME)
             readPersistedCaptureState()
@@ -385,6 +400,76 @@ object AndroidRuntimeLog : RuntimeLogSource {
             "**不是完整 native 堆栈**（本版不引入 Crashpad）。"
     }
 
+    /**
+     * 保留策略（R2 / R3）：崩溃与常规日志**分别设限**。
+     *
+     * 常规日志：单文件 [MAX_FILE_BYTES]（2 MiB）上限，超限裁剪到尾部 [KEEP_FILE_BYTES]；
+     * 崩溃 / ANR：各自独立的目录与文件数配额（各 [MAX_CRASH_FILES] / [MAX_ANR_FILES] 个），
+     * 因此**一次日志风暴不会把崩溃记录顶掉**——这正是「崩溃不见了」最常见的成因。
+     */
+    override fun retention(): RuntimeLogRetention {
+        val log = logFile
+        val crash = crashDir
+        val anr = anrDir
+        return RuntimeLogRetention(
+            logBytes = runCatching { log?.takeIf { it.isFile }?.length() ?: 0L }.getOrDefault(0L),
+            logMaxBytes = MAX_FILE_BYTES,
+            crashFiles = runCatching {
+                crash?.listFiles { file -> file.isFile && file.name.startsWith("crash-") }?.size ?: 0
+            }.getOrDefault(0),
+            crashMaxFiles = MAX_CRASH_FILES,
+            anrFiles = runCatching {
+                anr?.listFiles { file -> file.isFile && file.name.startsWith("anr-") }?.size ?: 0
+            }.getOrDefault(0),
+            anrMaxFiles = MAX_ANR_FILES,
+            crashRecordLimit = MAX_CRASH_RECORDS,
+            note = "崩溃 / ANR 各占独立目录与文件配额（各 $MAX_CRASH_FILES / $MAX_ANR_FILES 个），" +
+                "常规日志 $MAX_FILE_BYTES 字节上限、超限裁到尾部 $KEEP_FILE_BYTES 字节。" +
+                "**崩溃与常规事件分别设限**，日志量再大也不会顶掉崩溃记录。",
+        )
+    }
+
+    /**
+     * 进程与 WebView 覆盖范围（R6），**如实标注**。
+     *
+     * 进程模型取自系统给的运行中进程列表（只匹配本应用包名前缀），
+     * 不猜、不写死；取不到时返回 `unknown` —— 宁可写「未知」也不要假装单进程。
+     */
+    override fun processSnapshot(): ProcessSnapshot {
+        val context = appContext
+        val packageName = context?.packageName.orEmpty()
+        val names = runCatching {
+            if (context == null) {
+                emptyList()
+            } else {
+                val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+                manager?.runningAppProcesses
+                    ?.map { it.processName }
+                    ?.filter { it == packageName || it.startsWith("$packageName:") }
+                    ?.distinct()
+                    .orEmpty()
+            }
+        }.getOrDefault(emptyList())
+        val model = when {
+            names.isEmpty() -> "unknown"
+            names.size == 1 -> "single-process"
+            else -> "multi-process"
+        }
+        return ProcessSnapshot(
+            processModel = model,
+            processNames = names,
+            // 本仓库**不使用 WebView**（已 grep android.webkit.WebView / WebViewClient /
+            // onRenderProcessGone：源码、依赖与 assets 里都没有）。系统里 WebView 类始终存在，
+            // 因此这里判定的是「应用是否真的用了 WebView」，而不是「设备有没有 WebView」。
+            webViewPresent = false,
+            webViewNote = "本仓库源码中不存在 WebView 使用（grep android.webkit.WebView / WebViewClient / " +
+                "onRenderProcessGone 均无命中），因此不需要处理 onRenderProcessGone；" +
+                "此判定是「应用不用 WebView」而非「设备没有 WebView」。",
+            note = "进程模型来自 ActivityManager.runningAppProcesses 过滤本包名；" +
+                "取不到时返回 unknown（不假装单进程）。",
+        )
+    }
+
     @TargetApi(Build.VERSION_CODES.R)
     private fun readProcessExits(context: Context, limit: Int): List<ProcessExitRecord> = runCatching {
         val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
@@ -428,22 +513,14 @@ object AndroidRuntimeLog : RuntimeLogSource {
         }
     }.getOrDefault("")
 
-    /** 退出原因名。只映射 API 30 就存在的常量，更新的常量走「带原始码的兜底」。 */
-    private fun exitReasonName(reason: Int): String = when (reason) {
-        ApplicationExitInfo.REASON_EXIT_SELF -> "EXIT_SELF"
-        ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED"
-        ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY"
-        ApplicationExitInfo.REASON_CRASH -> "CRASH"
-        ApplicationExitInfo.REASON_CRASH_NATIVE -> "CRASH_NATIVE"
-        ApplicationExitInfo.REASON_ANR -> "ANR"
-        ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "INITIALIZATION_FAILURE"
-        ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "EXCESSIVE_RESOURCE_USAGE"
-        ApplicationExitInfo.REASON_USER_REQUESTED -> "USER_REQUESTED"
-        ApplicationExitInfo.REASON_FREEZER -> "FREEZER"
-        ApplicationExitInfo.REASON_PERMISSION_CHANGE -> "PERMISSION_CHANGE"
-        ApplicationExitInfo.REASON_OTHER -> "OTHER"
-        else -> "UNKNOWN($reason)"
-    }
+    /**
+     * 退出原因名。
+     *
+     * 映射表放在 commonMain（[exitReasonName]），**不再依赖编译期 SDK 里有没有对应常量**：
+     * 之前只 `when` 了 API 30 就存在的常量，系统给 16（`REASON_PACKAGE_UPDATED`，应用被覆盖安装）
+     * 时直接掉进 `UNKNOWN(16)`，一次正常的升级看起来像故障。
+     */
+    private fun exitReasonName(reason: Int): String = top.wkbin.zaomeng.platform.exitReasonName(reason)
 
     // ------------------------------------------------------------------
     // logcat 持续采集
@@ -669,6 +746,10 @@ object AndroidRuntimeLog : RuntimeLogSource {
             trimFiles(dir, "crash-", MAX_CRASH_FILES)
         }
 
+        // R2：先把「崩溃之前发生了什么」同步冲刷到独立文件，再写运行日志标记。
+        // 必须同步（不启协程、不走 buffered writer 的延迟 flush）：进程马上就死。
+        runCatching { flushCrashContext(occurredAt = occurredAt, source = "crash:$origin") }
+
         val gap = if (captureWasEnabled) "" else "（采集已关闭期间，普通日志缺失，上下文不完整）"
         appendLine("--- 未捕获异常$gap：$summary（来源=$origin，线程=$threadName） ---", force = true)
     }
@@ -779,12 +860,133 @@ object AndroidRuntimeLog : RuntimeLogSource {
             trimFiles(dir, "anr-", MAX_ANR_FILES)
         }
 
+        // R2：卡死与崩溃同理——都需要「之前发生了什么」。同样同步写盘。
+        runCatching { flushCrashContext(occurredAt = occurredAt, source = "anr:watchdog") }
+
         val gap = if (captureEnabled) "" else "（采集已关闭期间，普通日志缺失，上下文不完整）"
         appendLine(
             "--- 主线程卡顿$gap：watchdog ${ANR_WATCHDOG_TIMEOUT_MS}ms 内未响应，完整线程栈见 anr/ 目录 ---",
             force = true,
         )
         mainFrames.take(ANR_LOG_FRAMES).forEach { appendLine("    at $it", force = true) }
+    }
+
+    // ------------------------------------------------------------------
+    // 面包屑上下文（R2）：崩溃 / ANR 时同步冲刷
+    // ------------------------------------------------------------------
+
+    /**
+     * 把 `ClientDiagnostics` 里的面包屑**同步**写进独立上下文文件。
+     *
+     * 只做一次，不做定期落盘：面包屑是为崩溃服务的，高频写盘会为了「观测卡顿」制造卡顿。
+     *
+     * 文件格式是**行式结构化**的（`trail` 段是 TAB 分隔的四元组），
+     * 这样诊断侧能把它还原成结构化面包屑挂到对应崩溃条目上，而不是一段没法对齐的自由文本。
+     */
+    private fun flushCrashContext(occurredAt: String, source: String) {
+        val dir = contextDir ?: return
+        val flushedAt = nowIsoString()
+        val dropped = runCatching { ClientDiagnostics.droppedCount() }.getOrDefault(0L)
+        val text = buildString {
+            appendLine("stamp: ${stampOf(occurredAt)}")
+            appendLine("occurred_at: $occurredAt")
+            appendLine("flushed_at: $flushedAt")
+            appendLine("source: $source")
+            appendLine("capture_enabled: $captureEnabled")
+            appendLine("dropped_events: $dropped")
+            appendLine("trail:")
+            runCatching { ClientDiagnostics.trailEntries() }
+                .getOrDefault(emptyList())
+                .takeLast(MAX_CONTEXT_TRAIL_ENTRIES)
+                .forEach { entry ->
+                    appendLine(
+                        listOf(
+                            entry.at,
+                            entry.kind,
+                            entry.label.replace('\t', ' ').take(MAX_CONTEXT_FIELD_CHARS),
+                            entry.detail.replace('\t', ' ').replace('\n', ' ').take(MAX_CONTEXT_FIELD_CHARS),
+                        ).joinToString("\t"),
+                    )
+                }
+            appendLine("summary:")
+            runCatching { ClientDiagnostics.featureAggregates() }
+                .getOrDefault(emptyList())
+                .take(20)
+                .forEach { item ->
+                    appendLine(
+                        "feature\t${item.feature}/${item.action}\ttotal=${item.total}\tok=${item.okCount}" +
+                            "\tdegraded=${item.degradedCount}\tfailed=${item.failedCount}" +
+                            "\tmax=${item.maxDurationMs}ms\tlast=${item.lastAt}",
+                    )
+                }
+            runCatching { ClientDiagnostics.recompositionStats() }
+                .getOrDefault(emptyList())
+                .take(10)
+                .forEach { item ->
+                    appendLine("recomposition\t${item.name}\tcount=${item.count}\tmax_per_frame=${item.maxPerFrame}")
+                }
+            runCatching { ClientDiagnostics.imageRequestStats() }
+                .getOrDefault(emptyList())
+                .filter { it.duplicateRequests > 0 }
+                .take(10)
+                .forEach { item ->
+                    appendLine("image_duplicate\t${item.url}\trequests=${item.requests}\tduplicates=${item.duplicateRequests}")
+                }
+        }
+        dir.mkdirs()
+        validatedChild(dir, "context-${stampOf(occurredAt)}.log").writeText(text)
+        trimFiles(dir, "context-", MAX_CONTEXT_FILES)
+    }
+
+    /** 读取历史冲刷下来的上下文（最近一次在前），供诊断把它们挂到对应崩溃/ANR 条目上。 */
+    override fun crashContexts(limit: Int): List<CrashContextRecord> {
+        val dir = contextDir ?: return emptyList()
+        val files = runCatching {
+            dir.listFiles { file -> file.isFile && file.name.startsWith("context-") }
+                ?.sortedByDescending { it.name }
+                .orEmpty()
+        }.getOrDefault(emptyList())
+        return files.take(limit.coerceIn(1, MAX_CONTEXT_FILES)).mapNotNull { file ->
+            runCatching { parseContext(file) }.getOrNull()
+        }
+    }
+
+    private fun parseContext(file: File): CrashContextRecord {
+        val lines = file.readText().lineSequence().toList()
+        fun value(prefix: String): String =
+            lines.firstOrNull { it.startsWith(prefix) }?.removePrefix(prefix)?.trim().orEmpty()
+
+        val trailStart = lines.indexOfFirst { it.trim() == "trail:" }
+        val summaryStart = lines.indexOfFirst { it.trim() == "summary:" }
+        val trailLines = if (trailStart >= 0) {
+            lines.drop(trailStart + 1).takeWhile { it.trim() != "summary:" }.filter { it.isNotBlank() }
+        } else {
+            emptyList()
+        }
+        val summaryLines = if (summaryStart >= 0) {
+            lines.drop(summaryStart + 1).filter { it.isNotBlank() }
+        } else {
+            emptyList()
+        }
+        val breadcrumbs = trailLines.mapNotNull { line ->
+            val parts = line.split('\t')
+            if (parts.size < 3) return@mapNotNull null
+            DiagnosticsBreadcrumbDto(
+                at = parts[0].trim(),
+                source = parts[1].trim().ifBlank { "crash-context" },
+                label = parts[2],
+                detail = parts.getOrNull(3).orEmpty(),
+            )
+        }
+        return CrashContextRecord(
+            occurredAt = value("occurred_at:"),
+            stamp = value("stamp:"),
+            source = value("source:"),
+            droppedEvents = value("dropped_events:").toLongOrNull() ?: 0L,
+            captureEnabled = value("capture_enabled:").equals("true", ignoreCase = true),
+            breadcrumbs = breadcrumbs,
+            summaryLines = summaryLines,
+        )
     }
 
     // ------------------------------------------------------------------
@@ -796,7 +998,8 @@ object AndroidRuntimeLog : RuntimeLogSource {
         File(parent, PathSafety.sanitizePathComponent(name, "runtimeLogFileName"))
 
     /** 时间戳转文件名片段：ISO 字符串里的 `:`/`.` 在部分文件系统上是非法字符。 */
-    private fun stampOf(occurredAt: String): String = occurredAt.replace(':', '-').replace('.', '-')
+    /** 与诊断侧的 [crashContextStampOf] 同源：一处定义、两处使用，避免漂移。 */
+    private fun stampOf(occurredAt: String): String = crashContextStampOf(occurredAt)
 
     private fun trimFiles(dir: File, prefix: String, keep: Int) {
         val files = dir.listFiles { f -> f.isFile && f.name.startsWith(prefix) }?.sortedBy { it.name }.orEmpty()

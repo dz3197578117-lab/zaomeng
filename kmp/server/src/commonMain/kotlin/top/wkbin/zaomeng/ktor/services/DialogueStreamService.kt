@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.flow
 import top.wkbin.zaomeng.ktor.models.DialogueResponse
 import top.wkbin.zaomeng.ktor.utils.DialogueStreamParser
 import top.wkbin.zaomeng.ktor.utils.StreamEvent
+import top.wkbin.zaomeng.platform.DiagnosticsPayloadSink
 import top.wkbin.zaomeng.platform.PlatformLog
 import top.wkbin.zaomeng.platform.nowEpochMillis
 import top.wkbin.zaomeng.platform.randomUuid
@@ -253,6 +254,35 @@ class DialogueStreamService(
                             participants = participants,
                             forbidden = forbidden,
                             modelSettings = modelSettings,
+                        )
+                        // R5：**完整**提示词与**完整**模型输出。
+                        //
+                        // 此前这两样只留 800 字符摘录，多人对话的结构错误恰恰出在摘录之后
+                        // （第 N 个 speaker 的名字被写错、JSON 围栏在第 3000 字符才闭合）。
+                        // 现在只在**最终失败**时全量记录：每次都记会让日志量随轮数线性膨胀，
+                        // 而「解析失败且重试也失败」才是真正需要完整原文的时刻。
+                        //
+                        // 上限是**工程上限**（DiagnosticsSink.MAX_PAYLOAD_CHARS），不是隐私截断；
+                        // 写入侧仍会过一遍 LogRedactor，API Key / 签名口令不会落盘。
+                        DiagnosticsPayloadSink.record(
+                            category = "dialogue.parse_failed.payload",
+                            label = "对话解析最终失败：完整提示词与完整模型输出",
+                            payload = buildMap {
+                                put("run_id", runId)
+                                put("session_id", sessionId)
+                                put("attempt", "2")
+                                put("participants", participants.joinToString("、"))
+                                put("forbidden", forbidden.joinToString("、"))
+                                (modelSettings["provider"] as? String)?.let { put("provider", it) }
+                                (modelSettings["model"] as? String)?.let { put("model", it) }
+                                put("model_output", retryFull)
+                                put(
+                                    "prompt",
+                                    retryHistory.joinToString("\n---\n") { message ->
+                                        "${message.role}: ${message.content.orEmpty()}"
+                                    },
+                                )
+                            },
                         )
                         throw e
                     }

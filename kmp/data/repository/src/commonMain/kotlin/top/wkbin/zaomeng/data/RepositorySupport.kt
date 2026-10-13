@@ -9,16 +9,61 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import top.wkbin.zaomeng.client.platform.ClientLog
+import top.wkbin.zaomeng.platform.DiagnosticsSink
+import top.wkbin.zaomeng.platform.FeatureReportStatus
 import top.wkbin.zaomeng.platform.platformIoDispatcher
 
 internal val repositoryJson: Json = Json { ignoreUnknownKeys = true }
 
-internal suspend fun <T> repositoryRequest(block: suspend () -> T): T = withContext(platformIoDispatcher) {
+/**
+ * 所有 Repository 请求的**统一入口**。
+ *
+ * R4 起在这里接入通用功能事件上报：**新增一个 repository 方法，不改任何诊断代码，
+ * 它就会自动出现在「运行诊断 → 功能事件」里**（功能 = `repository`，操作 = 调用点标签）。
+ *
+ * 纪律：
+ * - **只记录**：上报失败一律吞掉（`DiagnosticsSink.report` 本身也不允许抛），
+ *   业务异常照原样抛出，控制流一字未改；
+ * - **成功也报**：只报失败的话，「这个方法从没被调用过」与「每次都成功」长得一模一样；
+ * - **不记录请求/响应正文**：正文里可能有用户原文与密钥，只带异常消息摘要。
+ *
+ * 调用点标签用 lambda 的类名推导（JVM/Android 上形如 `PersonaRepositories$getPersonaAvatar$2`），
+ * 因此不需要改动 100 多处调用点；推导失败时退化为 `repository.request`。
+ * 需要更可读的名字时可以显式传 [label]。
+ */
+internal suspend fun <T> repositoryRequest(
+    label: String = "",
+    block: suspend () -> T,
+): T = withContext(platformIoDispatcher) {
+    val action = label.ifBlank { callerLabel(block) }
+    val startedAt = kotlin.time.TimeSource.Monotonic.markNow()
     try {
-        block()
+        val result = block()
+        DiagnosticsSink.report(
+            feature = FEATURE_REPOSITORY,
+            action = action,
+            status = FeatureReportStatus.OK,
+            durationMs = startedAt.elapsedNow().inWholeMilliseconds,
+        )
+        result
     } catch (cancelled: CancellationException) {
+        // 取消不算失败：用户切页面导致的取消不是「功能坏了」，报成 FAILED 会污染成功率。
+        DiagnosticsSink.report(
+            feature = FEATURE_REPOSITORY,
+            action = action,
+            status = FeatureReportStatus.DEGRADED,
+            durationMs = startedAt.elapsedNow().inWholeMilliseconds,
+            detail = "请求被取消",
+        )
         throw cancelled
     } catch (error: ApiRequestException) {
+        DiagnosticsSink.report(
+            feature = FEATURE_REPOSITORY,
+            action = action,
+            status = FeatureReportStatus.FAILED,
+            durationMs = startedAt.elapsedNow().inWholeMilliseconds,
+            detail = error.message.orEmpty().take(200),
+        )
         throw error
     } catch (error: Throwable) {
         ClientLog.e("Repository", "Repository request failed", error)
@@ -26,9 +71,32 @@ internal suspend fun <T> repositoryRequest(block: suspend () -> T): T = withCont
             .mapNotNull { it.message?.trim() }
             .firstOrNull { it.isNotBlank() }
             ?: "请求失败，请稍后重试。"
+        DiagnosticsSink.report(
+            feature = FEATURE_REPOSITORY,
+            action = action,
+            status = FeatureReportStatus.FAILED,
+            durationMs = startedAt.elapsedNow().inWholeMilliseconds,
+            detail = readable.take(200),
+        )
         throw ApiRequestException(readable, error)
     }
 }
+
+/** 功能事件里的功能名：所有 Repository 调用共用。 */
+private const val FEATURE_REPOSITORY = "repository"
+
+/**
+ * 从 lambda 的运行时类名推导调用点标签（零改动的自动覆盖）。
+ *
+ * 失败（平台不支持反射 / simpleName 为空）时返回 `repository.request`，
+ * 不影响覆盖率——只是标签粗一点。
+ */
+private fun callerLabel(block: Any): String = runCatching {
+    block::class.simpleName
+        ?.substringBeforeLast('$')
+        ?.takeIf { it.isNotBlank() }
+        ?: "repository.request"
+}.getOrDefault("repository.request")
 
 internal fun errorDetail(body: String?, status: Int): String {
     val detail = runCatching {

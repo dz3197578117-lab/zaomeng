@@ -35,14 +35,14 @@
 
 从 `kmp/` 运行：
 
-```powershell
-.\gradlew.bat :app:shared:jvmTest :app:shared:compileKotlinJvm :app:shared:compileAndroidMain
+```bash
+./gradlew :app:shared:jvmTest :app:shared:compileKotlinJvm :app:shared:compileAndroidMain
 ```
 
 涉及 Android 页面、资源或清单时追加：
 
-```powershell
-.\gradlew.bat :app:androidApp:testDebugUnitTest :app:androidApp:lintDebug :app:androidApp:assembleDebug
+```bash
+./gradlew :app:androidApp:testDebugUnitTest :app:androidApp:lintDebug :app:androidApp:assembleDebug
 ```
 
 涉及共享 Compose API 时，确保 Android 与 JVM 编译通过。

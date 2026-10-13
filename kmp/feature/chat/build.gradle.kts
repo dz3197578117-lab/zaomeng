@@ -26,6 +26,8 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(project(":core:contracts"))
+            // R4：统一入口兜底（runTool → DiagnosticsSink.report）需要客户端诊断收口。
+            implementation(project(":core:runtime"))
             implementation(project(":core:domain"))
             implementation(project(":data:remote"))
             implementation(project(":data:repository"))

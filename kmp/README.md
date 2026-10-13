@@ -16,7 +16,7 @@ Android / 桌面两端共享的 Compose Multiplatform 应用，内嵌 Ktor + Roo
 | 平台 | 模块 | 说明 |
 | --- | --- | --- |
 | Android | `app/androidApp` | 主入口，APK 分发（当前仅 `arm64-v8a`） |
-| 桌面 | `app/desktopApp` | Compose Desktop（Windows / macOS / Linux） |
+| 桌面 | `app/desktopApp` | Compose Desktop（macOS / Linux） |
 
 ## 技术栈
 
@@ -88,15 +88,15 @@ kmp/
 
 ### Gradle 直接调用
 
-```powershell
+```bash
 # Android debug APK
-.\gradlew.bat :app:androidApp:assembleDebug
+./gradlew :app:androidApp:assembleDebug
 
 # 桌面端
-.\gradlew.bat :app:desktopApp:run
+./gradlew :app:desktopApp:run
 
 # JVM 单测
-.\gradlew.bat :server:storage:jvmTest :server:llm:jvmTest :server:http:jvmTest :server:jvmTest :app:shared:jvmTest
+./gradlew :server:storage:jvmTest :server:llm:jvmTest :server:http:jvmTest :server:jvmTest :app:shared:jvmTest
 ```
 
 ## 截图

@@ -15,12 +15,16 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import top.wkbin.zaomeng.data.api.ModelCapabilityReportDto
+import top.wkbin.zaomeng.platform.DiagnosticsPayloadSink
 import top.wkbin.zaomeng.platform.DiagnosticsSink
 import top.wkbin.zaomeng.platform.PlatformLog
 import top.wkbin.zaomeng.platform.PlatformStreamingResponse
@@ -71,6 +75,93 @@ class LlmClient(
         private val RETRYABLE_STATUS_CODES = setOf(408, 429, 500, 502, 503, 504)
 
         /**
+         * 4xx 请求留证的事件类别。
+         *
+         * 诊断导出的 `problems` 会把**每一条事件**摊成一个 `kind=event` 的问题，
+         * 同类别的连续 400 因此聚成一组（`×N`），点开就是「我们发了什么 / 上游拒了什么」。
+         * 精简档（`tier=compact`）不含事件明细，但 `eventStats` 里的类别计数照常出现——
+         * 至少能看出「这类拒收发生了多少次」。
+         */
+        internal const val HTTP_ERROR_PAYLOAD_CATEGORY = "llm.http_error_payload"
+
+        /** 上游错误体的留证上限：够看清拒收原因，又不至于把 8 MiB 的事件文件额度吃掉。 */
+        private const val MAX_ERROR_BODY_CHARS = 4_000
+
+        /** Kimi K3 的官方 model id（sensenova-api-reference.txt 2418-2424、2741 行）。 */
+        internal const val KIMI_K3_MODEL = "kimi-k3"
+
+        /**
+         * 需要 `max_completion_tokens` 的模型：发 `max_tokens` 会被上游拒收（或静默忽略）。
+         *
+         * - `gpt-5` / `o1` / `o3` / `o4`：沿用既有判断，行为不变；
+         * - `kimi-k3`：官方请求参数表**只有 `max_completion_tokens`，没有 `max_tokens`**
+         *   （sensenova-api-reference.txt 2738-2772 行；2751 行即该字段）。
+         *   此前它落进 else 分支发 `max_tokens` —— 表单里不存在的字段。
+         */
+        private fun requiresMaxCompletionTokens(model: String): Boolean {
+            val normalized = model.trim().lowercase()
+            return normalized.startsWith("gpt-5") || normalized.startsWith("o1") ||
+                normalized.startsWith("o3") || normalized.startsWith("o4") ||
+                normalized == KIMI_K3_MODEL
+        }
+
+        /**
+         * 商汤 SenseNova 各模型对 `reasoning_effort` 的**原生允许值**（逐模型白名单，全部小写）。
+         *
+         * 依据（行号指 docs/notes/sensenova-api-reference.txt）：
+         * - `sensenova-6.8-flash-lite`：low/medium/high/max，设 none 关闭思考（491-493、587-589 行）
+         * - `deepseek-v4-flash`：low/medium/high/max，设 none 关闭思考（1428-1430、1476-1478 行）
+         * - `deepseek-flash`：原生 none/low/high/max，另有兼容映射（1854-1861、1922-1929、2032-2033 行）
+         * - `glm-5.2`：max/xhigh/high/medium/low/minimal/none，默认 max（2265-2267、2305-2307 行）；
+         *   **关闭思考只能靠 `reasoning_effort=none`**，`thinking.type=disabled` 会让请求失败（2413-2415 行）
+         * - `kimi-k3`：low/medium/high/max，默认 max（2693-2694、2760-2761 行）；
+         *   「思考强度」表另列了 none（2711-2713 行），但该表与 6.8-flash-lite 的表逐字相同、
+         *   且写着「high 为默认值」，与 2760 行的「默认 max」矛盾 —— 判定为陈旧复制，
+         *   请求参数表才是请求字段的权威。故 **none 不入白名单**：关思考时**不发**该字段
+         *   （宁可不关思考，也不发一个可能被拒的值）。
+         *
+         * 表里没有的模型 = 无法判定 → 一律不发该字段（而不是原值透传赌一把）。
+         */
+        internal val SENSENOVA_REASONING_EFFORTS: Map<String, Set<String>> = mapOf(
+            "sensenova-6.8-flash-lite" to setOf("low", "medium", "high", "max", "none"),
+            "deepseek-v4-flash" to setOf("low", "medium", "high", "max", "none"),
+            "deepseek-flash" to setOf("none", "low", "high", "max"),
+            "glm-5.2" to setOf("max", "xhigh", "high", "medium", "low", "minimal", "none"),
+            KIMI_K3_MODEL to setOf("low", "medium", "high", "max"),
+        )
+
+        /**
+         * 官方明确写出的兼容映射（只对文档给了映射表的模型生效）：
+         * `deepseek-flash` 的 minimal → low，medium / xhigh → high，ultra → max
+         * （sensenova-api-reference.txt 1857-1858、1925-1926、2032-2033 行）。
+         */
+        internal val SENSENOVA_REASONING_EFFORT_ALIASES: Map<String, Map<String, String>> = mapOf(
+            "deepseek-flash" to mapOf(
+                "minimal" to "low",
+                "medium" to "high",
+                "xhigh" to "high",
+                "ultra" to "max",
+            ),
+        )
+
+        /**
+         * 把设置里的力度解析成该模型**确实接受**的线上值；无法判定时返回 null（= 不发该字段）。
+         *
+         * 这是 400 的一类常见成因：平台对 `reasoning_effort` 逐模型校验，
+         * 官方 FAQ 里就有 400 实证 `output_config.effort must be one of: low, medium, high; got "xhigh"`
+         * （sensenova-api-reference.txt 4393-4396 行）。
+         */
+        internal fun resolveSenseNovaEffort(model: String, effort: String): String? {
+            val normalizedModel = model.trim().lowercase()
+            val normalizedEffort = effort.trim().lowercase()
+            if (normalizedEffort.isEmpty()) return null
+            val allowed = SENSENOVA_REASONING_EFFORTS[normalizedModel] ?: return null
+            if (normalizedEffort in allowed) return normalizedEffort
+            val mapped = SENSENOVA_REASONING_EFFORT_ALIASES[normalizedModel]?.get(normalizedEffort) ?: return null
+            return mapped.takeIf { it in allowed }
+        }
+
+        /**
          * 解析生成类请求超时（秒）：profile 的 timeout_seconds 优先，
          * 缺省/非法/越界一律回退默认，避免一个坏配置把请求卡死或几秒就被切断。
          */
@@ -83,9 +174,11 @@ class LlmClient(
         /**
          * 对齐 Python _apply_reasoning_controls（llm_client.py:67-115）：请求的 thinking / reasoning_effort 参数
          * 完全由模型设置的 reasoning_effort 决定（显示开关 enableReasoning 不影响请求，只影响透传）：
-         * - off：DeepSeek v4 直连（api.deepseek.com）→ thinking {"type":"disabled"} 跳过思考（TTFT 最短）；其他模型不发
+         * - off：DeepSeek v4 直连（api.deepseek.com）→ thinking {"type":"disabled"} 跳过思考（TTFT 最短）；
+         *   商汤 → reasoning_effort=none（见下）；其他模型不发
          * - auto / 空：什么都不发（DeepSeek 默认推理）
-         * - low/medium/high/xhigh：OpenAI 推理模型发原值；DeepSeek v4 发映射值（medium→low，xhigh→max）；其他模型不发
+         * - low/medium/high/xhigh 等：OpenAI 推理模型发原值；DeepSeek v4 发映射值（medium→low，xhigh→max）；
+         *   商汤**按逐模型白名单**发（见 [resolveSenseNovaEffort]）；其他模型不发
          */
         val DISABLED_THINKING: JsonObject = buildJsonObject { put("type", "disabled") }
 
@@ -101,22 +194,27 @@ class LlmClient(
             // 商汤 SenseNova 聚合平台（token.sensenova.cn/v1）下的模型。
             // 官方文档（platform.sensenova.cn/docs）：
             //   - thinking 为 string（"enabled"/"disabled"），默认 enabled；
-            //   - reasoning_effort 可选 low/medium/high/max/none，默认 high，设 none 即关闭思考（最快）。
-            // 蒸馏属于"内容提取/格式转换"类任务（官方推荐 none），若保持默认 high 思考，
+            //   - reasoning_effort 可关闭思考，但**允许值逐模型不同**，必须查白名单；
+            //   - glm-5.2 尤其明确：关闭思考只能设 reasoning_effort=none，
+            //     thinking.type=disabled 会**导致请求失败**（2413-2415 行）。
+            // 蒸馏属于"内容提取/格式转换"类任务（官方推荐 none），若保持默认思考，
             // 思考会吃掉大量 max_tokens，导致 content 为空或字段截断 —— 这就是"经常蒸馏失败"的根因。
             val isSenseNova = "token.sensenova.cn" in baseUrl
             if (effort.isEmpty() || effort == "auto") return null to null
             if (effort == "off") {
                 return when {
                     isDeepSeekV4Direct -> DISABLED_THINKING to null // DeepSeek 直连：thinking 对象
-                    isSenseNova -> null to "none" // 商汤：reasoning_effort=none 关闭思考（官方）
+                    // 商汤：官方关思考的写法就是 reasoning_effort=none；再过一遍逐模型白名单，
+                    // 白名单不认（例如 kimi-k3）就**不发**，而不是发一个可能非法的值。
+                    isSenseNova -> null to resolveSenseNovaEffort(model, "none")
                     isOpenAiReasoning -> null to "none"
                     else -> null to null
                 }
             }
-            // low/medium/high/max
+            // low/medium/high/max(/xhigh/minimal/ultra)
             if (isOpenAiReasoning) return null to effort // OpenAI 推理模型用原值
-            if (isSenseNova) return null to effort // 商汤支持 low/medium/high/max 直接透传
+            // 商汤：只发该模型接受的值（含官方兼容映射），无法判定则不发。
+            if (isSenseNova) return null to resolveSenseNovaEffort(model, effort)
             if (isDeepSeekV4) {
                 val deepseekEffort = when (effort) {
                     "medium" -> "low"
@@ -131,11 +229,7 @@ class LlmClient(
         fun resolveTokenParameter(profile: Map<String, String>, model: String): String {
             val configured = profile["token_parameter"]?.trim()?.lowercase().orEmpty()
             if (configured in setOf("max_tokens", "max_completion_tokens")) return configured
-            val normalizedModel = model.trim().lowercase()
-            return if (
-                normalizedModel.startsWith("gpt-5") || normalizedModel.startsWith("o1") ||
-                normalizedModel.startsWith("o3") || normalizedModel.startsWith("o4")
-            ) "max_completion_tokens" else "max_tokens"
+            return if (requiresMaxCompletionTokens(model)) "max_completion_tokens" else "max_tokens"
         }
     }
 
@@ -206,9 +300,21 @@ class LlmClient(
     data class StreamDelta(
         val role: String? = null,
         val content: String? = null,
+        /**
+         * 商汤 SenseNova 把思考增量吐在 `reasoning`（sensenova-api-reference.txt 533、615 行，
+         * 6.8-flash-lite 的响应结构），DeepSeek 系吐在 `reasoning_content`。
+         * 两个字段都认，取非空者 —— 与 [ChatMessage] 的口径一致；正文 `content` 解析不受影响。
+         */
+        val reasoning: String? = null,
         @SerialName("reasoning_content")
         val reasoningContent: String? = null,
-    )
+    ) {
+        /** 思考增量：优先 `reasoning_content`，为空再取 `reasoning`。 */
+        fun effectiveReasoning(): String =
+            reasoningContent?.takeIf(String::isNotEmpty)
+                ?: reasoning?.takeIf(String::isNotEmpty)
+                ?: ""
+    }
 
     @Serializable
     data class ResponseFormat(
@@ -456,19 +562,23 @@ class LlmClient(
                     val (system, rest) = splitSystem(messages)
                     val amsgs = rest.map { AnthropicMessage(it.role, it.content.orEmpty()) }
                         .ifEmpty { listOf(AnthropicMessage("user", system)) }
-                    val response: HttpResponse = httpClient.post("$base/messages") {
+                    val anthropicRequest = AnthropicRequest(
+                        model = resolvedModel, system = system, messages = amsgs,
+                        maxTokens = maxTokens ?: 4096, stream = false, temperature = temp,
+                    )
+                    val anthropicEndpoint = "$base/messages"
+                    val response: HttpResponse = httpClient.post(anthropicEndpoint) {
                         withGenerationTimeout(profile)
                         contentType(ContentType.Application.Json)
                         header("x-api-key", apiKey)
                         header("anthropic-version", "2023-06-01")
-                        setBody(
-                            AnthropicRequest(
-                                model = resolvedModel, system = system, messages = amsgs,
-                                maxTokens = maxTokens ?: 4096, stream = false, temperature = temp,
-                            ),
-                        )
+                        setBody(anthropicRequest)
                     }
-                    response.ensureSuccess()
+                    response.ensureSuccess(
+                        kind = kind,
+                        endpoint = anthropicEndpoint,
+                        requestBodyOf = { json.encodeToString(AnthropicRequest.serializer(), anthropicRequest) },
+                    )
                     val ar = response.body<AnthropicResponse>()
                     ChatCompletionResponse(
                         model = ar.model.ifBlank { resolvedModel },
@@ -488,17 +598,23 @@ class LlmClient(
                             parts = listOf(GeminiPart(m.content.orEmpty())),
                         )
                     }.ifEmpty { listOf(GeminiContent("user", listOf(GeminiPart(system)))) }
-                    val response: HttpResponse = httpClient.post("$base/models/$resolvedModel:generateContent?key=$apiKey") {
+                    val geminiRequest = GeminiRequest(
+                        systemInstruction = if (system.isNotBlank()) GeminiPart(system) else null,
+                        contents = contents,
+                    )
+                    // key 走 query（Gemini 协议如此）：留证时整个 query 会被 sanitizeEndpoint 丢掉，
+                    // 因此端点字符串可以照原样传进去。
+                    val geminiEndpoint = "$base/models/$resolvedModel:generateContent?key=$apiKey"
+                    val response: HttpResponse = httpClient.post(geminiEndpoint) {
                         withGenerationTimeout(profile)
                         contentType(ContentType.Application.Json)
-                        setBody(
-                            GeminiRequest(
-                                systemInstruction = if (system.isNotBlank()) GeminiPart(system) else null,
-                                contents = contents,
-                            ),
-                        )
+                        setBody(geminiRequest)
                     }
-                    response.ensureSuccess()
+                    response.ensureSuccess(
+                        kind = kind,
+                        endpoint = geminiEndpoint,
+                        requestBodyOf = { json.encodeToString(GeminiRequest.serializer(), geminiRequest) },
+                    )
                     val gr = response.body<GeminiResponse>()
                     val text = gr.candidates.firstOrNull()?.content?.parts?.joinToString("") { it.text }.orEmpty()
                     ChatCompletionResponse(
@@ -518,15 +634,22 @@ class LlmClient(
                         reasoningEffort = reasoningEffort,
                         responseFormat = nativeJsonResponseFormat(profile, resolvedModel, requireJsonObject),
                     )
-                    val response: HttpResponse = httpClient.post(
-                        if (kind == ProviderKind.AZURE) "$base/chat/completions?api-version=2024-02-15-preview" else "$base/chat/completions",
-                    ) {
+                    val chatEndpoint = if (kind == ProviderKind.AZURE) {
+                        "$base/chat/completions?api-version=2024-02-15-preview"
+                    } else {
+                        "$base/chat/completions"
+                    }
+                    val response: HttpResponse = httpClient.post(chatEndpoint) {
                         withGenerationTimeout(profile)
                         contentType(ContentType.Application.Json)
                         authHeaders(kind, apiKey).forEach { (name, value) -> header(name, value) }
                         setBody(request)
                     }
-                    response.ensureSuccess()
+                    response.ensureSuccess(
+                        kind = kind,
+                        endpoint = chatEndpoint,
+                        requestBodyOf = { json.encodeToString(ChatCompletionRequest.serializer(), request) },
+                    )
                     val parsed = response.body<ChatCompletionResponse>()
                     // 推理模型思考占满 max_tokens 时 content 可能为空（正文在 reasoning/reasoning_content），
                     // 兜底回退，避免蒸馏直接报"LLM 返回空内容"。
@@ -879,7 +1002,8 @@ class LlmClient(
                 val d = chunk.choices.firstOrNull()?.delta
                 ParsedDelta(
                     content = d?.content.orEmpty(),
-                    reasoning = d?.reasoningContent.orEmpty(),
+                    // 思考字段名逐模型不同（reasoning_content / reasoning），取非空者。
+                    reasoning = d?.effectiveReasoning().orEmpty(),
                     model = chunk.model,
                     finishReason = chunk.choices.firstOrNull()?.finishReason,
                 )
@@ -887,8 +1011,128 @@ class LlmClient(
         }
     }
 
+    // ------------------------------------------------------------------
+    // HTTP 4xx 请求留证：我们实际发了什么 / 上游拒了什么
+    // ------------------------------------------------------------------
+
+    /**
+     * 把**实际发出去的请求形状**与**上游原始错误体**写进完整载荷通道。
+     *
+     * 存在理由：完整载荷此前只在「对话解析最终失败」时记录（`DialogueStreamService`），
+     * 而 HTTP 4xx（用户实际遇到的 `API error (400 Bad Request): inference request is invalid`）
+     * 什么都不记 —— 上游拒收时**最需要**知道的恰恰是我们发了什么。
+     *
+     * **凭证安全（代码级保证，不依赖写入侧 LogRedactor）**：
+     * 本函数的入参里**没有任何 header**，只有 URL 与请求体。鉴权头（`Authorization` /
+     * `api-key` / `x-api-key`）在调用点就不参与构造，因此没有进入载荷的机会；
+     * Gemini 把 key 放在 URL query 里、Azure 把 api-version 放在 query 里，
+     * 两者都被 [sanitizeEndpoint] 连同整个 query 一并丢弃 —— 落盘的只有
+     * `scheme://host[:port]/path`。API Key 也不在请求体里，故请求体可原样解析。
+     *
+     * 只记形状、不记提示词全文：`messages` 只留 role 序列与每条的字符数。
+     * 完整提示词在解析失败路径上已有记录（`dialogue.parse_failed.payload`），
+     * 这里再抄一份会把 8 MiB 的事件文件额度挤掉，而 4xx 的成因在参数形状里
+     * （多发了哪个字段、少发了哪个字段、值落在允许集之外）。
+     *
+     * 走的是既有的完整载荷通道（`DiagnosticsPayloadSink` → `DiagnosticsEventLog.recordPayload`），
+     * 因此单字段上限 200_000 字符、字段数上限 16、只在 `tier=full` 的导出里出现。
+     */
+    private fun recordHttpErrorPayload(
+        statusCode: Int,
+        statusDescription: String,
+        kind: ProviderKind,
+        endpoint: String,
+        requestBody: String,
+        responseBody: String,
+    ) {
+        val request = runCatching { json.parseToJsonElement(requestBody).jsonObject }.getOrNull()
+        val statusLabel = listOf(statusCode.toString(), statusDescription.trim())
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+        val endpointLabel = sanitizeEndpoint(endpoint)
+        val payload = buildMap {
+            put("http_status", statusLabel)
+            // base_url（去掉 query）+ 具体路径；query 里可能有 key / api-version，整段不落盘。
+            put("endpoint", endpointLabel)
+            put("provider_kind", kind.name)
+            // 线上真实携带的顶层字段（按序列化顺序）：多一个或少一个参数一眼可见。
+            put("request_keys", request?.keys?.joinToString(",").orEmpty())
+            request?.text("model")?.let { put("model", it) }
+            request?.text("stream")?.let { put("stream", it) }
+            // token 参数二选一：发错字段是 400 的高频成因（kimi-k3 只认 max_completion_tokens）。
+            request?.text("max_tokens")?.let { put("max_tokens", it) }
+            request?.text("max_completion_tokens")?.let { put("max_completion_tokens", it) }
+            request?.text("temperature")?.let { put("temperature", it) }
+            request?.text("reasoning_effort")?.let { put("reasoning_effort", it) }
+            request?.get("thinking")?.let { put("thinking", it.toString()) }
+            request?.get("response_format")?.let { put("response_format", it.toString()) }
+            put("messages", describeMessageShape(request?.get("messages")))
+            put("request_bytes", requestBody.length.toString())
+            put("upstream_error", responseBody.trim().take(MAX_ERROR_BODY_CHARS))
+        }
+        // 决定性字段同时写进**事件标题**：载荷明细只在 tier=full 的导出里出现，
+        // 而 eventStats.lastMessage 与 problems[].title（含一键复制摘要）在精简档里也有——
+        // 否则默认导出只能看到「发生了 22 次」，看不到发的是什么。
+        val summary = buildList {
+            request?.text("model")?.let { add("model=$it") }
+            add("endpoint=$endpointLabel")
+            request?.keys?.takeIf { it.isNotEmpty() }?.let { add("字段=[${it.joinToString(",")}]") }
+            request?.text("max_tokens")?.let { add("max_tokens=$it") }
+            request?.text("max_completion_tokens")?.let { add("max_completion_tokens=$it") }
+            request?.text("reasoning_effort")?.let { add("reasoning_effort=$it") }
+            request?.get("response_format")?.let { add("response_format=$it") }
+            val (messageCount, messageChars) = messageTotals(request?.get("messages"))
+            add("messages=$messageCount 条/$messageChars 字符")
+        }.joinToString(" · ")
+        DiagnosticsPayloadSink.record(
+            category = HTTP_ERROR_PAYLOAD_CATEGORY,
+            label = "上游拒收请求（HTTP $statusLabel）：$summary",
+            payload = payload,
+        )
+    }
+
+    /**
+     * `messages` 的**形状**：role 序列 + 每条 content 的字符数，不含正文。
+     * 例：`system(1204 字符) → user(88 字符) → assistant(530 字符)`。
+     */
+    private fun describeMessageShape(messages: JsonElement?): String {
+        val array = messages as? JsonArray ?: return "（请求体里没有 messages 字段）"
+        return array.joinToString(" → ") { element ->
+            val obj = element as? JsonObject
+            val role = obj?.text("role").orEmpty().ifBlank { "?" }
+            "$role(${contentChars(obj)} 字符)"
+        }
+    }
+
+    /** messages 的规模：条数 + content 总字符数（用于事件标题；正文不入库）。 */
+    private fun messageTotals(messages: JsonElement?): Pair<Int, Int> {
+        val array = messages as? JsonArray ?: return 0 to 0
+        var chars = 0
+        array.forEach { chars += contentChars(it as? JsonObject) }
+        return array.size to chars
+    }
+
+    /** 单条消息 content 的字符数；内容块数组（图像输入）按序列化长度计量级。 */
+    private fun contentChars(obj: JsonObject?): Int = when (val content = obj?.get("content")) {
+        null -> 0
+        is JsonPrimitive -> content.contentOrNull.orEmpty().length
+        else -> content.toString().length
+    }
+
+    /** 取 JSON 字段的可读文本；缺字段 / null / 空串一律返回 null（调用方据此跳过该键）。 */
+    private fun JsonObject.text(key: String): String? =
+        (this[key] as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank)
+
+    /** 去掉 URL 的 query / fragment：Gemini 的 `key`、Azure 的 `api-version` 都在 query 里。 */
+    private fun sanitizeEndpoint(url: String): String =
+        url.trim().substringBefore('?').substringBefore('#')
+
     /** 非流式响应的状态码统一处理（对齐原 chatCompletion 内联逻辑）。 */
-    private suspend fun HttpResponse.ensureSuccess() {
+    private suspend fun HttpResponse.ensureSuccess(
+        kind: ProviderKind,
+        endpoint: String,
+        requestBodyOf: (() -> String)? = null,
+    ) {
         when (status) {
             HttpStatusCode.OK -> Unit
             in RETRYABLE_STATUS_CODES.map { HttpStatusCode.fromValue(it) } -> {
@@ -898,6 +1142,16 @@ class LlmClient(
             }
             else -> {
                 val errorBody = bodyAsText()
+                // 上游拒收（4xx）时先留证再抛：这条路径此前什么都不记，
+                // 而「我们实际发了什么」正是唯一能终结猜测的信息。
+                recordHttpErrorPayload(
+                    statusCode = status.value,
+                    statusDescription = status.description,
+                    kind = kind,
+                    endpoint = endpoint,
+                    requestBody = requestBodyOf?.invoke().orEmpty(),
+                    responseBody = errorBody,
+                )
                 val errorMsg = try {
                     json.decodeFromString<ErrorResponse>(errorBody).error.message
                 } catch (e: Exception) {
@@ -1505,6 +1759,18 @@ class LlmClient(
                 if (status in RETRYABLE_STATUS_CODES) {
                     throw RetryableException("API returned $status", status)
                 }
+                // 非重试状态（4xx）：先留证再抛。这里是用户实际走的流式生成路径，
+                // 「API error (400 Bad Request): inference request is invalid」正是从这里抛出的，
+                // 而此前这条路径一个字节都不记。
+                // 只传 URL 与 body：spec.headers 里是 Authorization，**没有**传进留证函数的通道。
+                recordHttpErrorPayload(
+                    statusCode = status,
+                    statusDescription = description,
+                    kind = spec.kind,
+                    endpoint = spec.url,
+                    requestBody = spec.body,
+                    responseBody = body,
+                )
                 throw modelApiError(status, description, body)
             }
         }

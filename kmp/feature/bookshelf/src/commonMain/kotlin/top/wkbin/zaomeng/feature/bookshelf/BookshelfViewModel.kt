@@ -9,6 +9,7 @@ import top.wkbin.zaomeng.data.RunRepository
 import top.wkbin.zaomeng.data.api.RunManifestDto
 import top.wkbin.zaomeng.platform.DistillationForeground
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -60,7 +61,16 @@ class BookshelfViewModel(
     private var modelConfigurationJob: Job? = null
 
     init {
-        appRuntime.startBackend()
+        // 内嵌后端装配是一次**同步重活**：`KtorServiceGraph(...)` +
+        // `embeddedServer { install(...) ; routing { ... } }` + `start(wait = false)`
+        // （`start()` 里还有一次 `runBlocking { resolvedConnectors() }`）。
+        // ViewModel.init 在主线程上执行，直接调用会把这段时间算成掉帧：
+        // 真机导出里最长帧 1481ms 的栈正是 Ktor 插件装配触发的 kotlin-reflect
+        // 元数据解析（kotlin-reflect 由 `ktor-server-core` 传递依赖带进运行时）。
+        // 所以挪到后台线程——UI 本来就在观察 [BackendState]，不需要它同步返回。
+        viewModelScope.launch(Dispatchers.Default) {
+            appRuntime.startBackend()
+        }
         viewModelScope.launch {
             appRuntime.backendState.collectLatest { backendState ->
                 mutableState.update {
@@ -127,7 +137,10 @@ class BookshelfViewModel(
                 error = "",
             )
         }
-        appRuntime.retryBackend()
+        // 同 init：retry 会 stop() + start() 整个内嵌后端，同样是同步重活，不能占主线程。
+        viewModelScope.launch(Dispatchers.Default) {
+            appRuntime.retryBackend()
+        }
     }
 
     fun dismissError() {

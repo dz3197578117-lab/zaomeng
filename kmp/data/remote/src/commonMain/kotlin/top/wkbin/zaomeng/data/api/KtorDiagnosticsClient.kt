@@ -4,6 +4,7 @@ import io.ktor.client.call.body
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
+import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
@@ -31,11 +32,18 @@ class KtorDiagnosticsClient(
      * [runId] / [sessionId] 是「最近打开的会话」，作为现场上下文带上；服务端不知道 UI 状态，
      * 报告里会标注这是客户端上报而不是当前正在生成的会话。
      */
-    suspend fun export(destination: Sink, runId: String = "", sessionId: String = ""): Long {
+    suspend fun export(
+        destination: Sink,
+        runId: String = "",
+        sessionId: String = "",
+        tier: String = "compact",
+    ): Long {
         val response = request { endpoint ->
             http.client.get("${endpoint.baseUrl.trimEnd('/')}/api/web/diagnostics/export") {
                 if (runId.isNotBlank()) parameter("run_id", runId)
                 if (sessionId.isNotBlank()) parameter("session_id", sessionId)
+                // R3：导出分级由查询参数表达；服务端对未知值一律退回精简档。
+                parameter("tier", tier)
             }
         }
         val bytes = response.bodyAsBytes()
@@ -73,6 +81,19 @@ class KtorDiagnosticsClient(
             http.client.get("${endpoint.baseUrl.trimEnd('/')}/api/web/diagnostics/overview") {
                 if (runId.isNotBlank()) parameter("run_id", runId)
                 if (sessionId.isNotBlank()) parameter("session_id", sessionId)
+            }
+        }
+        return response.body()
+    }
+
+    /**
+     * 重新执行功能自检探针（显式「重新自检」）。
+     *
+     * 概览接口读的是**上一轮快照**（不被慢探针拖住）；用户点刷新时走这个端点真正重跑。
+     */
+    suspend fun refreshFeatureProbes(): FeatureProbeReportDto {
+        val response = request { endpoint ->
+            http.client.post("${endpoint.baseUrl.trimEnd('/')}/api/web/diagnostics/feature-probes/refresh") {
             }
         }
         return response.body()

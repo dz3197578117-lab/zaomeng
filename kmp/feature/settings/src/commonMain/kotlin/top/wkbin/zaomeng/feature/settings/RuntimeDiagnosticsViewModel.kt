@@ -10,11 +10,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okio.Sink
+import top.wkbin.zaomeng.data.DiagnosticsExportTier
 import top.wkbin.zaomeng.data.DiagnosticsRepository
 import top.wkbin.zaomeng.data.RuntimeCaptureStateStore
 import top.wkbin.zaomeng.data.RuntimeCaptureStatus
 import top.wkbin.zaomeng.data.api.DiagnosticsOverviewDto
 import top.wkbin.zaomeng.data.api.DiagnosticsProblemDto
+import top.wkbin.zaomeng.data.api.FeatureProbeStatuses
 import top.wkbin.zaomeng.platform.platformIoDispatcher
 
 /**
@@ -26,10 +28,24 @@ import top.wkbin.zaomeng.platform.platformIoDispatcher
 data class RuntimeDiagnosticsUiState(
     val loading: Boolean = false,
     val exporting: Boolean = false,
+    /** 正在导出的档位（compact / full）；空表示没有在导出。 */
+    val exportingTier: String = "",
+    /** 是否展开了「诊断自身状态」区块。 */
+    val selfStatusExpanded: Boolean = false,
+    /** 是否展开了操作轨迹。 */
+    val trailExpanded: Boolean = false,
+    /** 是否展开了「未覆盖的面 / 数据损坏审计 / 可访问性」等次要区块。 */
+    val blindSpotsExpanded: Boolean = false,
     val overview: DiagnosticsOverviewDto? = null,
     val capture: RuntimeCaptureStatus = RuntimeCaptureStatus(),
     /** 已展开的问题键（点一下看完整堆栈）。 */
     val expanded: Set<String> = emptySet(),
+    /** 已展开的功能自检探针 id。 */
+    val expandedProbes: Set<String> = emptySet(),
+    /** 是否展开了「未注册功能」列表。 */
+    val unregisteredExpanded: Boolean = false,
+    /** 正在重跑探针。 */
+    val probing: Boolean = false,
     val error: String = "",
     val message: String = "",
 )
@@ -102,30 +118,104 @@ class RuntimeDiagnosticsViewModel(
         }
     }
 
+    /** 展开/收起一条功能自检探针的细节。 */
+    fun toggleProbe(probeId: String) {
+        mutableState.update { current ->
+            val expanded = current.expandedProbes
+            current.copy(expandedProbes = if (probeId in expanded) expanded - probeId else expanded + probeId)
+        }
+    }
+
+    /** 展开/收起「未注册功能」列表。 */
+    fun toggleUnregistered() {
+        mutableState.update { it.copy(unregisteredExpanded = !it.unregisteredExpanded) }
+    }
+
+    /**
+     * 重新执行功能自检探针（显式刷新）。
+     *
+     * 概览里的探针结果是上一轮快照；点这里才会真正重跑。
+     * **与运行日志采集开关无关**：探针读的是清单/档案文件与独立的事件环形缓冲。
+     */
+    fun refreshProbes() {
+        viewModelScope.launch {
+            mutableState.update { it.copy(probing = true, error = "", message = "") }
+            try {
+                val report = diagnostics.refreshFeatureProbes()
+                mutableState.update { current ->
+                    val overview = current.overview
+                    current.copy(
+                        probing = false,
+                        overview = overview?.copy(
+                            featureProbes = report,
+                            probeFailCount = report.items.count { it.status == FeatureProbeStatuses.FAIL },
+                        ),
+                        message = "功能自检已重跑：✅${report.okCount} ⚠️${report.warnCount} ❌${report.items.count { it.status == FeatureProbeStatuses.FAIL }}" +
+                            "（未注册 ${report.unregisteredCount}）",
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(
+                        probing = false,
+                        error = error.message?.takeIf(String::isNotBlank) ?: "功能自检重跑失败。",
+                    )
+                }
+            }
+        }
+    }
+
     /**
      * 导出完整诊断 JSON。
      *
      * 与 [SettingsViewModel.exportDiagnostics] 同理：必须 suspend 并直接写完 sink，
      * FileKit 的回调返回后目标流就被关闭了。
      */
-    suspend fun export(destination: Sink) {
-        mutableState.update { it.copy(exporting = true, error = "", message = "") }
+    suspend fun export(destination: Sink, tier: String = DiagnosticsExportTier.COMPACT) {
+        val compact = tier != DiagnosticsExportTier.FULL
+        mutableState.update { it.copy(exporting = true, exportingTier = tier, error = "", message = "") }
         try {
-            val written = withContext(platformIoDispatcher) { diagnostics.exportDiagnostics(destination) }
+            val written = withContext(platformIoDispatcher) {
+                diagnostics.exportDiagnostics(destination, tier)
+            }
             mutableState.update {
-                it.copy(exporting = false, message = "脱敏诊断信息已导出（${written / 1024} KiB）。")
+                it.copy(
+                    exporting = false,
+                    exportingTier = "",
+                    message = (if (compact) "已导出精简诊断" else "已导出完整诊断") +
+                        "（${written / 1024} KiB）。" +
+                        if (compact) "精简档不含日志正文与完整堆栈。" else "",
+                )
             }
         } catch (cancelled: CancellationException) {
-            mutableState.update { it.copy(exporting = false) }
+            mutableState.update { it.copy(exporting = false, exportingTier = "") }
             throw cancelled
         } catch (error: Throwable) {
             mutableState.update {
                 it.copy(
                     exporting = false,
+                    exportingTier = "",
                     error = error.message?.takeIf(String::isNotBlank) ?: "诊断信息导出失败。",
                 )
             }
         }
+    }
+
+    /** 展开/收起「诊断自身状态」。 */
+    fun toggleSelfStatus() {
+        mutableState.update { it.copy(selfStatusExpanded = !it.selfStatusExpanded) }
+    }
+
+    /** 展开/收起操作轨迹。 */
+    fun toggleTrail() {
+        mutableState.update { it.copy(trailExpanded = !it.trailExpanded) }
+    }
+
+    /** 展开/收起盲区补齐区块。 */
+    fun toggleBlindSpots() {
+        mutableState.update { it.copy(blindSpotsExpanded = !it.blindSpotsExpanded) }
     }
 
     /** 复制摘要成功后的反馈。 */
@@ -146,15 +236,29 @@ class RuntimeDiagnosticsViewModel(
     }
 }
 
-/** 问题的稳定键：列表用它做 key，展开状态也用它，避免刷新后错位。 */
+/**
+ * 问题的稳定键。
+ *
+ * R2 起优先用服务端算出的分组键 [DiagnosticsProblemDto.fingerprint]：
+ * 同一条问题在刷新后必须落到同一个 key，否则「展开的堆栈」会跳到别的问题上。
+ */
 internal fun problemKey(problem: DiagnosticsProblemDto): String =
-    "${problem.kind}|${problem.occurredAt}|${problem.title.hashCode()}"
+    problem.fingerprint.ifBlank { "${problem.kind}|${problem.lastAt}|${problem.title.hashCode()}" }
 
-/** 问题分类展示名。 */
+/**
+ * 问题分类展示名。
+ *
+ * 与服务端 `DiagnosticsProblemTaxonomy.kindLabel` 保持同一套文案——
+ * 两处不一致时，同一条问题在概览与导出里会叫两个名字。
+ */
 internal fun problemKindLabel(kind: String): String = when (kind) {
     "crash" -> "崩溃"
-    "anr" -> "ANR 卡顿"
+    "anr" -> "ANR"
+    "freeze" -> "卡死 / 长任务"
+    "jank" -> "卡顿"
+    "visual" -> "视觉信号"
     "process-exit" -> "进程死因"
+    "intentional-exit" -> "正常退出"
     "event" -> "结构化事件"
     "self-check" -> "自检"
     else -> kind

@@ -597,10 +597,7 @@ class DialogueService(
         val ledger = (session["consistency_monitor"]?.jsonObject?.get("knowledge_ledger")?.jsonArray
             ?: JsonArray(emptyList())).mapNotNull { runCatching { it.jsonObject }.getOrNull() }.toMutableList()
         val now = nowIsoString()
-        val patterns = listOf(
-            Regex("(?:秘密|真相|实情|底牌)(?:是|为|：|:)\\s*([^。！？!?\\n]{4,80})"),
-            Regex("(?:只告诉你|别告诉别人|不要告诉别人)[，,:：]?\\s*([^。！？!?\\n]{4,80})"),
-        )
+        val patterns = KNOWLEDGE_LEDGER_DISCLOSURE_PATTERNS
         entries.forEach { (speaker, text) ->
             patterns.flatMap { pattern -> pattern.findAll(text).map { it.groupValues[1].trim() }.toList() }
                 .distinct().forEach { fact ->
@@ -910,6 +907,26 @@ class DialogueService(
             )
         }.onFailure { error ->
             PlatformLog.w(TAG, "Background world-memory update failed for $runId/$sessionId: ${error.message}", error)
+            // R4 静默失败迁移：这里此前只进 logcat，用户手里的诊断导出里一个字都没有。
+            // 世界记忆没更新＝角色会「忘记」刚发生的事，是用户能直接感知的坏结果。
+            DiagnosticsSink.recordFailure(
+                stage = "dialogue.world_memory",
+                error = error,
+                retrying = false,
+                details = mapOf("run_id" to runId, "session_id" to sessionId, "turn_id" to work.turnId),
+            )
         }
     }
 }
+
+/**
+ * 知识台账的「披露句」模式：只有明确交代秘密/真相/底牌的句子才会登记成事实。
+ *
+ * 抽成常量是为了让**功能自检探针**与写入侧共用同一口径：
+ * 探针要能回答「台账为空」到底是「没有可登记的事实（正常）」还是「写入路径坏了」。
+ * 两处各写一份正则，迟早会漂移，那时探针的结论就不可信了。
+ */
+internal val KNOWLEDGE_LEDGER_DISCLOSURE_PATTERNS: List<Regex> = listOf(
+    Regex("(?:秘密|真相|实情|底牌)(?:是|为|：|:)\\s*([^。！？!?\\n]{4,80})"),
+    Regex("(?:只告诉你|别告诉别人|不要告诉别人)[，,:：]?\\s*([^。！？!?\\n]{4,80})"),
+)

@@ -68,6 +68,8 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(project(":data:remote"))
+            // R7：布局跳动探针要把采样写进客户端诊断收口。
+            implementation(project(":core:runtime"))
             implementation(libs.bundles.compose.ui)
             implementation(libs.material.kolor)
             implementation(libs.bundles.filekit.compose)

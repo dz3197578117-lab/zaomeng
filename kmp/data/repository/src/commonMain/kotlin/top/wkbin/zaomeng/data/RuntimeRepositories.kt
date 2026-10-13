@@ -11,6 +11,7 @@ import top.wkbin.zaomeng.backend.BackendController
 import top.wkbin.zaomeng.backend.BackendState
 import top.wkbin.zaomeng.data.api.DialogueSessionDto
 import top.wkbin.zaomeng.data.api.DownloadOnDeviceModelRequest
+import top.wkbin.zaomeng.data.api.FeatureProbeReportDto
 import top.wkbin.zaomeng.data.api.GeneratePluginDraftRequest
 import top.wkbin.zaomeng.data.api.InspectPluginPackageRequest
 import top.wkbin.zaomeng.data.api.InstallPluginPackageRequest
@@ -132,9 +133,9 @@ class DiagnosticsRepositoryImpl(
     private val ktorDiagnostics: KtorDiagnosticsClient,
     private val appPreferences: AppPreferencesRepository,
 ) : DiagnosticsRepository {
-    override suspend fun exportDiagnostics(destination: Sink): Long = repositoryRequest {
+    override suspend fun exportDiagnostics(destination: Sink, tier: String): Long = repositoryRequest {
         val context = currentSessionContext()
-        ktorDiagnostics.export(destination, context.runId, context.sessionId)
+        ktorDiagnostics.export(destination, context.runId, context.sessionId, tier)
     }
 
     override suspend fun runtimeLog(maxLines: Int): RuntimeLogDto = repositoryRequest {
@@ -145,6 +146,10 @@ class DiagnosticsRepositoryImpl(
     override suspend fun overview(): DiagnosticsOverviewDto = repositoryRequest {
         val context = currentSessionContext()
         ktorDiagnostics.overview(context.runId, context.sessionId)
+    }
+
+    override suspend fun refreshFeatureProbes(): FeatureProbeReportDto = repositoryRequest {
+        ktorDiagnostics.refreshFeatureProbes()
     }
 
     override suspend fun captureState(): RuntimeCaptureStateDto = repositoryRequest {

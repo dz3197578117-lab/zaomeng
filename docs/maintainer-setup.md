@@ -280,3 +280,37 @@ curl -sS -X PUT -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.gi
   所以只测「读」会误以为令牌没问题，直到 PATCH 返回 401 才发现。
 - **`topics` 不能用 PATCH 设**，要用专门的 `PUT /repos/{owner}/{repo}/topics`
   （用 PATCH 传 `topics` 会被静默忽略，返回体里 topics 仍是空）。
+
+## 八、新增功能时必须动两处：`KnownFeatures` 与探针注册
+
+「运行诊断」页的**功能自检**不是写死的清单：每个功能自己注册一个探针，
+诊断页与诊断导出会自动列出所有已注册探针。因此**漏注册在界面上表现为「一片安静」**
+（看起来全绿，其实那项根本没被检查过）。
+
+所以新增功能时，必须在**两处各加一条**：
+
+1. **`kmp/core/contracts/.../data/api/KnownFeatures.kt`** 的 `KnownFeatures.all`
+   里加一条 `KnownFeature(id, title, domain)`——它是「期望存在的功能」的**单一来源**，
+   服务端（算未注册）与设置页（显示未注册）共用同一份；
+2. **探针注册处**加一个引用该 `id` 的探针：
+   - 通用入口：`kmp/server/.../ktor/features/SystemProbes.kt` 的 `registerAllFeatureProbes`；
+   - 分域实现：`BookshelfProbes.kt` / `ChatProbes.kt` / `PluginProbes.kt` / `ModelProbes.kt`，
+     各自有 `registerXxxProbes(registry, ...)`；
+   - 纯逻辑判定放到 `FeatureAssessments.kt`（`assessXxx(...)`），并补 `jvmTest`。
+
+只加一处会怎样：只加清单 → 诊断页显示「1 个功能未注册」并列出它的名字；
+只加探针 → 诊断页显示「探针引用了未知功能 id」（`unknownFeatureRefs`）。
+
+探针的硬性约束（写在 `FeatureProbe` 的 KDoc 里，改代码前先读）：
+
+- **只读**：上下文 `FeatureProbeContext` 没有任何写入口，不许「顺手修复」业务数据；
+- **廉价可缓存**：读小文件/清单即可，禁止跑模型；缓存由 `FeatureProbeRunner` 统一负责
+  （默认通过结论缓存 30 秒、失败结论缓存 3 分钟、单探针 5 秒超时）；
+- **独立失败**：抛异常/超时只转成自己这条 `FAIL`，不影响其它探针或整页诊断；
+- **没数据 ≠ 坏了**：没有样本时返回 `NO_DATA`，已知的环境性原因返回 `SKIPPED`，
+  **绝不返回 `FAIL`**；
+- **与运行日志采集开关无关**：探针不得依赖 `RuntimeCaptureState`
+  （`FeatureProbeCaptureIndependenceTest` 会拦住这条）。
+
+改完跑一次 `./scripts/check-prompt-sync.sh` 与 `kmp` 下的
+`:server:jvmTest :feature:settings:jvmTest`。

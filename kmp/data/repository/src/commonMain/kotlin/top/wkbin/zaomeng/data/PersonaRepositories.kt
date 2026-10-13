@@ -2,6 +2,7 @@ package top.wkbin.zaomeng.data
 
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import top.wkbin.zaomeng.platform.ClientDiagnostics
 import top.wkbin.zaomeng.data.api.DeleteStatusDto
 import top.wkbin.zaomeng.data.api.KtorOriginalKnowledgeClient
 import top.wkbin.zaomeng.data.api.KtorPersonaClient
@@ -78,7 +79,14 @@ class PersonaRepositoryImpl(
     ): ByteArray? {
         if (version.isBlank()) return null
         val key = "$runId|$character|$version"
-        avatarCache[key]?.let { return it }
+        avatarCache[key]?.let {
+            // R7：图片同 URL 请求/缓存命中计数。缓存命中不计入「重复请求」——
+            // 真正的重复是「缓存里没有，于是又拉了一次同一张图」。
+            ClientDiagnostics.recordImageRequest(url = key, cacheHit = true)
+            return it
+        }
+        val duplicate = ClientDiagnostics.hasRequestedImage(key)
+        ClientDiagnostics.recordImageRequest(url = key, cacheHit = false, duplicate = duplicate)
         return repositoryRequest { ktorPersona.getAvatar(runId, character)?.also { avatarCache[key] = it } }
     }
 

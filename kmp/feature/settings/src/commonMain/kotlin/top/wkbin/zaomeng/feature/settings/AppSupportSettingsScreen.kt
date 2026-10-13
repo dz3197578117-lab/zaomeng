@@ -15,6 +15,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -36,6 +37,8 @@ fun AppSupportSettingsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val openExternalUrl = rememberOpenExternalUrl()
     val toast = rememberToast()
+    // 每次进入本页刷新一次问题计数：进入设置页时顺手更新，不额外增加轮询。
+    LaunchedEffect(Unit) { viewModel.refreshDiagnosticsSummary() }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -86,8 +89,16 @@ private fun SettingsSupportGroup(
         androidx.compose.foundation.layout.Column {
             SettingsRow(
                 title = "运行诊断",
-                subtitle = "问题捕获（崩溃 / ANR / 进程死因）、启动自检、现场元信息与悬浮窗采集开关；可导出脱敏诊断。",
-                value = "查看",
+                subtitle = "问题捕获（崩溃 / ANR / 进程死因）、启动自检、现场元信息与悬浮窗采集开关；可导出脱敏诊断。" +
+                    diagnosticsBadge(state),
+                // R3：入口行直接显示问题计数与探针 FAIL 数（并列，不混算——
+                // 「被更新/被系统清理」是 info，不该被计入崩溃数）。
+                value = when {
+                    state.diagnosticsProblemGroups == null -> "查看"
+                    (state.diagnosticsProblemGroups ?: 0) == 0 && (state.diagnosticsProbeFails ?: 0) == 0 -> "无问题"
+                    else -> "问题 ${state.diagnosticsProblemGroups} 组" +
+                        if ((state.diagnosticsProbeFails ?: 0) > 0) " · ❌${state.diagnosticsProbeFails}" else ""
+                },
                 onClick = onOpenRuntimeDiagnostics,
             )
             androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -121,5 +132,22 @@ private fun SettingsSupportGroup(
                 subtitle = "v${AppMetadata.VERSION_NAME}（${AppMetadata.VERSION_CODE}）",
             )
         }
+    }
+}
+
+/**
+ * 入口行副标题后缀：把「组数 / 累计次数 / 探针失败数」摊开。
+ *
+ * 读不到时**不加任何后缀**（显示「查看」），不显示 0——
+ * 「没读到」与「没有问题」在入口行必须能区分，否则用户会误以为诊断正常。
+ */
+private fun diagnosticsBadge(state: SettingsUiState): String {
+    val groups = state.diagnosticsProblemGroups ?: return ""
+    if (groups == 0 && (state.diagnosticsProbeFails ?: 0) == 0) return " 当前无问题。"
+    return buildString {
+        append(" 当前 ${groups} 组问题")
+        state.diagnosticsProblemTotal?.let { append("（累计 $it 次）") }
+        state.diagnosticsProbeFails?.takeIf { it > 0 }?.let { append(" · 功能自检 ❌ $it") }
+        append("。")
     }
 }
