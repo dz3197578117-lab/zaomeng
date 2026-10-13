@@ -121,6 +121,14 @@ internal class AndroidPlatformTts(context: Context) : PlatformTts {
                     TextToSpeech.Engine.KEY_PARAM_VOLUME,
                     volume.coerceIn(0f, 1f),
                 )
+                // 与神经引擎对称地留一行日志：这样「用的是哪条引擎」在诊断里一眼可辨，
+                // 不必去猜「为什么所有人一个声音」。
+                Log.i(
+                    TAG,
+                    "朗读（系统 TTS）：说话人=「$speaker」pitch=${"%.2f".format(pitch)} " +
+                        "speed=${"%.2f".format(speed)} volume=${"%.2f".format(volume)} " +
+                        "voice=${voiceName.ifBlank { "默认" }}",
+                )
                 engine.speak(clean, TextToSpeech.QUEUE_FLUSH, params, id)
                 _isSpeaking.value = true
                 _currentSpeakingId.value = id
@@ -174,7 +182,9 @@ actual fun rememberPlatformTts(selection: SpeechEngineSelection): PlatformTts {
             AndroidPlatformTts(context)
         }
     }
-    DisposableEffect(Unit) {
+    // key 里带 platformTts 而不是 Unit：切换引擎会**换掉实例**，
+    // 旧实例（持有几百 MB 的原生引擎与协程作用域）必须被释放，否则会一直留在内存里。
+    DisposableEffect(platformTts) {
         onDispose {
             // 用 shutdown 而不是 stop：神经引擎持有原生句柄，只 stop 会把引擎留在内存里。
             platformTts.shutdown()

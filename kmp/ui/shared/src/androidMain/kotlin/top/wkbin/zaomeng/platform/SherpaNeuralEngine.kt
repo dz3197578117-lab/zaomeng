@@ -1,5 +1,6 @@
 package top.wkbin.zaomeng.platform
 
+import android.app.ActivityManager
 import android.content.Context
 import android.util.Log
 import com.k2fsa.sherpa.onnx.OfflineTts
@@ -87,15 +88,42 @@ internal object SherpaNeuralEngine {
         check(missing.isEmpty()) {
             "语音模型文件不完整，缺少：${missing.joinToString("、")}（在 ${modelDir.absolutePath}）"
         }
+        // 内存门槛：VITS fp32 模型加载后常驻数百 MB，而 ONNX Runtime 在分配失败时可能**直接 abort 整个进程**
+        // ——那是原生崩溃，下面的 runCatching 兜不住。所以宁可在加载前就拒绝，并给出可读原因。
+        val available = availableMemoryBytes(context)
+        check(available >= MIN_AVAILABLE_BYTES) {
+            "可用内存不足（仅 ${available / 1024 / 1024} MB，需要约 ${MIN_AVAILABLE_BYTES / 1024 / 1024} MB）" +
+                "，无法加载语音模型；如果端侧推理（llama.cpp）正在运行，先停止它再试。"
+        }
         val config = buildConfig(model, modelDir, numThreads)
         val engine = OfflineTts(assetManager = context.assets, config = config)
         Log.i(
             TAG,
-            "神经语音引擎已加载：${model.id}，音色 ${engine.numSpeakers()} 个，采样率 ${engine.sampleRate()} Hz",
+            "神经语音引擎已加载：${model.id}，音色 ${engine.numSpeakers()} 个，" +
+                "采样率 ${engine.sampleRate()} Hz，加载前可用内存 ${available / 1024 / 1024} MB",
         )
         engine
     }.onFailure { error ->
         // 失败必须留痕：这条链路的失败表现是「没声音」，只有日志能区分是哪一步坏了。
         Log.e(TAG, "神经语音引擎加载失败：${error.message}", error)
     }
+
+    /** 当前可用内存（字节）；拿不到时返回 [Long.MAX_VALUE]，即不拦——宁可试，也不要因为读不到数字就禁用功能。 */
+    private fun availableMemoryBytes(context: Context): Long {
+        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            ?: return Long.MAX_VALUE
+        val info = ActivityManager.MemoryInfo()
+        return runCatching {
+            manager.getMemoryInfo(info)
+            info.availMem
+        }.getOrDefault(Long.MAX_VALUE)
+    }
+
+    /**
+     * 加载前要求的可用内存。
+     *
+     * 取 700 MB 是留出余量的经验值：theresa 的 fp32 模型 116 MB，但运行时还要放中间张量与采样缓冲，
+     * 峰值远大于文件本身；而手机上常见的情况是端侧推理已经占掉一大块。
+     */
+    private const val MIN_AVAILABLE_BYTES = 700L * 1024 * 1024
 }

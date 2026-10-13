@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -37,7 +36,6 @@ import top.wkbin.zaomeng.platform.NeuralVoiceCatalog
 internal fun VoiceModelContent(
     state: VoiceModelUiState,
     onSelectModel: (String) -> Unit,
-    onSelectEndpoint: (String) -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
     onDownload: () -> Unit,
     onCancelDownload: () -> Unit,
@@ -64,6 +62,28 @@ internal fun VoiceModelContent(
                     "支持语速与音量；**不支持音高**（引擎没有该参数），情绪主要由语速与模型自身表现力体现。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            // 把「实际生效的是哪条引擎」明写出来。用户反馈「所有人都是一个声音」时，
+            // 第一个要排除的就是「其实根本没走神经引擎」——不显示的话只能靠猜或翻日志。
+            val activeEngine = when {
+                !state.enabled -> "当前生效：系统朗读（TTS）。"
+                state.selectedReady ->
+                    "当前生效：离线神经朗读 · ${state.selectedModel.displayName}" +
+                        "（音色 ${state.selectedModel.speakerCount} 个）。"
+                else ->
+                    "当前生效：仍是系统朗读 —— 所选模型还没下载完，" +
+                        "此时所有角色共用系统 TTS 的同一个音色。"
+            }
+            Text(
+                text = activeEngine,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                color = if (state.enabled && state.selectedReady) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
             )
 
             Row(
@@ -110,19 +130,13 @@ internal fun VoiceModelContent(
                 }
             }
 
-            Text("下载源", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                for (endpoint in OnDeviceModelPresets.endpoints) {
-                    FilterChip(
-                        selected = state.downloadEndpointId == endpoint.id,
-                        onClick = { onSelectEndpoint(endpoint.id) },
-                        label = { Text(endpoint.label, style = MaterialTheme.typography.bodySmall) },
-                    )
-                }
-            }
+            // 刻意**不让用户选下载源**：官方站在国内经常连不上，镜像站本来就是它的后路——
+            // 「选错就没得下」这种事不该交给用户。下载会自动依次尝试两个源（见 ViewModel）。
+            Text(
+                text = "下载会自动尝试官方源，连不上时改用镜像源，不需要你选择。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
             if (state.isDownloading) {
                 val download = state.download

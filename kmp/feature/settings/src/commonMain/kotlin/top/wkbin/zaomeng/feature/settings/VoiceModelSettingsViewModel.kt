@@ -22,6 +22,20 @@ import top.wkbin.zaomeng.platform.downloadPlans
 import top.wkbin.zaomeng.platform.isFullyDownloaded
 
 /**
+ * 语音模型的下载源**尝试顺序**：镜像优先，官方兜底。
+ *
+ * 为什么不是「官方优先」（端侧 GGUF 那边的默认顺序）：
+ * `huggingface.co` 在本项目主要被使用的地方经常连不上，而失败前会先**卡掉一整个连接超时**
+ * （十几到几十秒），体验上像是「点了没反应」。两个源提供的是**同一份文件**（`resolve/main` 直链同构），
+ * 所以把可达性更高的那个放前面只是省时间，不影响正确性；官方源仍保留为兜底。
+ */
+internal fun voiceDownloadEndpoints(): List<OnDeviceDownloadEndpoint> {
+    val mirror = OnDeviceModelPresets.endpoints.firstOrNull { it.baseUrl.contains("hf-mirror.com") }
+    val others = OnDeviceModelPresets.endpoints.filterNot { it.id == mirror?.id }
+    return listOfNotNull(mirror) + others
+}
+
+/**
  * 「离线神经朗读」区块的状态。
  *
  * 这是语音功能的**唯一入口**：选模型 → 下载 → 记住选择 → 打开开关。
@@ -86,10 +100,6 @@ class VoiceModelSettingsViewModel(
         mutableState.update { it.copy(selectedModelId = modelId, error = "") }
     }
 
-    fun selectEndpoint(endpointId: String) {
-        mutableState.update { it.copy(downloadEndpointId = endpointId, error = "") }
-    }
-
     /**
      * 开关离线神经朗读。
      *
@@ -130,26 +140,46 @@ class VoiceModelSettingsViewModel(
         }
     }
 
-    /** 开始下载当前选中的模型（清单由客户端按选定下载源拼好）。 */
+    /**
+     * 开始下载当前选中的模型。
+     *
+     * **自动换源**：依次尝试 [voiceDownloadEndpoints] 给出的顺序（镜像 → 官方），前者失败就换后者。
+     * 「选错源就没得下」这种事不该交给用户判断——而且官方站在国内会先卡掉一次连接超时才失败，
+     * 让用户自己选反而更容易踩到那个超时。
+     */
     fun download() {
         val snapshot = mutableState.value
         val model = snapshot.selectedModel
-        val files = model.downloadPlans(snapshot.endpoint.baseUrl).map {
-            VoiceModelFileDto(fileName = it.fileName, url = it.url, sizeBytes = it.sizeBytes)
-        }
+        val candidates = voiceDownloadEndpoints()
         viewModelScope.launch {
             mutableState.update { it.copy(busy = true, error = "", message = "正在开始下载…") }
-            runCatching {
-                modelSettings.downloadVoiceModel(
-                    DownloadVoiceModelRequest(modelId = model.id, files = files),
+            for ((index, endpoint) in candidates.withIndex()) {
+                val request = DownloadVoiceModelRequest(
+                    modelId = model.id,
+                    files = model.downloadPlans(endpoint.baseUrl).map {
+                        VoiceModelFileDto(fileName = it.fileName, url = it.url, sizeBytes = it.sizeBytes)
+                    },
                 )
-            }.onSuccess { status ->
-                mutableState.update {
-                    it.copy(busy = false, download = status.download, message = status.download.message)
+                val result = runCatching { modelSettings.downloadVoiceModel(request) }
+                val status = result.getOrNull()
+                if (status != null) {
+                    mutableState.update {
+                        it.copy(busy = false, download = status.download, message = status.download.message)
+                    }
+                    startPolling(model.id)
+                    return@launch
                 }
-                startPolling(model.id)
-            }.onFailure { error ->
-                mutableState.update { it.copy(busy = false, error = error.message ?: "开始下载失败") }
+                val failure = result.exceptionOrNull()
+                if (index < candidates.lastIndex) {
+                    // 换源继续，并把原因写进状态：用户看到「正在重试」而不是一个失败就结束。
+                    mutableState.update {
+                        it.copy(message = "${endpoint.label}不可用（${failure?.message ?: "未知原因"}），正在改用其它源…")
+                    }
+                } else {
+                    mutableState.update {
+                        it.copy(busy = false, error = "下载失败：${failure?.message ?: "所有下载源都不可用"}")
+                    }
+                }
             }
         }
     }

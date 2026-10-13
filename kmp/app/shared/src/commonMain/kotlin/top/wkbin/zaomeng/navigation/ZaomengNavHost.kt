@@ -50,6 +50,7 @@ import top.wkbin.zaomeng.feature.settings.ModelProfileEditorViewModel
 import top.wkbin.zaomeng.feature.settings.ModelProfilesViewModel
 import top.wkbin.zaomeng.feature.settings.ModelSettingsScreen
 import top.wkbin.zaomeng.feature.settings.OnDeviceModelsScreen
+import top.wkbin.zaomeng.feature.settings.OfflineSpeechScreen
 import top.wkbin.zaomeng.feature.settings.OnDeviceModelsViewModel
 import top.wkbin.zaomeng.feature.settings.VoiceModelSettingsViewModel
 import top.wkbin.zaomeng.feature.settings.PluginsScreen
@@ -194,6 +195,7 @@ fun ZaomengNavHost(
                     onBack = popBack,
                     onOpenModelSettings = { backStack.add(ModelConfigurationDestination) },
                     onOpenOnDeviceModels = { backStack.add(OnDeviceModelsDestination) },
+                    onOpenOfflineSpeech = { backStack.add(OfflineSpeechDestination) },
                     onOpenChatDisplay = { backStack.add(ChatDisplaySettingsDestination) },
                     onOpenPlugins = { backStack.add(PluginsDestination) },
                     onOpenAppearance = { backStack.add(AppearanceSettingsDestination) },
@@ -228,11 +230,15 @@ fun ZaomengNavHost(
             }
             entry(OnDeviceModelsDestination) {
                 val viewModel: OnDeviceModelsViewModel = koinViewModel()
-                // 离线神经朗读与端侧推理同页：都是「在本机跑」的模型，下载源也共用同一套镜像设置。
-                val voiceViewModel: VoiceModelSettingsViewModel = koinViewModel()
                 OnDeviceModelsScreen(
                     viewModel = viewModel,
-                    voiceViewModel = voiceViewModel,
+                    onBack = popBack,
+                )
+            }
+            entry(OfflineSpeechDestination) {
+                val voiceViewModel: VoiceModelSettingsViewModel = koinViewModel()
+                OfflineSpeechScreen(
+                    viewModel = voiceViewModel,
                     onBack = popBack,
                 )
             }

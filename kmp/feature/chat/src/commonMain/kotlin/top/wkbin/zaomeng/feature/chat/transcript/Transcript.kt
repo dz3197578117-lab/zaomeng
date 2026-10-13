@@ -195,8 +195,9 @@ internal fun Transcript(
         ),
     )
     // 把本次会话的参演角色告诉引擎，供神经引擎分配**互不相同**的音色（系统 TTS 忽略此项）。
-    // 用 sessionId 作 key：只在换会话时重算，同一会话内不会因为重组建而改变音色。
-    LaunchedEffect(session.sessionId, session.characterAvatars) {
+    // key 里必须带上 `tts`：切换引擎会重建实例，若只按 sessionId 作 key，
+    // 新实例就收不到参演名单（虽然会回落到按角色名派生、不至于全同一个声音，但那份「同场不撞车」的保证就丢了）。
+    LaunchedEffect(tts, session.sessionId, session.characterAvatars) {
         tts.setCast(session.characterAvatars.keys.toList())
     }
     val isSpeaking by tts.isSpeaking.collectAsStateWithLifecycle()

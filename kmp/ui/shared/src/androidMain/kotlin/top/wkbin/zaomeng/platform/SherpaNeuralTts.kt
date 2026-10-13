@@ -60,6 +60,15 @@ internal class SherpaNeuralTts(
     private var engine: OfflineTts? = null
     private var loadFailure: String? = null
 
+    /**
+     * 合成与播放的**串行锁**。
+     *
+     * sherpa-onnx 的 `OfflineTts` 不是线程安全的，而「连点两次朗读」会让两次 `generate()`
+     * 撞在同一个原生对象上：`stop()` 只能**取消协程**，无法打断已经进入 JNI 的那次调用。
+     * 那是**原生崩溃**，Java 侧的 `try/catch` 兜不住——必须在这里串行化。
+     */
+    private val playbackLock = Mutex()
+
     private val _isSpeaking = MutableStateFlow(false)
     override val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
 
@@ -93,33 +102,48 @@ internal class SherpaNeuralTts(
 
         stop()
         playbackJob = scope.launch {
-            _isSpeaking.value = true
-            _currentSpeakingId.value = id
-            try {
-                val tts = ensureEngine() ?: return@launch
-                val sid = speakerIdFor(speaker, tts.numSpeakers())
-                val audio = tts.generate(clean, sid, speed.coerceIn(MIN_SPEED, MAX_SPEED))
-                if (audio.samples.isEmpty()) {
-                    Log.w(TAG, "合成为空音频：sid=$sid speed=$speed 文本长度=${clean.length}")
-                    return@launch
-                }
-                play(audio.samples, audio.sampleRate, volume)
-            } catch (error: Throwable) {
-                // 合成失败只影响这一次朗读；把原因留给日志（症状是「没声音」，不记就无从查起）。
-                Log.e(TAG, "神经语音播放失败：${error.message}", error)
-            } finally {
-                if (_currentSpeakingId.value == id) {
-                    _isSpeaking.value = false
-                    _currentSpeakingId.value = null
+            // 整段（加载引擎 → 合成 → 播放）都在锁内：既避免并发调用原生引擎，
+            // 也保证同一时刻只有一个 AudioTrack 在被写入。
+            playbackLock.withLock {
+                _isSpeaking.value = true
+                _currentSpeakingId.value = id
+                try {
+                    val tts = ensureEngine() ?: return@launch
+                    val sid = speakerIdFor(speaker, tts.numSpeakers())
+                    // 每次合成都留一行**决定性**日志：说话人 → 音色编号、总音色数、语速。
+                    // 「所有人一个声音」这种反馈必须能靠一行日志区分三种原因：
+                    // ① 根本没走神经引擎（则这里不会有这行）；② 走了但音色编号相同；
+                    // ③ 编号不同但模型本身音色相近（模型能力边界）。不打印就只能靠猜。
+                    Log.i(
+                        TAG,
+                        "朗读：说话人=「$speaker」音色#$sid/${tts.numSpeakers()} " +
+                            "语速=${"%.2f".format(speed)} 字符数=${clean.length} 候选角色=${cast.size}",
+                    )
+                    val audio = tts.generate(clean, sid, speed.coerceIn(MIN_SPEED, MAX_SPEED))
+                    if (audio.samples.isEmpty()) {
+                        Log.w(TAG, "合成为空音频：sid=$sid speed=$speed 文本长度=${clean.length}")
+                        return@launch
+                    }
+                    play(audio.samples, audio.sampleRate, volume)
+                } catch (error: Throwable) {
+                    // 合成失败只影响这一次朗读；把原因留给日志（症状是「没声音」，不记就无从查起）。
+                    Log.e(TAG, "神经语音播放失败：${error.message}", error)
+                } finally {
+                    if (_currentSpeakingId.value == id) {
+                        _isSpeaking.value = false
+                        _currentSpeakingId.value = null
+                    }
                 }
             }
         }
     }
 
     override fun stop() {
+        // 只取消任务，**不在这里释放 AudioTrack**：轨道由正在播放的那个协程在自己的 finally 里释放。
+        // 之前在这里也 release 一次，会和协程内的写入/释放撞车（同一轨道释放两次）——
+        // 轻则 IllegalStateException，重则原生崩溃。
         playbackJob?.cancel()
         playbackJob = null
-        releaseTrack()
         _isSpeaking.value = false
         _currentSpeakingId.value = null
     }
