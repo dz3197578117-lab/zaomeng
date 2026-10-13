@@ -25,7 +25,17 @@
 #   OPENCL_ROOT          OpenCL 头与库所在前缀（含 include/CL 与 lib*/libOpenCL.so）；
 #                        默认去 NDK sysroot 找（官方 Android 配方就装在那里）
 #   GGML_CPU_ARM_ARCH    全局 -march（默认 armv8-a；**一般不需要改**，见下）
+#   EXTRA_CMAKE_ARGS     额外 CMake 参数（按空格拆分）。逃生口，例如离线构建时让
+#                        FetchContent 直接用本地已校验的源码：
+#                        EXTRA_CMAKE_ARGS="-DFETCHCONTENT_SOURCE_DIR_KLEIDIAI=/path/to/kleidiai-1.24.0"
 set -euo pipefail
+
+# 非 UTF-8 区域的 Windows 上必须开 Python 的 UTF-8 模式，否则编 OpenCL 时必崩：
+# 上游 ggml-opencl/kernels/embed_kernel.py 用平台默认编码 open() 内核 .cl 文件
+# （没有传 encoding=），中文 Windows 默认 GBK，遇到内核里的 UTF-8 字节就
+# UnicodeDecodeError: 'gbk' codec can't decode byte 0x94 → 内核嵌入步骤 FAILED。
+# PYTHONUTF8=1 让 open() 默认走 UTF-8（源码本来就是 UTF-8）。已设则不覆盖。
+export PYTHONUTF8="${PYTHONUTF8:-1}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KMP_ROOT="$REPO_ROOT/kmp"
@@ -67,6 +77,16 @@ GGML_OPENCL="${GGML_OPENCL:-1}"
 
 # CMake 布尔取值
 if [ "$GGML_KLEIDIAI" = "1" ]; then KLEIDIAI_CMAKE=ON; else KLEIDIAI_CMAKE=OFF; fi
+
+# 额外 CMake 参数（逃生口）。有意按空格拆分——这里就是要拆成多个 -D。
+# KleidiAI 默认由 FetchContent 从 GitHub 下载一个 release archive 并校验 MD5；若网络不可达，
+# 可以自己把包下下来、核对 MD5（llama.cpp 源码里钉着期望值）后解压，再用
+# FETCHCONTENT_SOURCE_DIR_KLEIDIAI 指过去，这样 configure 阶段完全不需要网络。
+EXTRA_CMAKE_FLAGS=()
+if [ -n "${EXTRA_CMAKE_ARGS:-}" ]; then
+  # shellcheck disable=SC2206
+  EXTRA_CMAKE_FLAGS=(${EXTRA_CMAKE_ARGS})
+fi
 
 # --- Git Bash / MSYS 下给原生 Windows 程序传路径需要转换 ---
 win_path() {
@@ -228,7 +248,8 @@ echo "==> 配置（CMake，Ninja，$ABI，API $ANDROID_API）"
   -DLLAMA_BUILD_APP=OFF \
   -DLLAMA_BUILD_UI=OFF \
   -DLLAMA_USE_PREBUILT_UI=OFF \
-  -DLLAMA_ALL_WARNINGS=OFF
+  -DLLAMA_ALL_WARNINGS=OFF \
+  ${EXTRA_CMAKE_FLAGS[@]+"${EXTRA_CMAKE_FLAGS[@]}"}
 
 echo
 echo "==> 构建 llama-server（-j$JOBS）"

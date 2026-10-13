@@ -41,7 +41,7 @@
 | **移除 Windows 支持** | 桌面端只发布 macOS / Linux：删掉 JNA 深色标题栏、Windows TTS、`.exe` 分支、Windows 安装包配置与网站上的 Windows 声明（Windows 桌面包从未真正发布过） | 2.1.14 |
 | 存储层容忍无法表示的路径 | 旧书卷里角色名带引号时，档案路径在部分系统上无法表示 → 读取抛异常会带走整轮对话生成；现在按「不存在」处理，其余角色不受影响 | 2.1.14 |
 | **内置模型清单：点名字一键下载并选中** | 4 个 Qwen GGUF 预设；下载源可在 HuggingFace 官方与 hf-mirror 镜像间切换；每个模型都标注**能力来源**（确切仓库 / 发布者是否官方 / 上游基座 / 元数据读取时间 / 上游模型卡） | 2.1.15 |
-| **端侧 GPU（Adreno / OpenCL）与 Arm KleidiAI：构建脚本已就绪** | 构建脚本可编出 Adreno OpenCL 后端（`-ngl` 可在设置里调，上游已验机型含 Snapdragon 8 Elite / Adreno 830）与 KleidiAI 运行时派发内核；**随包二进制仍是旧构建，本版端侧仍走纯 CPU**，重编 `.so` 后生效 | 2.1.15（构建侧） |
+| **端侧 GPU（Adreno / OpenCL）与 Arm KleidiAI** | 随包二进制已重编：llama.cpp 的 Adreno OpenCL 后端 + KleidiAI 运行时派发内核（`-ngl` 可在设置里调，上游已验机型含 Snapdragon 8 Elite / Adreno 830）。**未发布**；2.1.15 及更早的 APK 仍是旧构建（纯 CPU） | 未发布 |
 | 三处真机诊断查实的缺陷修复 | 内容审核判据只认文案、漏掉上游机器可读的 `code`；`model_configured` 恒为 false；本地（端侧）档案的 `base_url` 指向死端口 | 2.1.15 |
 
 相对上游的逐文件清单见 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)：**该文档是某一轮的快照**，其中的「新增 / 修改 / 删除」计数按当时统计、不随仓库继续增长（复核方法也写在里面）；逐版本细节见 [`CHANGELOG.md`](CHANGELOG.md)。
