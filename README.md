@@ -43,6 +43,7 @@
 | **内置模型清单：点名字一键下载并选中** | 4 个 Qwen GGUF 预设；下载源可在 HuggingFace 官方与 hf-mirror 镜像间切换；每个模型都标注**能力来源**（确切仓库 / 发布者是否官方 / 上游基座 / 元数据读取时间 / 上游模型卡） | 2.1.15 |
 | **端侧 GPU（Adreno / OpenCL）与 Arm KleidiAI** | 随包二进制重编：llama.cpp 的 Adreno OpenCL 后端 + KleidiAI 运行时派发内核（`-ngl` 可在设置里调，上游已验机型含 Snapdragon 8 Elite / Adreno 830）；2.1.15 及更早的 APK 仍是旧构建（纯 CPU），填「GPU 层数」也不会生效 | 2.1.16 |
 | 三处真机诊断查实的缺陷修复 | 内容审核判据只认文案、漏掉上游机器可读的 `code`；`model_configured` 恒为 false；本地（端侧）档案的 `base_url` 指向死端口 | 2.1.15 |
+| **修复「设置聊天背景后闪退」** | 大图解码没有下采样：9216×6144 的照片是 216 MB，超过 Android `Canvas` 的 100 MB 硬上限，且抛在**绘制期**（`try` 兜不住）。现按目标长边与字节上限两趟解码，216 MB → 3.4 MB；修在唯一解码入口，头像/封面/详情图一并受益 | 2.1.17 |
 
 相对上游的逐文件清单见 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)：**该文档是某一轮的快照**，其中的「新增 / 修改 / 删除」计数按当时统计、不随仓库继续增长（复核方法也写在里面）；逐版本细节见 [`CHANGELOG.md`](CHANGELOG.md)。
 

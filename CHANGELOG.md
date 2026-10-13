@@ -6,6 +6,51 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.1.17] - 2026-10-14
+
+### 修复：设置聊天背景后闪退（大图未下采样）
+
+把一张大照片设为聊天背景后，App 在**绘制期**必崩。真机诊断导出的原文：
+
+```
+RuntimeException: Canvas: trying to draw too large(226492416bytes) bitmap.
+    at android.graphics.RecordingCanvas.throwIfCannotDraw(RecordingCanvas.java:267)
+    at androidx.compose.ui.graphics.painter.BitmapPainter.onDraw(BitmapPainter.kt:89)
+```
+
+原因是解码**没有下采样**：9216×6144 的照片按 ARGB_8888（每像素 4 字节）解码是
+`9216 × 6144 × 4 = 226,492,416 B ≈ 216 MB`，而 Android 的 `Canvas` 有 **100 MB 的硬上限**
+（`RecordingCanvas` 的 `MAX_BITMAP_SIZE`），超过就直接抛 `RuntimeException`。
+
+**关键在于它抛在绘制期，所以加 `try` 没有用**——解码那一步的异常早就被 `runCatching` 兜住了，
+兜不住的是之后的绘制。只能把解码尺寸降下来。
+
+诊断的面包屑也印证了触发点（同一次会话崩了两次）：进入「对话显示设置」后 0.6 秒崩在第 1 次
+（设置页的背景预览绘制它），进入「对话」后 0.5 秒崩在第 2 次（聊天页绘制同一张）。
+
+- 新增纯函数 `computeImageSampleSize`（`ui/graphics/ImageSampling.kt`，**不依赖任何平台 API**，
+  因此可在 `jvmTest` 直接回归）：按目标长边（默认 2048）与字节上限（32 MB，离 100 MB 硬线留足
+  余量）算出 **2 的幂**的 `inSampleSize`；两个约束同时满足，字节数按**向上取整**保守估算。
+- Android 的 `decodeImageBitmap` 改成**两趟解码**：先 `inJustDecodeBounds` 只读原始尺寸
+  （不分配像素），再按算出的倍数真正解码。那张图 **216 MB → 3,538,944 B（约 3.4 MB）**。
+- 修在**唯一的解码入口**上，所以**人物头像、会话封面、运行详情图**一并受益。
+- 新增 **12 个回归用例**。其中一个用例**先断言崩溃成因**（`9216×6144×4 == 226,492,416` 且
+  超过 100 MB 硬线）**再断言修复**，兼作「不许改回全分辨率」的锁；其余覆盖小于目标 / 恰好等于 /
+  超一像素 / 极端长条（`100000×1 → 64`）/ 非法尺寸 / 上限回落 / 字节兜底 / 循环终止 /
+  以及「任何输入下都返回 2 的幂且双约束满足」的性质测试。
+
+### 已知残留（本版**未**处理）
+
+- **桌面端仍整幅解码**：桌面没有 Android 那条 100 MB 的硬线，而该崩溃只在 Android 端出现过；
+  桌面加载 56 MP 图仍会分配约 216 MB。
+- 背景图的目标文件名固定为 `chat-background.<扩展名>`，换**同扩展名**的图时路径不变 →
+  `remember(uri)` 不重算 → 显示旧图。
+- 解码仍在主线程（composition 内同步读整文件 + 解码）。
+
+### 未做真机验证
+
+崩溃条件（位图 > 100 MB）已从 216 MB 降到 3.4 MB，逻辑上消除；真机确认需要把那张照片设为背景。
+
 ## [2.1.16] - 2026-10-14
 
 端侧推理的二进制**真正重编了**。2.1.15 交付的是「构建侧就绪」——设置里出现了「GPU 层数」，
