@@ -63,15 +63,6 @@ fun AppSupportSettingsScreen(
                 onOpenOfficialWebsite = { openExternalUrl("https://dz3197578117-lab.github.io/zaomeng/") },
                 onOpenProject = { openExternalUrl("https://github.com/dz3197578117-lab/zaomeng") },
                 onOpenPackageLibrary = { openExternalUrl("https://github.com/wkbin/zaomeng-library") },
-                onJoinQqGroup = {
-                    try {
-                        openExternalUrl(
-                            "mqqapi://card/show_pslcard?src_type=internal&version=1&uin=1090225658&card_type=group&source=qrcode",
-                        )
-                    } catch (_: Exception) {
-                        toast("未检测到 QQ，请搜索群号 1090225658 加入。")
-                    }
-                },
             )
         }
     }
@@ -86,7 +77,6 @@ private fun SettingsSupportGroup(
     onOpenOfficialWebsite: () -> Unit,
     onOpenProject: () -> Unit,
     onOpenPackageLibrary: () -> Unit,
-    onJoinQqGroup: () -> Unit,
 ) {
     androidx.compose.material3.Card(
         modifier = modifier,
@@ -103,7 +93,7 @@ private fun SettingsSupportGroup(
             androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             SettingsRow(
                 title = "运行日志",
-                subtitle = "查看整个应用的运行时日志（含 native、第三方库与崩溃堆栈），可导出为文本。",
+                subtitle = "查看整个应用的运行时日志（含 native、第三方库与崩溃堆栈）。可启动/关闭采集、清除旧日志；关闭采集期间崩溃仍会被记录。",
                 value = "查看",
                 onClick = onOpenRuntimeLog,
             )
@@ -129,12 +119,6 @@ private fun SettingsSupportGroup(
             SettingsRow(
                 title = "版本信息",
                 subtitle = "v${AppMetadata.VERSION_NAME}（${AppMetadata.VERSION_CODE}）",
-            )
-            androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            SettingsRow(
-                title = "加入 QQ 群",
-                subtitle = "交流群：1090225658",
-                onClick = onJoinQqGroup,
             )
         }
     }

@@ -16,24 +16,27 @@ Distill Chinese novel characters into reusable persona bundles, extract relation
 
 ## What's different in this build
 
-Two things were the focus: **it runs without any network**, and **Chinese model providers work out of the box**.
+Three things this fork keeps improving on top of upstream 2.0: **it runs offline**, **Chinese model providers work out of the box**, and **both distillation and performance are made solid**.
 
-| Change | Detail |
-| --- | --- |
-| New · on-device inference | The APK embeds a llama.cpp runtime and the settings screen gains a "On-device models" page that imports GGUF files. Chapter summaries, single-turn continuation, relation/timeline extraction, and the distillation pipeline can all run locally — no API key required, and your models and prompts never leave the device |
-| Five more provider presets | SenseNova (SenseTime), SiliconFlow, Moonshot Kimi, Zhipu GLM, MiniMax — 16 presets in total |
-| Models fetched from the API | The model settings screen can pull the live list via `GET {baseUrl}/models`; it falls back to the built-in presets on failure |
-| Ollama base URL fixed | `http://127.0.0.1:11434` → adds the missing `/v1`, which otherwise produced a wrong `/chat/completions` path |
-| On-device 500 fixed | Chat messages are normalized (at most one `system`, always first), fixing `System message must be at the beginning.` raised by Jinja templates embedded in open-weight GGUF files |
-| Relation graph edges | The relations screen used to draw nodes only. It now draws the links between them: width and opacity scale with relation strength (green = high trust, red = high hostility, purple = high affection), and the relation type is labelled at each midpoint. Clicking a node opens that persona for review |
-| Persona quality overview | The run detail screen gains an overview card: character count, items needing review, pending repairs, missing fields, and high-severity issues, with a score and grade per character |
-| Main characters extracted from the text | The book-import and re-distillation flows can detect the main characters from the source text and fill in the list for you |
-| Pick the starting chapter | When creating a dialogue session you can choose which chapter the story starts from; the chapter list is served by a chapter index service |
-| Runtime log capture and export | The embedded server continuously captures this process's `logcat` (crash records included); a new "Runtime log" page in settings lets you view and export it, and diagnostics exports embed the whole log with redaction applied — no more asking users to grab logcat themselves |
-| Trustworthy diagnostics | "API key configured" in the diagnostics report now queries the secure store instead of a flag that was never written, so it no longer always reports "not configured"; the export schemaVersion is now 3 |
-| Generation timeout and retries | Non-streaming generation calls (distillation and friends) moved from a 60-second timeout to 300 seconds (tunable per profile via `timeout_seconds`), transient disconnects and timeouts are retried, and failures now surface a readable message |
+**For a full capability list, see [What Zaomeng can do](docs/features.md)** (grouped by domain, with the version each arrived in). This table lists only the main changes relative to upstream:
 
-A file-by-file manifest (35 added / 67 modified / 2 deleted against upstream, with a reproduction method) is in [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md).
+| Change | Notes | Since |
+| --- | --- | --- |
+| On-device inference | llama.cpp runtime bundled in the APK; import a GGUF and run without an API key | 2.1.2 |
+| Five more provider presets | SenseNova, SiliconFlow, Kimi, GLM, MiniMax | 2.1.2 |
+| Fetch model list from the endpoint | Falls back to built-in presets on failure | 2.1.2 |
+| Relation graph edges, character quality overview, start chapter | 2.1.2 – 2.1.3 |
+| Runtime log capture and export | In-app view/copy/export; redacted before export | 2.1.5 |
+| Longer generation timeout and retries | 60s → 300s (per-profile override), transient disconnects retried | 2.1.5 |
+| **Fixed plugins/director crashing** | Member-extension self-recursion caused a main-thread stack overflow (affected **all** tool flows) | 2.1.6 |
+| Director "force execute" | Any director action (including fourth wall) can require the character to comply | 2.1.7 |
+| **Per-chapter persona arcs + time-point injection** | Characters no longer start chapter 1 knowing the whole book | 2.1.8 |
+| **Persona timeline advances with the story** | One chapter per four turns, derived (not accumulated) so retries cannot double-advance | 2.1.9 |
+| **Fixed dialogue crash and duplicated replies** | Pagination prepend had no dedup; duplicate list keys crashed Compose | 2.1.10 |
+| Character-name quote normalization; on-device page split out | 2.1.11 |
+| **Diagnostics/runtime-log split, capture control, three-layer problem capture** | 2.1.12 |
+
+Full file-level diff against upstream (35 added / 67 modified / 2 removed, with how it was verified) is in [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md); per-version detail is in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Maintenance
 
@@ -97,16 +100,6 @@ Common commands after install: `zaomeng web --reload` (starts the Web UI at `htt
 | Mobile | Desktop |
 | --- | --- |
 | <img src="docs/images/mobile.jpg" width="240" alt="Mobile"> | <img src="docs/images/desktop.png" width="480" alt="Desktop"> |
-
-## Community
-
-- QQ group: **1090225658**
-
-<p>
-  <img src="docs/assets/qq-group.png" alt="Zaomeng QQ group QR code, group 1090225658" width="360">
-</p>
-
-- Book bundles / issue reports: [Issues](https://github.com/dz3197578117-lab/zaomeng/issues)
 
 ## License
 
