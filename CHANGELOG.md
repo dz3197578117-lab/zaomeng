@@ -6,6 +6,54 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.1.16] - 2026-10-14
+
+端侧推理的二进制**真正重编了**。2.1.15 交付的是「构建侧就绪」——设置里出现了「GPU 层数」，
+但包里那个 `libllama-server.so` 还是旧构建，填了会被 llama-server 忽略（打印
+`no usable GPU found` 后继续用 CPU）。这一版把二进制换成带 KleidiAI 与 Adreno OpenCL 的新构建。
+
+### 端侧：Arm KleidiAI CPU 内核
+
+按**运行时**检测到的 CPU 特性派发微内核（dotprod / fp16 / i8mm），老机型自动回退。
+**编译基线仍是 armv8-a**，不是抬高全局 `-march` —— 后者会让 armv8.0 机型 SIGILL，而本仓库只发
+一个 arm64 `.so` 给所有设备。本机实测证据：`build.ninja` 里 290 条含 `-march` 的规则中，
+**241 条非 `armv8-a` 的全部在 KleidiAI 内部**，属于本仓库自身代码的 **0 条**；`armv8.7a` 出现 **0 次**。
+
+### 端侧：Adreno OpenCL 后端
+
+llama.cpp 的 OpenCL 后端已编入（含 Adreno 专用 matmul 内核，以及嵌入的 OpenCL 内核源码），
+并把 Khronos ICD loader 随包放在同一目录：
+
+- `libOpenCL.so` 50,272 B，NEEDED 只有 `libdl/libm/libc` —— **不需要 `libc++_shared.so`**
+  （用 `ANDROID_STL=c++_static` 编译且关闭 layer 支持）
+- **「GPU 层数」现在真的生效**：默认仍是 `0`（全 CPU），要手动调高才会把层放到 GPU 上
+
+### 已知：本版的端侧 GPU 与 KleidiAI **尚未在真机上验证**
+
+开发机没有设备；能离线验的都验了，运行期表现一项没验：
+
+- **已验**：ELF 架构 / PIE / NEEDED 依赖闭包 / KleidiAI 与 OpenCL 确实被链进来
+  （对照旧包：KleidiAI 运行期常量 20 个 vs **0 个**）
+- **未验**：真机上能否用到 GPU、实际提速多少、KleidiAI 收益多大
+- 若 OpenCL 找不到厂商驱动，后端会**注册 0 个设备并回退 CPU**，不会失败（已读
+  `ggml/src/ggml-opencl/ggml-opencl.cpp` 的注册路径确认）
+- 若端侧表现异常，**2.1.15 是可回退的版本**（它是纯 CPU 构建）
+
+### 构建与仓库（对使用者不可见）
+
+- 构建脚本新增 `CMAKE_BIN` / `BUILD_DIR` / `SHARED_BACKENDS` / `HEXAGON_BACKEND_DIR` /
+  `EXTERNAL_BACKENDS_OUT`；支持编成「动态后端」形态（`BUILD_SHARED_LIBS=ON` + `GGML_BACKEND_DL=ON`），
+  含多共享库收集、非 aarch64（Hexagon ELF32）跳过 strip、NEEDED 闭包自检与外部后端导入。
+  **本版随包仍是单文件形态**，外部 Hexagon 后端没有入库。
+- `PYTHONUTF8=1`：上游 `embed_kernel.py` 用平台默认编码读 `.cl`，中文 Windows（默认 GBK）下编
+  OpenCL 必然 `UnicodeDecodeError` 而失败。
+- `EXTRA_CMAKE_ARGS`：逃生口。KleidiAI 默认由 FetchContent 拉 release archive（带 MD5 校验）；
+  网络不可达时可自己下、核对 MD5、解压后用 `FETCHCONTENT_SOURCE_DIR_KLEIDIAI` 指过去，configure 阶段零联网。
+- 修 **Windows 宿主**上 `build-android-apk.sh` 直接失败的问题：aapt2 覆盖的 wrapper 是 POSIX 脚本，
+  AGP 在 Windows 上无法把非 `.exe` 当可执行文件；而该覆盖本就只为 arm64 宿主准备。
+- `docs/maintainer-setup.md` 记入 SDK 自带 CMake 3.22.1 在 Windows 上配置 llama.cpp 会**原生崩溃**
+  （`0xC0000409`，停在 `CMakeFindBinUtils` 的 `find_program`）的坑与解法（`pip install cmake`）。
+
 ## [2.1.15] - 2026-10-13
 
 ### 新增
