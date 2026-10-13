@@ -31,8 +31,6 @@ internal class JvmPlatformTts : PlatformTts {
         text: String,
         pitch: Float,
         speed: Float,
-        volume: Float,
-        speaker: String,
         voiceName: String,
     ) {
         val clean = cleanSpokenText(text)
@@ -44,8 +42,7 @@ internal class JvmPlatformTts : PlatformTts {
             _isSpeaking.value = true
             _currentSpeakingId.value = id
             try {
-                // pitch 在桌面两套后端上都没有对应开关，故此处不生效（Android 端有效）。
-                if (isMac) speakMac(clean, speed, volume, voiceName) else speakLinux(clean, speed)
+                if (isMac) speakMac(clean, speed, voiceName) else speakLinux(clean, speed)
             } catch (e: Exception) {
                 // Ignore platform process launch/cancellation errors
             } finally {
@@ -57,16 +54,13 @@ internal class JvmPlatformTts : PlatformTts {
         }
     }
 
-    private fun speakMac(text: String, speed: Float, volume: Float, voiceName: String) {
+    private fun speakMac(text: String, speed: Float, voiceName: String) {
         val rate = (speed * 180).toInt().coerceIn(100, 350)
         val cmd = mutableListOf("say", "-r", rate.toString())
         if (voiceName.isNotBlank()) {
             cmd.addAll(listOf("-v", voiceName))
         }
-        // macOS 的 say 没有音量开关，但支持内联命令 [[volm x]]（x 为 0.0~1.0）。
-        // 只有明显放轻时才插入，避免每句都带一段控制串。
-        val spoken = if (volume < 0.95f) "[[volm ${volume.coerceIn(0f, 1f)}]] $text" else text
-        cmd.add(spoken)
+        cmd.add(text)
         val process = ProcessBuilder(cmd)
             .redirectErrorStream(true)
             .start()
@@ -75,8 +69,6 @@ internal class JvmPlatformTts : PlatformTts {
     }
 
     private fun speakLinux(text: String, speed: Float) {
-        // 注意：spd-say 没有可靠可用的音量/音高开关（不同版本参数不一致，传错会直接失败并静默无声），
-        // 所以 Linux 端只用语速。要完整效果请用 Android 端。
         val rate = ((speed - 1.0f) * 50).toInt().coerceIn(-50, 50)
         val process = ProcessBuilder("spd-say", "-r", rate.toString(), "-l", "zh", text)
             .redirectErrorStream(true)
@@ -102,9 +94,7 @@ internal class JvmPlatformTts : PlatformTts {
 }
 
 @Composable
-actual fun rememberPlatformTts(selection: SpeechEngineSelection): PlatformTts {
-    // 桌面端只有系统语音（macOS 的 say / Linux 的 spd-say），没有随包的神经引擎，
-    // 因此忽略 selection：选神经引擎时表现为「和系统一样」，而不是静默无声。
+actual fun rememberPlatformTts(): PlatformTts {
     val platformTts = remember { JvmPlatformTts() }
     DisposableEffect(Unit) {
         onDispose {

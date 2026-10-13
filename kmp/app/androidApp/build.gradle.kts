@@ -35,13 +35,6 @@ android {
         versionName = providers.gradleProperty("zaomeng.versionName").get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        ndk {
-            // 只分发 arm64-v8a。端侧推理（libllama-server.so）本来就只编了这一档，
-            // 而神经 TTS 的 AAR 里还带 armeabi-v7a / x86 / x86_64 共 91 MB 原生库——
-            // 不加过滤，那些包会原样进 APK，用户白下 91 MB 却永远用不到。
-            abiFilters += "arm64-v8a"
-        }
     }
     signingConfigs {
         if (signingPropertiesFile.exists()) {

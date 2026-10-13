@@ -133,11 +133,6 @@ data class ChatUiState(
     /** 本卷会话列表（桌面端主从布局左侧面板用）。 */
     val runSessions: List<DialogueSessionDto> = emptyList(),
     val avatarBytes: Map<String, ByteArray> = emptyMap(),
-    /**
-     * 参演角色 → 人物包字段。朗读据此拿到作者为该角色写的声线（`voice_pitch` 等）；
-     * 缺项时朗读侧回落到按角色名确定性派生，所以为空表也不影响出声。
-     */
-    val personaFields: Map<String, Map<String, String>> = emptyMap(),
     val sceneCards: List<ReusableCardDto> = emptyList(),
     val pluginActions: List<ChatPluginAction> = emptyList(),
     val generationEnhancers: List<ChatGenerationEnhancer> = emptyList(),

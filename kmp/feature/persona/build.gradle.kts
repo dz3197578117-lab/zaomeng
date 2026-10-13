@@ -27,8 +27,6 @@ kotlin {
             implementation(project(":core:contracts"))
             implementation(project(":core:domain"))
             implementation(project(":data:repository"))
-            // 朗读引擎选择存在偏好里：人设页的「试听」必须与聊天里听到的一致。
-            implementation(project(":data:remote"))
             implementation(project(":ui:shared"))
             implementation(libs.bundles.compose.ui)
             implementation(libs.compose.lifecycle.runtime)

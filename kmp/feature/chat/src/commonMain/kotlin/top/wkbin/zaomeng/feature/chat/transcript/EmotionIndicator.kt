@@ -7,7 +7,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import top.wkbin.zaomeng.platform.classifySpeechEmotion
 
 @Composable
 fun EmotionBadge(innerThought: String?, modifier: Modifier = Modifier) {
@@ -22,11 +21,19 @@ fun EmotionBadge(innerThought: String?, modifier: Modifier = Modifier) {
     }
 }
 
-/**
- * 徽章只需要一个表情。
- *
- * 情绪识别的**实现已上移到 `ui:shared` 的 [classifySpeechEmotion]**：朗读韵律（[SpeechVoice]）
- * 与界面徽章从此共用同一套关键词表。原本两处各写一份，改一处就会漂移——
- * 表现为「徽章显示愤怒，声音却是平静的」这种自相矛盾。
- */
-internal fun classifyEmotion(text: String): String? = classifySpeechEmotion(text)?.emoji
+internal fun classifyEmotion(text: String): String? {
+    val normalized = text.trim().lowercase()
+    if (normalized.isEmpty()) return null
+    return emotionKeywords.firstOrNull { (_, keywords) ->
+        keywords.any(normalized::contains)
+    }?.first
+}
+
+private val emotionKeywords = listOf(
+    "😄" to listOf("开心", "高兴", "喜悦", "欣喜", "愉快", "笑", "happy", "joy"),
+    "😠" to listOf("愤怒", "生气", "恼火", "怒", "气愤", "angry", "anger"),
+    "😢" to listOf("悲伤", "难过", "伤心", "哀伤", "哭", "sad", "sorrow"),
+    "😮" to listOf("惊讶", "震惊", "诧异", "意外", "surprised", "shock"),
+    "😰" to listOf("紧张", "害怕", "不安", "焦虑", "担心", "恐惧", "nervous", "afraid"),
+    "😌" to listOf("平静", "冷静", "安心", "释然", "从容", "calm", "peaceful"),
+)

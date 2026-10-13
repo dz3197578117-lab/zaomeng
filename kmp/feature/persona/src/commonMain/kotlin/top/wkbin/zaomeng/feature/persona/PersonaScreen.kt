@@ -27,11 +27,6 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material3.AlertDialog
 import top.wkbin.zaomeng.platform.PlatformTts
-import top.wkbin.zaomeng.platform.SpeechEngineSelection
-import top.wkbin.zaomeng.platform.classifySpeechEmotion
-import top.wkbin.zaomeng.platform.deliver
-import top.wkbin.zaomeng.platform.resolveVoiceProfile
-import top.wkbin.zaomeng.platform.toAuthoredVoice
 import top.wkbin.zaomeng.platform.rememberPlatformTts
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -84,14 +79,10 @@ fun PersonaScreen(
     viewModel: PersonaViewModel = koinViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    // 试听用的朗读引擎与聊天页共用同一份偏好，保证「听到的就是聊天里会听到的」。
-    val speechSelection by viewModel.speechSelection.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(runId, character) {
         viewModel.load(runId, character)
-        // 从别处改了引擎设置再回来时，这里要跟着更新。
-        viewModel.refreshSpeechSelection()
     }
     LaunchedEffect(state.notice?.id) {
         val notice = state.notice ?: return@LaunchedEffect
@@ -114,7 +105,6 @@ fun PersonaScreen(
         onApplyAllRepairs = viewModel::applyAllRepairChanges,
         onRequestEvolution = { viewModel.requestEvolutionProposal() },
         onSave = viewModel::save,
-        speechSelection = speechSelection,
         snackbarHostState = snackbarHostState,
         modifier = modifier,
     )
@@ -143,8 +133,6 @@ fun PersonaContent(
     onApplyAllRepairs: () -> Unit,
     onRequestEvolution: () -> Unit,
     onSave: () -> Unit,
-    /** 朗读引擎选择：与聊天页同源，试听才不会「试听满意、聊天里变声」。 */
-    speechSelection: SpeechEngineSelection = SpeechEngineSelection(),
     snackbarHostState: SnackbarHostState,
     modifier: Modifier = Modifier,
 ) {
@@ -154,7 +142,7 @@ fun PersonaContent(
         }
     }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
-    val tts = rememberPlatformTts(speechSelection)
+    val tts = rememberPlatformTts()
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -953,15 +941,11 @@ private fun VoicePreviewCard(
     val speakingId by tts.currentSpeakingId.collectAsStateWithLifecycle()
     val isThisSpeaking = isSpeaking && speakingId == "persona-voice-preview"
 
+    val voiceName = fields["voice_name"].orEmpty()
+    val pitch = fields["voice_pitch"]?.toFloatOrNull() ?: 1.0f
+    val speed = fields["voice_speed"]?.toFloatOrNull() ?: 1.0f
     val testText = fields["typical_lines"]?.split("；", ";")?.firstOrNull()?.takeIf(String::isNotBlank)
         ?: "${character}在此。有何吩咐？"
-
-    // 试听必须与聊天里实际听到的一致：走**同一套**解析与派生（作者填了用填的，没填按角色名派生）。
-    // 否则会出现「试听满意、进聊天却是另一个声音」——那正是这次要消灭的困惑。
-    val delivery = resolveVoiceProfile(character, fields.toAuthoredVoice()).deliver(
-        text = testText,
-        emotion = classifySpeechEmotion(testText),
-    )
 
     Card(
         modifier = Modifier
@@ -1001,11 +985,9 @@ private fun VoicePreviewCard(
                         tts.speak(
                             id = "persona-voice-preview",
                             text = testText,
-                            pitch = delivery.pitch,
-                            speed = delivery.speed,
-                            volume = delivery.volume,
-                            speaker = character,
-                            voiceName = delivery.voiceName,
+                            pitch = pitch,
+                            speed = speed,
+                            voiceName = voiceName,
                         )
                     }
                 },

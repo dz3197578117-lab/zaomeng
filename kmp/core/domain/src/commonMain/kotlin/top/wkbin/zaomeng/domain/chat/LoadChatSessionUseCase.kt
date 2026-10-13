@@ -30,14 +30,6 @@ interface ChatSessionGateway {
 
     suspend fun getPersonaAvatar(runId: String, character: String, version: String): ByteArray?
 
-    /**
-     * 读取某角色的人物包字段（声线的来源：`voice_name` / `voice_pitch` / `voice_speed`）。
-     *
-     * 返回**完整字段**而不是只挑声线项：「哪些键属于声线」这个知识只应存在于
-     * `ui:shared` 的 `toAuthoredVoice()` 一处，不在模块之间复制一份可能漂移的清单。
-     */
-    suspend fun getPersonaFields(runId: String, character: String): Map<String, String>
-
     suspend fun getDialogueMemoryQuality(runId: String, sessionId: String): MemoryQualityReportDto
 }
 
@@ -45,11 +37,6 @@ data class LoadedChatSession(
     val session: DialogueSessionDto,
     val runSessions: List<DialogueSessionDto>,
     val avatarBytes: Map<String, ByteArray>,
-    /**
-     * 参演角色 → 人物包字段。朗读据此拿到作者为该角色填写的声线；
-     * 缺项或取不到时由朗读侧回落到「按角色名确定性派生」，所以这里**允许为空**。
-     */
-    val personaFields: Map<String, Map<String, String>>,
     val memoryQuality: MemoryQualityReportDto,
 )
 
@@ -91,16 +78,10 @@ class LoadChatSessionUseCase(
         }.toMap()
         val memoryQuality = runCatching { gateway.getDialogueMemoryQuality(runId, sessionId) }
             .getOrDefault(MemoryQualityReportDto())
-        // 人物包字段：逐角色 best-effort 读取。任何一个角色读不到都不影响打开会话——
-        // 声线在该角色上回落到按名字派生，其余角色照常。
-        val personaFields = session.characterAvatars.keys.associateWith { character ->
-            runCatching { gateway.getPersonaFields(runId, character) }.getOrDefault(emptyMap())
-        }
         return LoadedChatSession(
             session = session,
             runSessions = runSessions,
             avatarBytes = avatars,
-            personaFields = personaFields,
             memoryQuality = memoryQuality,
         )
     }

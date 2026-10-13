@@ -402,7 +402,6 @@ fun ChatScreen(
                             Transcript(
                                 session = session,
                                 avatarBytes = state.avatarBytes,
-                                personaFields = state.personaFields,
                                 sending = state.sending,
                                 modelReasoning = state.modelReasoning.takeIf {
                                     state.chatDisplay.showModelReasoning

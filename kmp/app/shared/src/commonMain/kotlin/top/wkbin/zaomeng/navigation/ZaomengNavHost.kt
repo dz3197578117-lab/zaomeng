@@ -50,9 +50,7 @@ import top.wkbin.zaomeng.feature.settings.ModelProfileEditorViewModel
 import top.wkbin.zaomeng.feature.settings.ModelProfilesViewModel
 import top.wkbin.zaomeng.feature.settings.ModelSettingsScreen
 import top.wkbin.zaomeng.feature.settings.OnDeviceModelsScreen
-import top.wkbin.zaomeng.feature.settings.OfflineSpeechScreen
 import top.wkbin.zaomeng.feature.settings.OnDeviceModelsViewModel
-import top.wkbin.zaomeng.feature.settings.VoiceModelSettingsViewModel
 import top.wkbin.zaomeng.feature.settings.PluginsScreen
 import top.wkbin.zaomeng.feature.pluginbuilder.PluginBuilderScreen
 import top.wkbin.zaomeng.feature.settings.RuntimeDiagnosticsScreen
@@ -195,7 +193,6 @@ fun ZaomengNavHost(
                     onBack = popBack,
                     onOpenModelSettings = { backStack.add(ModelConfigurationDestination) },
                     onOpenOnDeviceModels = { backStack.add(OnDeviceModelsDestination) },
-                    onOpenOfflineSpeech = { backStack.add(OfflineSpeechDestination) },
                     onOpenChatDisplay = { backStack.add(ChatDisplaySettingsDestination) },
                     onOpenPlugins = { backStack.add(PluginsDestination) },
                     onOpenAppearance = { backStack.add(AppearanceSettingsDestination) },
@@ -232,13 +229,6 @@ fun ZaomengNavHost(
                 val viewModel: OnDeviceModelsViewModel = koinViewModel()
                 OnDeviceModelsScreen(
                     viewModel = viewModel,
-                    onBack = popBack,
-                )
-            }
-            entry(OfflineSpeechDestination) {
-                val voiceViewModel: VoiceModelSettingsViewModel = koinViewModel()
-                OfflineSpeechScreen(
-                    viewModel = voiceViewModel,
                     onBack = popBack,
                 )
             }

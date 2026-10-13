@@ -25,16 +25,6 @@ data object ModelConfigurationDestination : NavKey
 @Serializable
 data object OnDeviceModelsDestination : NavKey
 
-/**
- * 独立的「离线神经语音」页：下载多说话人中文模型 → 启用离线神经朗读。
- *
- * 与 [OnDeviceModelsDestination] **分开**：那边是 llama.cpp / GGUF 的**文本推理**，
- * 这里是**朗读（TTS）**。两者各有各的引擎与模型文件、互不依赖，
- * 放在同一页会让人误以为「要先用端侧模型才能朗读」。
- */
-@Serializable
-data object OfflineSpeechDestination : NavKey
-
 @Serializable
 data class ModelProfileEditorDestination(val profileId: String = "") : NavKey
 
@@ -121,7 +111,6 @@ fun destinationLabel(key: NavKey?): String = when (key) {
     is ModelSettingsDestination -> "设置首页"
     is ModelConfigurationDestination -> "模型配置"
     is OnDeviceModelsDestination -> "本机模型"
-    is OfflineSpeechDestination -> "离线神经语音"
     is ModelProfileEditorDestination -> if (key.profileId.isBlank()) "新增模型档案" else "编辑模型档案"
     is ChatDisplaySettingsDestination -> "对话显示设置"
     is PluginsDestination -> "插件"
