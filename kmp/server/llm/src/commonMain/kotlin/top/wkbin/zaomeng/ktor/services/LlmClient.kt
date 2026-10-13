@@ -87,6 +87,98 @@ class LlmClient(
         /** 上游错误体的留证上限：够看清拒收原因，又不至于把 8 MiB 的事件文件额度吃掉。 */
         private const val MAX_ERROR_BODY_CHARS = 4_000
 
+        /** 审核拒绝文案（进异常消息与诊断事件）的字符上限：保留原文可读，又不撑爆事件。 */
+        private const val MAX_REJECTION_TEXT_CHARS = 600
+
+        /**
+         * 事件类别：**模型提供方内容审核拒绝**（本轮对话未生成任何内容）。
+         *
+         * 与 [HTTP_ERROR_PAYLOAD_CATEGORY] 分工不同，两者可以同时出现：
+         * - [HTTP_ERROR_PAYLOAD_CATEGORY] 是「上游拒收」的**原始留证**：任何 4xx 都记，
+         *   回答「我们发了什么 / 上游拒了什么」；
+         * - 本类别是**归因结论**：只覆盖「4xx + 错误体命中内容审核措辞」这一种，
+         *   回答「这是提供方策略拒绝，不是应用故障」。
+         *
+         * 不加 `internal`：`:server` 的对话服务与诊断聚合要共用同一个字符串常量，
+         * 而它们与 `:server:llm` 是不同的 Kotlin 模块。
+         */
+        const val CONTENT_REJECTED_CATEGORY = "dialogue.content_rejected"
+
+        /**
+         * 上游错误体里的**内容审核措辞**（全部小写；英文按词边界、中文按子串匹配）。
+         *
+         * ⚠️ 用途**只有一个：如实归因** —— 把「模型提供方的内容审核拒绝」从普通请求错误里分出来，
+         * 让用户知道这是**提供方策略结果、不是应用故障**。
+         * 命中之后我们**不做任何规避**：不重试、不改提示词、不重写内容、不做编码变形，
+         * 只把结论如实写进错误消息与诊断事件（见 [ContentRejectedException]）。
+         *
+         * 收词原则：只收**明确的审核 / 安全语义**，不收泛化的请求形状措辞。
+         * 反例（必须**不**命中）：`inference request is invalid`、`max_tokens must be ...`、
+         * `model not found` —— 这些是参数或资源错误；误判会让用户从「应用有 bug」改去怀疑别的东西。
+         */
+        internal val CONTENT_MODERATION_MARKERS: List<String> = listOf(
+            // 商汤 SenseNova 实测原文（用户真机诊断里的第 ② 类 400）
+            "inappropriate input/output rejected",
+            "inappropriate input",
+            // 通用英文审核措辞
+            "content policy",
+            "content_policy",
+            "content filter",
+            "content_filter",
+            "moderation",
+            "safety",
+            "blocked by",
+            // 中文
+            "敏感",
+            "违规",
+            "审核",
+            "不合规",
+            "内容安全",
+        )
+
+        /**
+         * 上游错误体是否命中**内容审核语义**（纯函数：无 IO、无状态、只看入参）。
+         *
+         * 只做归因，不做规避：本函数只回答「上游是不是以内容审核为由拒收」，
+         * 调用方据此把这一种 4xx 单独归类（[ContentRejectedException]）并**不重试**。
+         *
+         * 保守性来自两点，也是「不误判普通 400」的保证：
+         * 1. **只认明确措辞**（[CONTENT_MODERATION_MARKERS]），不做「凡 4xx 皆审核」之类的泛化——
+         *    `inference request is invalid` 不含任何词条，因此必然走普通错误路径；
+         * 2. 英文词条按**词边界**匹配：`safety` 不会命中 `safety_settings` / `safety_identifier`
+         *    这类**参数名**（参数名错误属请求形状问题，不是审核拒绝）。
+         */
+        internal fun isContentModerationRejection(body: String): Boolean {
+            val text = body.trim().lowercase()
+            if (text.isEmpty()) return false
+            return CONTENT_MODERATION_MARKERS.any { marker -> text.containsModerationMarker(marker) }
+        }
+
+        /** 单个词条的匹配：含非 ASCII（中文）按子串，纯 ASCII 英文按词边界。 */
+        private fun String.containsModerationMarker(marker: String): Boolean {
+            if (marker.isEmpty()) return false
+            // 中文没有词边界，且中文词条常嵌在更长的句子里（「内容审核未通过」），只能按子串。
+            if (marker.any { it.code >= 128 }) return contains(marker)
+            var from = 0
+            while (true) {
+                val index = indexOf(marker, from)
+                if (index < 0) return false
+                val before = getOrNull(index - 1)
+                val after = getOrNull(index + marker.length)
+                val leftOk = before == null || !before.isModerationWordChar()
+                val rightOk = after == null || !after.isModerationWordChar()
+                if (leftOk && rightOk) return true
+                from = index + 1
+            }
+        }
+
+        /**
+         * 词边界字符：ASCII 字母/数字与下划线。
+         * 下划线相连视为同一个词，因此 `safety_settings`、`safety_identifier` 都不会命中 `safety`。
+         */
+        private fun Char.isModerationWordChar(): Boolean =
+            this == '_' || (code < 128 && isLetterOrDigit())
+
         /** Kimi K3 的官方 model id（sensenova-api-reference.txt 2418-2424、2741 行）。 */
         internal const val KIMI_K3_MODEL = "kimi-k3"
 
@@ -1142,16 +1234,32 @@ class LlmClient(
             }
             else -> {
                 val errorBody = bodyAsText()
+                val requestBody = requestBodyOf?.invoke().orEmpty()
                 // 上游拒收（4xx）时先留证再抛：这条路径此前什么都不记，
                 // 而「我们实际发了什么」正是唯一能终结猜测的信息。
+                // 留证走的是既有的 `llm.http_error_payload` 通道：审核拒绝**也要**留证，
+                // 因为「上游到底拒了什么」正是用户想看的原文。
                 recordHttpErrorPayload(
                     statusCode = status.value,
                     statusDescription = status.description,
                     kind = kind,
                     endpoint = endpoint,
-                    requestBody = requestBodyOf?.invoke().orEmpty(),
+                    requestBody = requestBody,
                     responseBody = errorBody,
                 )
+                // 4xx + 错误体命中内容审核措辞 = **提供方策略拒绝**：单独归类、不重试、如实告知。
+                // 与「参数写错」类 400（如 inference request is invalid）在这里分开——
+                // 这正是本次要区分的那两类 400。
+                if (status.value in 400..499 && isContentModerationRejection(errorBody)) {
+                    throw contentRejected(
+                        statusCode = status.value,
+                        statusDescription = status.description,
+                        kind = kind,
+                        endpoint = endpoint,
+                        requestBody = requestBody,
+                        responseBody = errorBody,
+                    )
+                }
                 val errorMsg = try {
                     json.decodeFromString<ErrorResponse>(errorBody).error.message
                 } catch (e: Exception) {
@@ -1721,6 +1829,59 @@ class LlmClient(
         return line.substring(5).trimStart()
     }
 
+    /**
+     * 构造「提供方内容审核拒绝」异常：带上**模型名 / 提供方形态 / 端点 / 上游原文**，
+     * 让用户与诊断导出都不必再猜「到底是哪儿的问题」。
+     *
+     * 端点在写进异常前先 [sanitizeEndpoint]（丢掉整个 query）——Gemini 把 API Key 放在 URL query 里，
+     * 而异常消息会进入诊断事件与用户可见文案，**绝不能**把 Key 带进去。
+     *
+     * 只做归因：本函数不修改提示词、不重写内容、不做编码变形（见 [ContentRejectedException] 注释）。
+     */
+    private fun contentRejected(
+        statusCode: Int,
+        statusDescription: String,
+        kind: ProviderKind,
+        endpoint: String,
+        requestBody: String,
+        responseBody: String,
+    ): ContentRejectedException {
+        val upstream = extractUpstreamMessage(responseBody)
+        val model = runCatching {
+            (json.parseToJsonElement(requestBody).jsonObject["model"] as? JsonPrimitive)?.contentOrNull
+        }.getOrNull().orEmpty()
+        val safeEndpoint = sanitizeEndpoint(endpoint)
+        val statusLabel = listOf(statusCode.toString(), statusDescription.trim())
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+        val summary = buildList {
+            // 用户可见的核心结论：**必须**同时含「提供方拒绝」与「非应用故障」两层意思。
+            add("内容被模型提供方拒绝（非应用故障）")
+            if (model.isNotBlank()) add("模型 $model")
+            add("提供方 ${kind.name.lowercase()}")
+            if (safeEndpoint.isNotBlank()) add(safeEndpoint)
+            if (statusLabel.isNotBlank()) add("HTTP $statusLabel")
+            if (upstream.isNotBlank()) add("上游原文：$upstream")
+        }.joinToString(" · ")
+        return ContentRejectedException(
+            message = summary,
+            statusCode = statusCode,
+            providerKind = kind.name,
+            endpoint = safeEndpoint,
+            model = model,
+            upstreamMessage = upstream,
+        )
+    }
+
+    /** 上游错误体的可读文案：优先 `{"error":{"message":...}}`，否则用原文；按工程上限截断。 */
+    private fun extractUpstreamMessage(responseBody: String): String {
+        val text = runCatching { json.decodeFromString<ErrorResponse>(responseBody).error.message }
+            .getOrNull()
+            ?.takeIf(String::isNotBlank)
+            ?: responseBody
+        return text.trim().take(MAX_REJECTION_TEXT_CHARS)
+    }
+
     private fun modelApiError(statusCode: Int, statusDescription: String, body: String): IllegalStateException {
         val message = runCatching { json.decodeFromString<ErrorResponse>(body).error.message }
             .getOrNull()
@@ -1771,6 +1932,18 @@ class LlmClient(
                     requestBody = spec.body,
                     responseBody = body,
                 )
+                // 4xx + 内容审核措辞：提供方策略拒绝（不是应用故障、也**不可重试**），
+                // 抛专用类型让上层单独记账（`dialogue.content_rejected`）并在 UI 里如实说明。
+                if (status in 400..499 && isContentModerationRejection(body)) {
+                    throw contentRejected(
+                        statusCode = status,
+                        statusDescription = description,
+                        kind = spec.kind,
+                        endpoint = spec.url,
+                        requestBody = spec.body,
+                        responseBody = body,
+                    )
+                }
                 throw modelApiError(status, description, body)
             }
         }
@@ -1838,10 +2011,17 @@ class LlmClient(
         return block() // Final attempt
     }
 
-    /** 可重试的状态码；不可重试返回 null。0 表示网络瞬错，同样值得重试。 */
-    private fun retryableStatus(error: Exception, retryNetworkErrors: Boolean): Int? = when (error) {
-        is RetryableException -> error.statusCode
-        else -> if (retryNetworkErrors && error.isTransientNetworkError()) 0 else null
+    /**
+     * 可重试的状态码；不可重试返回 null。0 表示网络瞬错，同样值得重试。
+     *
+     * **内容审核拒绝被显式排除**：内容本身没有变，重试只会再被拒一次、白费额度，
+     * 结果不会变。这里写成显式分支而不是依赖「异常消息恰好不像网络瞬错」这种间接保证。
+     */
+    private fun retryableStatus(error: Exception, retryNetworkErrors: Boolean): Int? = when {
+        error is ContentRejectedException -> null
+        error is RetryableException -> error.statusCode
+        retryNetworkErrors && error.isTransientNetworkError() -> 0
+        else -> null
     }
 
     /**
@@ -1856,6 +2036,36 @@ class LlmClient(
         httpClient.close()
     }
 }
+
+/**
+ * **模型提供方内容审核拒绝**：HTTP 4xx，且上游错误体命中内容审核措辞
+ * （判据集中在 [LlmClient.isContentModerationRejection] / [LlmClient.CONTENT_MODERATION_MARKERS]）。
+ *
+ * 为什么单独一个类型：
+ * - 它**不是应用缺陷**、也不是请求参数写错。用户真机上两类 400
+ *   （`inference request is invalid` 与 `Inappropriate input/output rejected for security reasons`）
+ *   以前都会落成同一条 `dialogue.stream_error`，用户因此一直以为是自己应用有 bug；
+ *   有了这个类型，上层可以只给审核拒绝记 `dialogue.content_rejected` 并在 UI 里说清
+ *   「内容被模型提供方拒绝（非应用故障）」。
+ * - 它**不可重试**：内容不变，重试只会再被拒一次、白费额度，结果不会变。
+ *   故它不是 `RetryableException`，且在 [LlmClient.retryableStatus] 里被**显式**排除。
+ *
+ * 本类型只用于**如实告知**。调用方不得据此改写提示词、重写内容或做编码变形去绕开审核——
+ * 那既不解决问题，也不是本功能的目的。
+ */
+class ContentRejectedException(
+    message: String,
+    /** 上游返回的状态码（4xx）。 */
+    val statusCode: Int,
+    /** 本端判定的协议形态：`OPENAI` / `AZURE` / `ANTHROPIC` / `GEMINI`。 */
+    val providerKind: String,
+    /** 端点（**已去掉整个 query**：Gemini 的 `key`、Azure 的 `api-version` 都在 query 里）。 */
+    val endpoint: String,
+    /** 请求体里的模型名；取不到时为空串。 */
+    val model: String,
+    /** 上游原始审核文案（按工程上限截断），如 `Inappropriate input/output rejected for security reasons`。 */
+    val upstreamMessage: String,
+) : IllegalStateException(message)
 
 /**
  * Only decoding failures are recoverable for an individual SSE payload.
@@ -1950,6 +2160,9 @@ internal fun Throwable.isTransientNetworkError(): Boolean {
  * timeoutSeconds 为 null（非生成类调用）时原样返回，保持既有语义。
  */
 internal fun translateTimeoutError(error: Exception, timeoutSeconds: Long?): Exception {
+    // 内容审核拒绝的文案已经是**准确结论**（提供方拒绝 / 非应用故障），
+    // 绝不能被超时翻译覆盖成「模型响应超时」这类会再次误导用户的说法。
+    if (error is ContentRejectedException) return error
     if (timeoutSeconds == null || !error.isTransientNetworkError()) return error
     val message = if (error.containsTimeout()) {
         "模型响应超时：${timeoutSeconds} 秒内模型未返回结果"

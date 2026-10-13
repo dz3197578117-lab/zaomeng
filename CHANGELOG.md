@@ -6,7 +6,7 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
-## [2.1.13] - 未发布
+## [2.1.13] - 2026-10-13
 
 ### 新增
 
