@@ -409,7 +409,9 @@ class DiagnosticsService(
         val activeProfileId = settings?.activeProfileId.orEmpty()
         checks["model_active_profile"] = activeProfileId.ifBlank { "（未配置）" }
         val activeProfile = settings?.profiles?.firstOrNull { it.profileId == activeProfileId }
-        checks["model_configured"] = (activeProfile?.configured == true).toString()
+        // 从实际字段算，不读存储的 configured 标志位（保存路径从不写它，读了必然报 false）。
+        // 详见 isProfileConfigured 的 KDoc。
+        checks["model_configured"] = isProfileConfigured(activeProfile).toString()
         checks["model_api_key_configured"] = (
             activeProfile?.let { resolveApiKeyConfigured(it) } == true
             ).toString()
@@ -972,7 +974,8 @@ class DiagnosticsService(
                 model = profile.model ?: "",
                 baseUrl = safeEndpoint(profile.baseUrl ?: ""),
                 apiKeyConfigured = resolveApiKeyConfigured(profile),
-                configured = profile.configured ?: false,
+                // 同上：按实际字段算，不用存储里那个永远为 false 的标志位。
+                configured = isProfileConfigured(profile),
                 // 下面是**决定请求体形状**的三个开关。缺了它们，拿到一份导出也判断不出
                 // 上游为什么拒收：`max_tokens` 与 `max_completion_tokens` 二选一发错、
                 // `reasoning_effort` 超出该模型允许值、`response_format` 被下发 —— 三种
@@ -998,6 +1001,29 @@ class DiagnosticsService(
             apiKeyConfiguredOf?.invoke(profileId)?.let { return it }
         }
         return profile.apiKeyConfigured == true
+    }
+
+    /**
+     * 该档案是否**可用**（provider / model 齐备，且需要 Key 时确实有 Key）。
+     *
+     * 与 [resolveApiKeyConfigured] 同一思路：**不读存储的 `configured` 标志位，而是从实际字段算**。
+     *
+     * 原因（与 apiKeyConfigured 那次的 bug 同类，但漏改了这一个）：
+     * `ModelProfile.configured` 本应由保存路径写入，但 `SettingsManagementService` 保存时
+     * 构造 `ModelProfile(...)` **从不传它**（见 `putProfileFields` 里那份**只在返回给客户端的
+     * JSON 里**现算的同名表达式），因此存储字段恒为默认值 → 诊断里
+     * `model_configured` 与每条 `model.profiles[].configured` **永远是 false**。
+     * 用户真机导出实测：三个档案 provider/model/apiKey 齐全，却全部 `configured=false`。
+     * 后果与 apiKey 那次一样——「用户明明配好了，导出说没配」，排查会被带偏。
+     *
+     * 口径必须与 [top.wkbin.zaomeng.ktor.services.SettingsManagementService] 的
+     * `putProfileFields` 保持一致，否则界面与诊断还会各说各话。
+     */
+    private fun isProfileConfigured(profile: ModelProfile?): Boolean {
+        if (profile == null) return false
+        if (profile.provider.isNullOrBlank() || profile.model.isNullOrBlank()) return false
+        val keyRequired = profile.apiKeyRequired != false
+        return resolveApiKeyConfigured(profile) || !keyRequired
     }
 
     /**

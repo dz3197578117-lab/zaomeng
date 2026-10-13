@@ -92,7 +92,14 @@ class KtorServiceGraph(platform: ServerPlatform) {
     val distillExecutor = DistillExecutor(storage, llm, promptLoader, originalKnowledge)
     val runManagement = RunManagementService(storage, distillExecutor)
     val runPackages = RunPackageService(storage)
-    val settingsManagement = SettingsManagementService(storage, modelApiKeys, connectivityLog)
+    // 端侧实时地址用 lambda 延迟绑定（onDeviceModels 在下方才创建，与上面 diagnostics 同一写法）：
+    // 本地档案的 base_url 以实时端口为准，否则端侧重启换端口后持久化的那份仍指向死端口。
+    val settingsManagement = SettingsManagementService(
+        storage,
+        modelApiKeys,
+        connectivityLog,
+        onDeviceBaseUrl = { onDeviceModels.liveBaseUrl() },
+    )
     // 端侧推理：按存储根做进程内单例（后端 retry() 会重建本服务图，不能丢掉 llama-server 句柄）
     val onDeviceModels = OnDeviceModelService.getOrCreate(platform)
 

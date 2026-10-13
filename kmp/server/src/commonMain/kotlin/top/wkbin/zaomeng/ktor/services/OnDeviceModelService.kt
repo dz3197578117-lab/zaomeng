@@ -94,6 +94,11 @@ class OnDeviceModelService private constructor(
             "state" to state.phase,
             "model_file" to state.modelFile,
             "port" to state.port.toString(),
+            // 实时地址。端侧每次启动都会换端口，而「本地」模型档案的 base_url 是**启用那一刻**
+            // 从 status 抓下来持久化的（见 OnDeviceModelsViewModel），端侧重启后那份就过期了——
+            // 于是请求会打到死端口，表现为 ConnectException / 对话生成探针 ❌。
+            // 这里给出实时值，供模型设置的读路径覆盖持久化的旧端口（见 SettingsManagementService）。
+            "base_url" to liveBaseUrl(),
             "pid" to state.pid.toString(),
             "started_at" to state.startedAt.toString(),
             "context_size" to state.contextSize.toString(),
@@ -103,6 +108,21 @@ class OnDeviceModelService private constructor(
             "download_active" to state.download.active.toString(),
             "log_tail" to readLogTailText(logChars),
         )
+    }
+
+    /**
+     * 端侧推理的**实时** OpenAI 兼容地址；未运行时为空串。
+     *
+     * 刻意做成独立访问器而不是从 [diagnosticsSnapshot] 里取：模型设置的读路径（`getModelSettings`）
+     * 调用很频繁，而那个快照会读 llama-server 日志文件——这里只读内存状态，零 IO。
+     */
+    fun liveBaseUrl(): String {
+        val state = stateFlow.value
+        return if (state.phase == OnDeviceStatusDto.STATE_RUNNING && state.port > 0) {
+            "http://$LOOPBACK:${state.port}/v1"
+        } else {
+            ""
+        }
     }
 
     private val httpClient: HttpClient by lazy {

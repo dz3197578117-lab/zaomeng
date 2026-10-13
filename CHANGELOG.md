@@ -23,6 +23,16 @@
   `Inappropriate input/output rejected for security reasons` → 审核拒绝；
   `inference request is invalid` → 普通错误（仍记 4xx 留证）。
 
+  > ⚠️ **更正（2.1.14 发布后由真机 `tier=full` 导出定案）**：上一句断言**是错的**。
+  > `inference request is invalid` 的完整上游错误体是
+  > `{"error":{"message":"inference request is invalid","type":"invalid_request_error",
+  > "code":"data_inspection_failed"}}`——`code` 说明它是商汤的**数据审查（内容审核）拒绝**，
+  > 那句 message 只是措辞像参数错误。因为只认 message，2.1.14 把这类拒绝继续判成普通错误：
+  > 用户看到「应用故障」、拿到注定无效的「重试」按钮，对话生成探针还报 ❌。
+  > 判据已改为**同时认机器可读 code**（`LlmClient.CONTENT_MODERATION_CODES`），
+  > 并补了 `LlmContentModerationTest` 回归测试；`docs/server-api.md` 同段已改写。
+  > **已发布的 `v2.1.14` 不改动**（本节保留原文 + 本更正，不重写已发布历史）。
+
 ### 修复
 
 - **修正 2.1.13 里被误提交的半成品**：`1de1d65`（CHANGELOG 标日期的提交）因误用 `git add -A`

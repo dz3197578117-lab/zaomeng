@@ -114,8 +114,14 @@ class LlmClient(
          * 只把结论如实写进错误消息与诊断事件（见 [ContentRejectedException]）。
          *
          * 收词原则：只收**明确的审核 / 安全语义**，不收泛化的请求形状措辞。
-         * 反例（必须**不**命中）：`inference request is invalid`、`max_tokens must be ...`、
-         * `model not found` —— 这些是参数或资源错误；误判会让用户从「应用有 bug」改去怀疑别的东西。
+         * 反例（必须**不**命中）：`max_tokens must be ...`、`model not found` ——
+         * 这些确实是参数或资源错误；误判会让用户从「应用有 bug」改去怀疑别的东西。
+         *
+         * ⚠️ 但**措辞不可靠**：商汤把内容审核拒绝的 `message` 写成 `inference request is invalid`，
+         * 读起来完全是参数错误的口气。用户真机 `tier=full` 导出里 16 条 400 全是
+         * `message=inference request is invalid` + `code=data_inspection_failed`。
+         * 所以本表之外还有 [CONTENT_MODERATION_CODES]：**机器可读的 code 才是主判据**，
+         * 措辞只是兜底。此前只认措辞，于是这类审核拒绝被判成普通错误。
          */
         internal val CONTENT_MODERATION_MARKERS: List<String> = listOf(
             // 商汤 SenseNova 实测原文（用户真机诊断里的第 ② 类 400）
@@ -138,21 +144,47 @@ class LlmClient(
         )
 
         /**
+         * 上游错误体里的**机器可读拒绝码**（小写、子串匹配）。
+         *
+         * 与 [CONTENT_MODERATION_MARKERS] 的分工：这张表认 API 的 `code`，那张表认「人话」。
+         * **code 优先**——它不随文案本地化或改写而变，而且是「message 看起来像参数错误」的
+         * 审核拒绝**唯一**的识别途径。
+         *
+         * 来源：用户真机 `zaomeng-diagnostics_2.json`（2.1.14 / realme GT7 Pro）里的 16 条 400：
+         * `{"error":{"message":"inference request is invalid",
+         *            "type":"invalid_request_error","code":"data_inspection_failed"}}`
+         * `data_inspection_failed` = 商汤**数据审查失败**（内容审核）。
+         * 注意 `docs/notes/sensenova-api-reference.txt` 的错误码表**只列了**
+         * `invalid_request_error = 参数不合法`，没有列这个 code——这正是当初只看措辞、
+         * 把它误判成参数错误的根因。
+         *
+         * 用词干 `data_inspection` 而非完整 code：上游再拆出 `data_inspection_*` 变体也能命中。
+         */
+        internal val CONTENT_MODERATION_CODES: List<String> = listOf(
+            // 商汤 SenseNova：数据审查（内容审核）失败
+            "data_inspection",
+        )
+
+        /**
          * 上游错误体是否命中**内容审核语义**（纯函数：无 IO、无状态、只看入参）。
          *
          * 只做归因，不做规避：本函数只回答「上游是不是以内容审核为由拒收」，
          * 调用方据此把这一种 4xx 单独归类（[ContentRejectedException]）并**不重试**。
          *
-         * 保守性来自两点，也是「不误判普通 400」的保证：
-         * 1. **只认明确措辞**（[CONTENT_MODERATION_MARKERS]），不做「凡 4xx 皆审核」之类的泛化——
-         *    `inference request is invalid` 不含任何词条，因此必然走普通错误路径；
-         * 2. **单词按词边界、短语按子串**（见 [String.containsModerationMarker]）：
-         *    `safety` 不会命中 `safety_settings` 这类参数名，而 `content_policy_violation`
-         *    这类带后缀写法仍能被 `content_policy` 命中。
+         * 判据分两层，**先 code 后措辞**：
+         * 1. **机器可读拒绝码**（[CONTENT_MODERATION_CODES]，按子串）——优先，也是
+         *    `inference request is invalid` 这类「措辞像参数错误」的审核拒绝**唯一**的识别途径；
+         * 2. **措辞**（[CONTENT_MODERATION_MARKERS]），单词按词边界、短语按子串
+         *    （见 [String.containsModerationMarker]）：`safety` 不命中 `safety_settings`
+         *    这类参数名，而 `content_policy_violation` 仍能被 `content_policy` 命中。
+         *
+         * 仍然不做「凡 4xx 皆审核」的泛化：既不带 code、又不含任何措辞的 4xx
+         * （`max_tokens must be ...`、`model not found`）照旧走普通错误路径。
          */
         internal fun isContentModerationRejection(body: String): Boolean {
             val text = body.trim().lowercase()
             if (text.isEmpty()) return false
+            if (CONTENT_MODERATION_CODES.any { code -> text.contains(code) }) return true
             return CONTENT_MODERATION_MARKERS.any { marker -> text.containsModerationMarker(marker) }
         }
 
@@ -2051,7 +2083,8 @@ class LlmClient(
 
 /**
  * **模型提供方内容审核拒绝**：HTTP 4xx，且上游错误体命中内容审核措辞
- * （判据集中在 [LlmClient.isContentModerationRejection] / [LlmClient.CONTENT_MODERATION_MARKERS]）。
+ * （判据集中在 [LlmClient.isContentModerationRejection] / [LlmClient.CONTENT_MODERATION_CODES]
+ * / [LlmClient.CONTENT_MODERATION_MARKERS]）。
  *
  * 为什么单独一个类型：
  * - 它**不是应用缺陷**、也不是请求参数写错。用户真机上两类 400

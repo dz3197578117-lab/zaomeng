@@ -29,6 +29,16 @@ class SettingsManagementService(
      * 默认 null 便于测试与不关心诊断的调用方。
      */
     private val connectivityLog: ModelConnectivityLog? = null,
+    /**
+     * 端侧推理的**实时** OpenAI 兼容地址（未运行时返回空串）。默认 null 便于测试与不关心端侧的调用方。
+     *
+     * 为什么需要它：`provider = "local"` 的档案，其 base_url 是**启用端侧那一刻**从 status 抓下来
+     * 持久化的，而 llama-server 每次启动都换端口——端侧重启后那份持久化地址就指向死端口，
+     * 请求会以 ConnectException 失败（用户真机诊断里有 `Failed to connect to /127.0.0.1:34699`、
+     * `llm.capability_probe` 连 `/127.0.0.1:43495` 各一条）。这里在**读取设置时**用实时值覆盖，
+     * 让所有读 `base_url` 的调用方（对话、能力探测、连通性测试）都拿到当前端口。
+     */
+    private val onDeviceBaseUrl: (() -> String)? = null,
 ) {
     private val json = Json {
         prettyPrint = true
@@ -344,7 +354,7 @@ class SettingsManagementService(
             (keyConfigured || !keyRequired)
         put("provider", profile?.provider.orEmpty())
         put("model", profile?.model.orEmpty())
-        put("base_url", profile?.baseUrl.orEmpty())
+        put("base_url", resolveProfileBaseUrl(profile))
         put("max_tokens", profile?.maxTokens ?: 0)
         put("reasoning_effort", profile?.reasoningEffort ?: "off")
         put("token_parameter", profile?.tokenParameter ?: "auto")
@@ -352,6 +362,21 @@ class SettingsManagementService(
         put("api_key_configured", keyConfigured)
         put("api_key_required", keyRequired)
         put("configured", configured)
+    }
+
+    /**
+     * 档案的 base_url；`provider = "local"`（端侧内嵌推理）时以**实时**地址为准。
+     *
+     * 只在实时地址非空时覆盖：端侧未运行时不拿空串去抹掉用户存下的地址——那会把
+     * 「端侧没启动」伪装成「没配地址」，反而更难排查。所以本函数修的是
+     * 「端侧在跑、但端口已经和持久化的那个不一样」这一类；端侧停止后仍指向旧端口这一
+     * 情形**不变**（那时 provider 确实不可用，失败是如实的）。
+     */
+    private fun resolveProfileBaseUrl(profile: ModelProfile?): String {
+        val stored = profile?.baseUrl.orEmpty()
+        // 与 OnDeviceModelsViewModel.LOCAL_PROVIDER 同值（跨模块常量无法直接引用）。
+        if (!profile?.provider.orEmpty().trim().equals("local", ignoreCase = true)) return stored
+        return onDeviceBaseUrl?.invoke()?.trim().orEmpty().ifBlank { stored }
     }
 
     private fun emptyModelSettings() = buildJsonObject {

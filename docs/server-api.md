@@ -232,11 +232,21 @@ URL 中的凭据一律替换为 `***`），超长行截断。
 | `details.status_code` / `provider_kind` / `model` / `endpoint` / `upstream_message` | 结构化留证；`endpoint` 已去掉 query（Gemini 的 `key` 不进事件） |
 | `details.retryable` | 固定 `false` |
 
-判据是 `LlmClient.isContentModerationRejection` 里的**固定措辞表**
-（`inappropriate input/output rejected`、`content policy`、`content_policy`、`content filter`、
-`moderation`、`safety`、`blocked by`、`敏感`、`违规`、`审核`、`不合规`、`内容安全`），
-英文词条按词边界匹配（`safety` 不命中 `safety_settings`），中文按子串。
-`inference request is invalid` 不含任何词条，因此**不会**被归入本类别——它仍走普通错误路径。
+判据是 `LlmClient.isContentModerationRejection`，分两层，**先 code 后措辞**：
+
+1. **机器可读拒绝码**（`LlmClient.CONTENT_MODERATION_CODES`，按子串）：目前是商汤的
+   `data_inspection`（实测完整值 `data_inspection_failed` = **数据审查失败**）；
+2. **固定措辞表**（`CONTENT_MODERATION_MARKERS`）：`inappropriate input/output rejected`、
+   `content policy`、`content_policy`、`content filter`、`moderation`、`safety`、`blocked by`、
+   `敏感`、`违规`、`审核`、`不合规`、`内容安全`；英文词条按词边界匹配
+   （`safety` 不命中 `safety_settings`），中文按子串。
+
+**为什么必须有 code 这一层**：商汤把审核拒绝的 `message` 写成
+`inference request is invalid`——读起来完全是参数错误的口气。2.1.14 只认措辞，于是把它判成
+普通错误：用户看到的是「应用故障」、拿到注定无效的「重试」按钮，「功能自检」的对话生成探针还报 ❌。
+真机 `tier=full` 导出（16 条 400）显示其 `code` 为 `data_inspection_failed`，才定下性。
+现在**没有 code、也不含任何措辞**的 4xx（如 `max_tokens must be ...`、`model not found`）
+才走普通错误路径。
 
 该事件在诊断中的呈现：
 
