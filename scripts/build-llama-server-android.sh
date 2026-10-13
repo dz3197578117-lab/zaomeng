@@ -20,6 +20,7 @@
 #   ANDROID_API          最低 API（默认 28）
 #   ABI                  目标 ABI（默认 arm64-v8a）
 #   JOBS                 并行度（默认 CPU 核数）
+#   BUILD_DIR            构建目录（默认 <repo>/../native-build/build-<ABI>）
 #   GGML_KLEIDIAI        1/0，是否启用 Arm KleidiAI CPU 内核（默认 1，见下）
 #   GGML_OPENCL          1/0，是否编入 Adreno OpenCL GPU 后端（默认 1，见下）
 #   OPENCL_ROOT          OpenCL 头与库所在前缀（含 include/CL 与 lib*/libOpenCL.so）；
@@ -28,6 +29,14 @@
 #   EXTRA_CMAKE_ARGS     额外 CMake 参数（按空格拆分）。逃生口，例如离线构建时让
 #                        FetchContent 直接用本地已校验的源码：
 #                        EXTRA_CMAKE_ARGS="-DFETCHCONTENT_SOURCE_DIR_KLEIDIAI=/path/to/kleidiai-1.24.0"
+#   CMAKE_BIN            显式指定 cmake 可执行文件，覆盖 SDK 自带的那份。
+#                        **本机目前必需**：SDK 的 cmake 3.22.1 配置 llama.cpp 时会原生崩溃
+#                        （0xC0000409，停在 CMakeFindBinUtils 的 find_program），
+#                        换 `pip install cmake`（4.4.4）后配置正常；最小工程用 3.22.1 反而没事。
+#   SHARED_BACKENDS      1/0，是否编成「动态后端」形态（默认 0，见下）
+#   HEXAGON_BACKEND_DIR  外部 Hexagon 后端目录（含 libggml-hexagon.so 与 libggml-htp-v<N>.so）。
+#                        这些文件**不会**进 jniLibs，见脚本内说明（会进 exe 目录被无条件加载）。
+#   EXTERNAL_BACKENDS_OUT  外部后端的输出目录（默认 $BUILD/external-backends）
 set -euo pipefail
 
 # 非 UTF-8 区域的 Windows 上必须开 Python 的 UTF-8 模式，否则编 OpenCL 时必崩：
@@ -75,6 +84,17 @@ GGML_CPU_ARM_ARCH="${GGML_CPU_ARM_ARCH:-armv8-a}"
 # 否则可执行文件根本起不来——所以缺 OpenCL 时这里**直接报错**，不静默退回 CPU 构建。
 GGML_OPENCL="${GGML_OPENCL:-1}"
 
+# --- 构建形态：单文件（默认）vs 动态后端 ---
+# SHARED_BACKENDS=0（默认）：BACKEND_DL=OFF + BUILD_SHARED_LIBS=OFF —— 所有后端静态链进
+#   一个可执行文件，产物只有 libllama-server.so 一个文件（当前随包形态）。
+# SHARED_BACKENDS=1：BACKEND_DL=ON + BUILD_SHARED_LIBS=ON —— 产物是一个几 KB 的启动桩
+#   加一组 lib*.so。**这是消费外部后端（Hexagon）的前提**：后端必须以可 dlopen 的独立模块
+#   形式存在，而 ggml 的动态后端机制要求这个链接形态 —— ggml/src/CMakeLists.txt 里
+#   `if (GGML_BACKEND_DL AND NOT BUILD_SHARED_LIBS)` 直接 FATAL_ERROR，两者必须同时开。
+# 代价：随包从「1 个 .so」变成「一组 .so」；本机实测 b11588 arm64 共享库剥符号后合计
+# 约 15 MB（未剥 208 MB），加借用后端约 17 MB，当前单文件版是 13.6 MB。
+SHARED_BACKENDS="${SHARED_BACKENDS:-0}"
+
 # CMake 布尔取值
 if [ "$GGML_KLEIDIAI" = "1" ]; then KLEIDIAI_CMAKE=ON; else KLEIDIAI_CMAKE=OFF; fi
 
@@ -119,6 +139,13 @@ CMAKE="$(ls "$SDK"/cmake/*/bin/cmake.exe "$SDK"/cmake/*/bin/cmake 2>/dev/null | 
 NINJA="$(ls "$SDK"/cmake/*/bin/ninja.exe "$SDK"/cmake/*/bin/ninja 2>/dev/null | sort -V | tail -1 || true)"
 [ -n "$CMAKE" ] || CMAKE="$(command -v cmake || true)"
 [ -n "$NINJA" ] || NINJA="$(command -v ninja || true)"
+
+# CMAKE_BIN：显式指定 cmake（SDK 自带的 3.22.1 在本机会原生崩溃，见文件头说明）。
+if [ -n "${CMAKE_BIN:-}" ]; then
+  [ -x "$CMAKE_BIN" ] || { echo "CMAKE_BIN 不可执行：$CMAKE_BIN" >&2; exit 1; }
+  CMAKE="$CMAKE_BIN"
+fi
+
 [ -n "$CMAKE" ] || { echo "找不到 cmake，请安装（sdkmanager 'cmake;3.22.1'）" >&2; exit 1; }
 [ -n "$NINJA" ] || { echo "找不到 ninja" >&2; exit 1; }
 echo "CMake     : $CMAKE"
@@ -137,7 +164,15 @@ SRC="${LLAMA_CPP_SRC:-$(cd "$REPO_ROOT/.." && pwd)/native-build/llama.cpp}"
 }
 echo "llama.cpp : $SRC ($(git -C "$SRC" rev-parse --short HEAD 2>/dev/null || echo unknown))"
 
-BUILD="$REPO_ROOT/../native-build/build-$ABI"
+# BUILD_DIR 可覆盖：做 A/B 对比（单文件 vs 动态后端、有无 OpenCL）时用不同目录，
+# 避免 CMake 缓存互相干扰。
+BUILD="${BUILD_DIR:-$REPO_ROOT/../native-build/build-$ABI}"
+
+# 外部后端（如 Hexagon）的输出目录。**刻意默认放在构建目录之外**：下面的共享库收集会
+# `find "$BUILD" -name 'lib*.so'`，若把它放进 $BUILD，就会被一并收进 jniLibs —— 而那正是
+# 要避免的（后面有专门说明：放在 exe 目录的后端会被 ggml 无条件加载，从而把上游的
+# -march=armv8.7a+i8mm 基线强加给所有设备）。find 里也做了显式排除，双保险。
+EXT_OUT="${EXTERNAL_BACKENDS_OUT:-$(cd "$REPO_ROOT/.." && pwd)/native-build/external-backends}"
 OUT_DIR="$KMP_ROOT/app/androidApp/src/main/jniLibs/$ABI"
 mkdir -p "$OUT_DIR"
 
@@ -217,6 +252,14 @@ fi
 
 echo
 echo "==> 配置（CMake，Ninja，$ABI，API $ANDROID_API）"
+# 构建形态决定这两个开关（见文件头 SHARED_BACKENDS）：BACKEND_DL 与 BUILD_SHARED_LIBS
+# 必须同时开或同时关，否则 ggml 的 CMake 直接报错。
+SHARED_CMAKE_FLAGS=()
+if [ "$SHARED_BACKENDS" = "1" ]; then
+  SHARED_CMAKE_FLAGS=(-DBUILD_SHARED_LIBS=ON -DGGML_BACKEND_DL=ON)
+else
+  SHARED_CMAKE_FLAGS=(-DBUILD_SHARED_LIBS=OFF -DGGML_BACKEND_DL=OFF)
+fi
 "$CMAKE" \
   -S "$(win_path "$SRC")" \
   -B "$(win_path "$BUILD")" \
@@ -230,11 +273,10 @@ echo "==> 配置（CMake，Ninja，$ABI，API $ANDROID_API）"
   -DANDROID_ARM_NEON=ON \
   -DGGML_CPU_ARM_ARCH="$GGML_CPU_ARM_ARCH" \
   -DGGML_CPU_KLEIDIAI="$KLEIDIAI_CMAKE" \
-  -DBUILD_SHARED_LIBS=OFF \
   -DGGML_NATIVE=OFF \
   -DGGML_OPENMP=OFF \
   -DGGML_LLAMAFILE=OFF \
-  -DGGML_BACKEND_DL=OFF \
+  "${SHARED_CMAKE_FLAGS[@]}" \
   -DGGML_CPU_ALL_VARIANTS=OFF \
   -DGGML_CUDA=OFF \
   -DGGML_VULKAN=OFF \
@@ -264,6 +306,23 @@ fi
 cp "$BIN" "$OUT_DIR/libllama-server.so"
 chmod +x "$OUT_DIR/libllama-server.so" || true
 
+# 动态后端形态：llama-server 只是个几 KB 的启动桩（本机实测 7,280 B），真正的东西在
+# bin/lib*.so 里。**Android 不认 DT_RPATH**（上游预设靠 CMAKE_INSTALL_RPATH="$ORIGIN;$ORIGIN/.."
+# 让 bin/ 找 ../lib，在 Android 上无效），所以这些库必须与桩**同目录**（App 原生库目录）
+# 才能被 linker 解析，这里直接摊平复制到 jniLibs。
+if [ "$SHARED_BACKENDS" = "1" ]; then
+  SHARED_FOUND=0
+  while IFS= read -r lib; do
+    [ -n "$lib" ] || continue
+    cp "$lib" "$OUT_DIR/$(basename "$lib")"
+    chmod +x "$OUT_DIR/$(basename "$lib")" || true
+    SHARED_FOUND=$((SHARED_FOUND + 1))
+  done < <(find "$BUILD" -maxdepth 3 -name 'lib*.so' -type f \
+             ! -path '*/CMakeFiles/*' ! -path '*_deps*' ! -path "$EXT_OUT/*" 2>/dev/null | sort -u)
+  [ "$SHARED_FOUND" -gt 0 ] || { echo "SHARED_BACKENDS=1 但没找到任何 lib*.so" >&2; exit 1; }
+  echo "共享库     : 收集 ${SHARED_FOUND} 个 → $OUT_DIR"
+fi
+
 # --- 去除调试段 ---
 # llama.cpp / ggml 的 CMake 会无条件带上 -g，Release 构建出来的可执行文件
 # 光调试段就有 160MB+（.debug_info/.debug_str/.debug_loc/.debug_ranges），
@@ -281,6 +340,33 @@ if [ -n "$STRIP" ]; then
   echo "strip  : $SIZE_BEFORE -> $SIZE_AFTER bytes"
 else
   echo "strip  : 未找到 llvm-strip，产物将包含调试段" >&2
+fi
+
+# --- 共享库逐个剥符号；**非 aarch64 的必须跳过** ---
+# Hexagon 的 DSP 侧 skel（libggml-htp-v<N>.so）是 ELF32 / Machine: Qualcomm Hexagon，
+# host 的 llvm-strip 处理它会失败甚至损坏文件，必须原样保留。这里按 readelf 报出的
+# Machine 判，而不是按文件名猜。
+strip_if_aarch64() {
+  local f="$1" arch=""
+  [ -n "$STRIP" ] || return 0
+  if [ -n "$READELF" ]; then
+    arch="$("$READELF" -h "$f" 2>/dev/null | awk -F: '/Machine:/{gsub(/^[ \t]+/,"",$2); print $2; exit}')"
+    case "$arch" in
+      AArch64) ;;
+      *) echo "  跳过 strip（非 aarch64：${arch:-未知}）：$(basename "$f")"; return 0 ;;
+    esac
+  fi
+  "$STRIP" --strip-unneeded "$f" || true
+}
+if [ "$SHARED_BACKENDS" = "1" ]; then
+  for f in "$OUT_DIR"/lib*.so; do
+    [ -f "$f" ] || continue
+    [ "$(basename "$f")" = "libllama-server.so" ] && continue
+    SB="$(stat -c%s "$f" 2>/dev/null || echo 0)"
+    strip_if_aarch64 "$f"
+    SA="$(stat -c%s "$f" 2>/dev/null || echo 0)"
+    echo "  strip: $(basename "$f") $SB -> $SA"
+  done
 fi
 
 # --- 随包分发 OpenCL ICD loader ---
@@ -316,6 +402,56 @@ if [ "$GGML_OPENCL" = "1" ]; then
   fi
 fi
 
+# --- 外部后端（Hexagon）---
+# ⚠️ 刻意**不放进 jniLibs**，原因在读源码时确认过：
+# ggml_backend_load_all() 会从**可执行文件所在目录**无条件尝试加载全部后端
+# （ggml/src/ggml-backend-reg.cpp：按名字逐个 load_best，其中就含 "hexagon"），
+# 搜索路径 = GGML_BACKEND_DIR + exe 目录 + cwd；而 GGML_BACKEND_PATH 只能**额外**加载
+# 一个指定文件，**无法排除** exe 目录的扫描。
+# 偏偏宿主侧的 libggml-hexagon.so 只能由上游编（ggml/src/ggml-hexagon/CMakeLists.txt
+# 开头就 FATAL_ERROR 要求 HEXAGON_SDK_ROOT，还要 SDK 的 IDL 编译器），因而继承官方
+# snapdragon 预设的 -march=armv8.7a+fp16+dotprod+i8mm。一旦它躺在 exe 目录里，
+# **所有**设备（含老 armv8.0 机型）都会加载并执行它 → SIGILL。
+# 所以正确做法是：随包放进 assets/ 之类的位置，运行时按需解压，只在用户开启 GPU 层数时
+# 用 GGML_BACKEND_PATH 指过去；老设备永不加载。
+if [ -n "${HEXAGON_BACKEND_DIR:-}" ]; then
+  mkdir -p "$EXT_OUT"
+  EXT_COUNT=0
+  for f in "$HEXAGON_BACKEND_DIR/libggml-hexagon.so" "$HEXAGON_BACKEND_DIR"/libggml-htp-v*.so; do
+    [ -f "$f" ] || continue
+    cp "$f" "$EXT_OUT/"
+    EXT_COUNT=$((EXT_COUNT + 1))
+  done
+  [ "$EXT_COUNT" -gt 0 ] || {
+    echo "HEXAGON_BACKEND_DIR 里没找到 libggml-hexagon.so / libggml-htp-v*.so：$HEXAGON_BACKEND_DIR" >&2
+    exit 1
+  }
+  # 宿主侧的 libggml-hexagon.so 上游是未剥符号的（本机实测 7.4 MB → 约 0.9 MB）；
+  # 而 DSP 侧的 libggml-htp-v<N>.so 是 Hexagon ELF32，必须原样保留（strip_if_aarch64 会跳过）。
+  for f in "$EXT_OUT"/*.so; do
+    [ -f "$f" ] || continue
+    EB="$(stat -c%s "$f" 2>/dev/null || echo 0)"
+    strip_if_aarch64 "$f"
+    EA="$(stat -c%s "$f" 2>/dev/null || echo 0)"
+    echo "  strip(外部): $(basename "$f") $EB -> $EA"
+  done
+  # 防御：外部后端绝不能出现在 jniLibs —— ggml 会从 exe 目录无条件加载它们，从而把
+  # 上游的 -march=armv8.7a+i8mm 基线强加给所有设备（老机型 SIGILL）。这里直接失败，
+  # 不降级为警告：本机就踩过一次（把输出目录放在 $BUILD 里，被共享库收集扫进去）。
+  for f in "$EXT_OUT"/*.so; do
+    [ -f "$f" ] || continue
+    if [ -f "$OUT_DIR/$(basename "$f")" ]; then
+      echo "❌ $(basename "$f") 同时出现在 jniLibs 与外部后端目录——必须只留后者。" >&2
+      echo "   请删除 $OUT_DIR/$(basename "$f")（原因见脚本内 ggml_backend_load_all 的说明）" >&2
+      exit 1
+    fi
+  done
+  echo
+  echo "==> 外部后端（不进 jniLibs，随包应放 assets 并按需解压）"
+  echo "输出   : $EXT_OUT"
+  ls -la "$EXT_OUT"
+fi
+
 echo
 echo "==> 完成"
 echo "产物 : $OUT_DIR/libllama-server.so ($(du -h "$OUT_DIR/libllama-server.so" | cut -f1))"
@@ -325,14 +461,53 @@ if [ -n "$READELF" ]; then
   echo
   echo "==> 动态依赖"
   "$READELF" -d "$OUT_DIR/libllama-server.so" | grep NEEDED || true
+
+  # 动态后端形态下，桩的所有 NEEDED（除平台库）都必须与它同目录，否则上机直接起不来。
+  # 这里做一次闭包自检，不靠人眼。
+  if [ "$SHARED_BACKENDS" = "1" ]; then
+    echo
+    echo "==> NEEDED 闭包自检（jniLibs 内是否自洽）"
+    CLOSURE_MISSING=0
+    CLOSURE_CHECKED=0
+    for f in "$OUT_DIR"/*.so; do
+      [ -f "$f" ] || continue
+      CLOSURE_CHECKED=$((CLOSURE_CHECKED + 1))
+      while IFS= read -r n; do
+        [ -n "$n" ] || continue
+        case "$n" in
+          libm.so|libdl.so|libc.so|liblog.so|libz.so|libandroid.so|libOpenSLES.so|libstdc++.so|libgcc.so) continue ;;
+        esac
+        if [ ! -f "$OUT_DIR/$n" ]; then
+          echo "  ❌ $(basename "$f") 需要 $n，但 jniLibs 里没有" >&2
+          CLOSURE_MISSING=$((CLOSURE_MISSING + 1))
+        fi
+      done < <("$READELF" -d "$f" 2>/dev/null | sed -n 's/.*NEEDED.*\[\(.*\)\].*/\1/p')
+    done
+    if [ "$CLOSURE_MISSING" -eq 0 ]; then
+      echo "  ✅ 自洽（检查了 $CLOSURE_CHECKED 个文件）"
+    else
+      echo "  ❌ 有 $CLOSURE_MISSING 个缺失依赖——这些库上机加载会失败" >&2
+      exit 1
+    fi
+  fi
   if [ "$GGML_OPENCL" = "1" ]; then
-    if "$READELF" -d "$OUT_DIR/libllama-server.so" | grep -q 'libOpenCL.so'; then
+    # 单文件形态：OpenCL 静态链进可执行文件，桩本身应带 NEEDED libOpenCL.so。
+    # 动态后端形态：OpenCL 是独立的 libggml-opencl.so，由 ggml 的后端加载器 dlopen，
+    #   桩**不该**有这条 NEEDED —— 要检查的是那个模块自己（否则会误报）。
+    if [ "$SHARED_BACKENDS" = "1" ]; then
+      if [ -f "$OUT_DIR/libggml-opencl.so" ] &&
+         "$READELF" -d "$OUT_DIR/libggml-opencl.so" | grep -q 'libOpenCL.so'; then
+        echo "    ✅ OpenCL 以独立模块随包（libggml-opencl.so 带 NEEDED libOpenCL.so）"
+      else
+        echo "    ⚠️ 编了 OpenCL，但 libggml-opencl.so 没有 NEEDED libOpenCL.so——后端可能没被真正编上" >&2
+      fi
+    elif "$READELF" -d "$OUT_DIR/libllama-server.so" | grep -q 'libOpenCL.so'; then
       echo "    ✅ 已链接 OpenCL；libOpenCL.so 已随包放在同目录"
     else
       echo "    ⚠️ 编了 OpenCL，但产物里没有 NEEDED libOpenCL.so——后端可能没被真正用上" >&2
     fi
   else
-    echo "    （GGML_OPENCL=0：纯 CPU 构建，NEEDED 应只有 libm/libdl/libc）"
+    echo "    （GGML_OPENCL=0：纯 CPU 构建）"
   fi
   echo
   echo "==> 是否为 PIE 可执行（Android 5.0+ 强制要求，缺 PIE 标志会启动即崩）"

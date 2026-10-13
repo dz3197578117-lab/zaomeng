@@ -175,6 +175,34 @@ fatal: unable to auto-detect email address
 
 新机器没配 `user.name` / `user.email`，按上面「基础环境」配一下。
 
+### 8. SDK 自带的 CMake 3.22.1 在 Windows 上配置 llama.cpp 会原生崩溃
+
+现象是**没有任何 CMake 报错**，进程直接以 `0xC0000409`（STATUS_STACK_BUFFER_OVERRUN，PowerShell 显示为
+`-1073740791`）退出，日志只到一行：
+
+```text
+-- The C compiler identification is Clang 19.0.1
+```
+
+用 `--trace` 定位到的最后一条命令是 `CMakeFindBinUtils.cmake` 里的
+`find_program(CMAKE_${_CMAKE_TOOL} NAMES ...)`。
+
+已排除的干扰项（都试过，都不是原因）：换源码（b11588 与 master 都崩）、干净目录、最小化 `PATH`、
+显式传入全部 binutils 路径、关闭系统路径搜索、Defender 事件与威胁记录。
+**反例是关键**：同一个工具链配置一个极小工程（`project(x C)` 或 `C CXX`）完全正常，
+所以不是工具链坏了。
+
+解法：换一个 CMake。本机用 pip 装的 4.4.4 配置正常：
+
+```bash
+pip install cmake
+export CMAKE_BIN="$HOME/AppData/Roaming/Python/Python38/site-packages/cmake/data/bin/cmake.exe"
+./scripts/build-llama-server-android.sh
+```
+
+`build-llama-server-android.sh` 支持用 `CMAKE_BIN` 覆盖 SDK 自带的那份（见文件头「可覆盖的环境变量」）。
+注意它默认**优先用 SDK 自带的 cmake**（避免版本漂移），所以踩到这个坑时才需要显式指定。
+
 ---
 
 ## 三、仓库里哪些东西**不在**版本控制里
