@@ -94,17 +94,19 @@ class DialoguePayloadBuilder(
         participants: List<String>,
         completedTurns: List<Map<String, Any?>>,
     ): List<Map<String, Any?>> {
-        val names = participants.map { it.trim() }.filter { it.isNotEmpty() }
+        val names = CharacterNameNormalizer.normalizeNames(participants)
         val totalTurns = completedTurns.size
         val activity = mutableListOf<Map<String, Any?>>()
         for (name in names) {
+            val nameIdentity = CharacterNameNormalizer.identityKey(name)
             val spokenTurns = mutableListOf<Int>()
             var replyCount = 0
             completedTurns.forEachIndexed { index, record ->
                 val responses = ((record["result"] as? Map<*, *>)?.mapKeys { it.key.toString() }?.get("responses") as? List<*>)
                     ?: (record["responses"] as? List<*>) ?: emptyList<Any?>()
                 val matches = responses.filter { item ->
-                    (item as? Map<*, *>)?.get("speaker")?.toString()?.trim() == name
+                    val speaker = (item as? Map<*, *>)?.get("speaker")?.toString().orEmpty()
+                    speaker.isNotEmpty() && CharacterNameNormalizer.identityKey(speaker) == nameIdentity
                 }
                 if (matches.isNotEmpty()) {
                     spokenTurns.add(index + 1)
@@ -332,8 +334,12 @@ class DialoguePayloadBuilder(
         val personaMap = linkedMapOf<String, Map<String, Any?>>()
         for (item in characters) {
             val obj = item.jsonObject
-            val name = obj["name"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            val rawName = obj["name"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            // artifact_index 里可能还是带引号的旧名字（`"陆城"`）；文件路径继续用原始写法，
+            // 但人物身份的对外名字用归一化结果，保证与会话名单/模型输出说的是同一个人。
+            val name = CharacterNameNormalizer.normalize(rawName)
             if (name.isEmpty()) continue
+            val fileKey = rawName.ifEmpty { name }
             val profileFile = obj["profile_file"]?.jsonPrimitive?.contentOrNull?.let { it.toPath() }
             val personaDir = obj["persona_dir"]?.jsonPrimitive?.contentOrNull?.let { it.toPath() }
             val candidates = mutableListOf<Path>()
@@ -346,8 +352,8 @@ class DialoguePayloadBuilder(
                 candidates.add(personaDir / "PROFILE.generated.md")
             }
             val runDir = storage.getRunDirectory(runManifest["run_id"]?.jsonPrimitive?.contentOrNull.orEmpty())
-            candidates.add(runDir / "artifacts/characters/$name/PROFILE.md")
-            candidates.add(runDir / "artifacts/characters/$name/PROFILE.generated.md")
+            candidates.add(runDir / "artifacts/characters/$fileKey/PROFILE.md")
+            candidates.add(runDir / "artifacts/characters/$fileKey/PROFILE.generated.md")
             val existing = candidates.firstOrNull { storage.isFile(it) }
             val profile = existing?.let { parsePersonaFile(it) } ?: emptyMap()
             val preview = mapOf(
@@ -386,7 +392,9 @@ class DialoguePayloadBuilder(
         val participantsNames = (participants + activeParticipants).distinct()
         val result = mutableListOf<Map<String, Any?>>()
         for (name in participantsNames) {
-            val persona = personaMap[name] ?: continue
+            // personaMap 已按归一化后的身份建键；名单也已归一化，这里再兜底归一化一次，
+            // 避免 artifact_index 里带引号的旧名字导致人物档案在归一化后反而丢失。
+            val persona = personaMap[CharacterNameNormalizer.normalize(name)] ?: continue
             result.add(persona)
         }
         return result
@@ -582,12 +590,13 @@ class DialoguePayloadBuilder(
         val queryTokens = query.lowercase().split(Regex("\\s+"))
             .flatMap { token -> if (token.length > 1) listOf(token) else emptyList() }
         val candidates = (ledger + facts).distinctBy { it["fact"]?.toString()?.lowercase() }
+        val participantIdentities = participants.map(CharacterNameNormalizer::identityKey).toSet()
         return candidates.map { item ->
             val fact = item["fact"]?.toString().orEmpty()
             val holders = (item["holders"] as? List<*>)?.mapNotNull { it?.toString()?.trim() }
                 ?: emptyList()
             val score = queryTokens.count { fact.lowercase().contains(it) } * 2 +
-                holders.count { it in participants }
+                holders.count { CharacterNameNormalizer.identityKey(it) in participantIdentities }
             score to item
         }.sortedWith(compareByDescending<Pair<Int, Map<String, Any?>>> { it.first }
             .thenByDescending { it.second["locked"] == true })
@@ -746,24 +755,28 @@ class DialoguePayloadBuilder(
         speakerOverride: String = "",
         includeInnerThoughts: Boolean = false,
     ): Map<String, Any?> {
-        val participants = stringList(jsonValueToAny(session["participants"]))
-        val mutedCharacters = stringList(jsonValueToAny(session["muted_characters"]))
+        // 读取侧归一化：历史会话里可能存着带包裹引号的名字（`"陆城"`），
+        // 必须先归一化再参与名单拼装，否则同一角色会同时落在允许与禁止名单里。
+        val participants = CharacterNameNormalizer.normalizeNames(stringList(jsonValueToAny(session["participants"])))
+        val mutedCharacters = CharacterNameNormalizer.normalizeNames(stringList(jsonValueToAny(session["muted_characters"])))
         val unmutedParticipants = participants.filterNot { it in mutedCharacters }
         val mode = session["mode"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty().ifBlank { "observe" }
         val controlledCharacterName = if (mode == "act") {
-            session["controlled_character"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            CharacterNameNormalizer.normalize(session["controlled_character"]?.jsonPrimitive?.contentOrNull.orEmpty())
         } else {
             ""
         }
         val normalizedMessageKind = DialoguePromptRules.normalizeMessageKind(messageKind)
-        val requestedSpeakerOverride = speakerOverride.trim()
+        val requestedSpeakerOverride = CharacterNameNormalizer.normalize(speakerOverride)
         val knownPersonaNames = runManifest["artifact_index"]?.jsonObject
             ?.get("characters")?.jsonArray.orEmpty()
-            .mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull?.trim() }
+            .mapNotNull { it.jsonObject["name"]?.jsonPrimitive?.contentOrNull }
+            .map(CharacterNameNormalizer::normalize)
             .filter(String::isNotBlank)
         val canonicalSpeakerOverride = requestedSpeakerOverride.takeIf(String::isNotBlank)?.let { requested ->
-            knownPersonaNames.firstOrNull { it.equals(requested, ignoreCase = true) }
-                ?: throw IllegalArgumentException("未知的代发人物：$requested")
+            knownPersonaNames.firstOrNull {
+                CharacterNameNormalizer.identityKey(it) == CharacterNameNormalizer.identityKey(requested)
+            } ?: throw IllegalArgumentException("未知的代发人物：$requested")
         }.orEmpty()
         val speaker = if (normalizedMessageKind == "fourth_wall") {
             "作者"
@@ -800,7 +813,8 @@ class DialoguePayloadBuilder(
         val eventSignals = loadEventSignals(session)
         val snapshots = loadCharacterSnapshots(session)
         val presentParticipants = (sceneProgress["present_participants"] as? List<*>)
-            ?.mapNotNull { it?.toString()?.trim() }?.filter { it.isNotEmpty() && it !in mutedCharacters } ?: emptyList()
+            ?.mapNotNull { it?.toString()?.let(CharacterNameNormalizer::normalize) }
+            ?.filter { it.isNotEmpty() && it !in mutedCharacters } ?: emptyList()
 
         // 在场参与人：有 scene_progress 时以在场名单为准（对齐 Python service.py 的 active_participants）
         val activeParticipants = selectDialogueActiveParticipants(
@@ -813,9 +827,16 @@ class DialoguePayloadBuilder(
         val forbiddenResponders = buildList {
             add(speaker)
             if (mode == "act") add(controlledCharacterName)
-        }.map(String::trim).filter(String::isNotEmpty).distinct()
-        val allowedResponders = activeParticipants.filterNot { it in forbiddenResponders }
-        val mentionable = activeParticipants.filter { it != controlledCharacterName }
+        }.map(CharacterNameNormalizer::normalize).filter(String::isNotEmpty).distinct()
+        // 关键不变量：允许名单与禁止名单按「身份」取差集，`陆城` 与 `"陆城"` 视为同一人，
+        // 同一个角色绝不会同时出现在两个名单里。
+        val forbiddenIdentities = forbiddenResponders.map(CharacterNameNormalizer::identityKey).toSet()
+        val allowedResponders = activeParticipants.filterNot {
+            CharacterNameNormalizer.identityKey(it) in forbiddenIdentities
+        }
+        val mentionable = activeParticipants.filter {
+            CharacterNameNormalizer.identityKey(it) != CharacterNameNormalizer.identityKey(controlledCharacterName)
+        }
         val mentionTargets = extractMentionTargets(mentionable, message)
 
         val runId = runManifest["run_id"]?.jsonPrimitive?.contentOrNull.orEmpty()
@@ -1309,16 +1330,19 @@ internal fun selectDialogueActiveParticipants(
     inputSpeaker: String,
     controlledCharacter: String,
 ): List<String> {
-    val configured = participants.map(String::trim).filter(String::isNotEmpty).distinct()
-    val present = presentParticipants.map(String::trim).filter(String::isNotEmpty).distinct()
+    val configured = CharacterNameNormalizer.normalizeNames(participants)
+    val present = CharacterNameNormalizer.normalizeNames(presentParticipants)
     val source = present.ifEmpty { configured }
     if (mode != "act") return source
 
-    val forbidden = setOf(inputSpeaker.trim(), controlledCharacter.trim()).filter(String::isNotEmpty).toSet()
-    val active = source.filterNot { it in forbidden }
+    val forbidden = (listOf(inputSpeaker, controlledCharacter))
+        .map(CharacterNameNormalizer::identityKey)
+        .filter(String::isNotEmpty)
+        .toSet()
+    val active = source.filterNot { CharacterNameNormalizer.identityKey(it) in forbidden }
     // A stale presence snapshot must never re-add the user-controlled character.
     // Fall back to other configured participants, or keep the responder list empty.
-    return active.ifEmpty { configured.filterNot { it in forbidden } }
+    return active.ifEmpty { configured.filterNot { CharacterNameNormalizer.identityKey(it) in forbidden } }
 }
 
 internal fun eligibleDialogueResponders(
@@ -1328,12 +1352,13 @@ internal fun eligibleDialogueResponders(
     controlledCharacter: String,
 ): List<String> {
     val forbidden = if (mode == "act") {
-        setOf(inputSpeaker.trim(), controlledCharacter.trim()).filter(String::isNotEmpty).toSet()
+        listOf(inputSpeaker, controlledCharacter)
+            .map(CharacterNameNormalizer::identityKey)
+            .filter(String::isNotEmpty)
+            .toSet()
     } else {
         emptySet()
     }
-    return activeParticipants.map(String::trim)
-        .filter(String::isNotEmpty)
-        .filterNot { it in forbidden }
-        .distinct()
+    return CharacterNameNormalizer.normalizeNames(activeParticipants)
+        .filterNot { CharacterNameNormalizer.identityKey(it) in forbidden }
 }

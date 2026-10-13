@@ -33,94 +33,11 @@ import top.wkbin.zaomeng.platform.rememberModelFileImporter
 import kotlin.math.roundToInt
 
 /**
- * 模型编辑页里的「本机模型（端侧）」区块。
+ * 「本机模型（端侧）」的实际内容，由独立页 `OnDeviceModelsScreen` 承载。
  *
- * 这一块存在的意义：让用户不用手抄 `http://127.0.0.1:<随机端口>/v1`——
- * 端口每次启动都可能不同，手抄不现实。所以流程是「导入/下载模型 → 启动 → 一键回填端点」，
- * 回填之后这个档案就是一个普通的不需要 Key 的模型服务，所有现有功能自动走本机。
- *
- * 独立的「本机模型」页（`OnDeviceModelsScreen`）复用同一份 [OnDeviceModelContent]，
- * 区别只是那里的「一键」直接创建并激活档案，不需要用户理解「档案」这个概念。
- */
-@Composable
-internal fun OnDeviceModelSection(
-    status: OnDeviceStatusDto?,
-    busy: Boolean,
-    selectedModel: String,
-    contextSize: String,
-    threads: String,
-    disableThinking: Boolean,
-    downloadUrl: String,
-    downloadFileName: String,
-    importing: Boolean,
-    importFileName: String,
-    importCopiedBytes: Long,
-    importTotalBytes: Long,
-    logs: String,
-    showLogs: Boolean,
-    onRefresh: () -> Unit,
-    onSelectModel: (String) -> Unit,
-    onContextSizeChange: (String) -> Unit,
-    onThreadsChange: (String) -> Unit,
-    onDisableThinkingChange: (Boolean) -> Unit,
-    onStart: () -> Unit,
-    onStop: () -> Unit,
-    onDownloadUrlChange: (String) -> Unit,
-    onDownloadFileNameChange: (String) -> Unit,
-    onDownload: () -> Unit,
-    onCancelDownload: () -> Unit,
-    onImportStarted: (fileName: String, totalBytes: Long) -> Unit,
-    onImportProgress: (copiedBytes: Long, totalBytes: Long) -> Unit,
-    onImportSucceeded: (fileName: String, sizeBytes: Long) -> Unit,
-    onImportFailed: (message: String) -> Unit,
-    onImportCancelled: () -> Unit,
-    onDeleteModel: (String) -> Unit,
-    onApplyEndpoint: () -> Unit,
-    onToggleLogs: () -> Unit,
-) {
-    EditorSection("本机模型（端侧）") {
-        OnDeviceModelContent(
-            status = status,
-            busy = busy,
-            selectedModel = selectedModel,
-            contextSize = contextSize,
-            threads = threads,
-            disableThinking = disableThinking,
-            downloadUrl = downloadUrl,
-            downloadFileName = downloadFileName,
-            importing = importing,
-            importFileName = importFileName,
-            importCopiedBytes = importCopiedBytes,
-            importTotalBytes = importTotalBytes,
-            logs = logs,
-            showLogs = showLogs,
-            applyButtonLabel = "填入本机地址",
-            applyHint = "「填入本机地址」会把接口地址、模型名填到上方表单，并关闭 API Key 要求；保存后启用该档案，对话/蒸馏就会全部跑在本机。",
-            onRefresh = onRefresh,
-            onSelectModel = onSelectModel,
-            onContextSizeChange = onContextSizeChange,
-            onThreadsChange = onThreadsChange,
-            onDisableThinkingChange = onDisableThinkingChange,
-            onStart = onStart,
-            onStop = onStop,
-            onDownloadUrlChange = onDownloadUrlChange,
-            onDownloadFileNameChange = onDownloadFileNameChange,
-            onDownload = onDownload,
-            onCancelDownload = onCancelDownload,
-            onImportStarted = onImportStarted,
-            onImportProgress = onImportProgress,
-            onImportSucceeded = onImportSucceeded,
-            onImportFailed = onImportFailed,
-            onImportCancelled = onImportCancelled,
-            onDeleteModel = onDeleteModel,
-            onApplyEndpoint = onApplyEndpoint,
-            onToggleLogs = onToggleLogs,
-        )
-    }
-}
-
-/**
- * 端侧区块的实际内容，模型编辑页与「本机模型」独立页共用。
+ * 端侧配置不再嵌入模型档案编辑页：档案描述的是一个模型服务端点，端侧是「本机另起一个
+ * llama.cpp 端点，成功后把它的地址写成一个 provider = local 的档案」，两者的状态、
+ * 生命周期与入口都不同。混在一页里会让人误以为「新增 API 档案」也得先配端侧。
  *
  * ## 为什么不再用 `supported && available` 一刀切
  * `available` 只看推理引擎在不在：Android 只打包了 arm64-v8a，非 arm64 设备上就是 false；
@@ -132,6 +49,8 @@ internal fun OnDeviceModelSection(
 internal fun OnDeviceModelContent(
     status: OnDeviceStatusDto?,
     busy: Boolean,
+    /** 正在把本机端点写成模型档案（「启用本机推理」），只影响按钮文案。 */
+    applying: Boolean,
     selectedModel: String,
     contextSize: String,
     threads: String,
@@ -144,8 +63,6 @@ internal fun OnDeviceModelContent(
     importTotalBytes: Long,
     logs: String,
     showLogs: Boolean,
-    applyButtonLabel: String,
-    applyHint: String,
     onRefresh: () -> Unit,
     onSelectModel: (String) -> Unit,
     onContextSizeChange: (String) -> Unit,
@@ -227,11 +144,10 @@ internal fun OnDeviceModelContent(
             OnDeviceRunControls(
                 status = status,
                 busy = busy,
+                applying = applying,
                 contextSize = contextSize,
                 threads = threads,
                 disableThinking = disableThinking,
-                applyButtonLabel = applyButtonLabel,
-                applyHint = applyHint,
                 onContextSizeChange = onContextSizeChange,
                 onThreadsChange = onThreadsChange,
                 onDisableThinkingChange = onDisableThinkingChange,
@@ -460,11 +376,10 @@ private fun OnDeviceImportArea(
 private fun OnDeviceRunControls(
     status: OnDeviceStatusDto,
     busy: Boolean,
+    applying: Boolean,
     contextSize: String,
     threads: String,
     disableThinking: Boolean,
-    applyButtonLabel: String,
-    applyHint: String,
     onContextSizeChange: (String) -> Unit,
     onThreadsChange: (String) -> Unit,
     onDisableThinkingChange: (Boolean) -> Unit,
@@ -518,11 +433,12 @@ private fun OnDeviceRunControls(
             onClick = onApplyEndpoint,
             enabled = status.running && !busy,
         ) {
-            Text(applyButtonLabel)
+            Text(if (applying) "启用中…" else "启用本机推理")
         }
     }
     Text(
-        text = applyHint,
+        text = "「启用本机推理」会自动创建（或更新）一个指向本机端点的模型档案并设为当前模型，" +
+            "不需要手填地址，也不需要 API Key。之后想换回云端模型，去「模型设置」切换档案即可。",
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

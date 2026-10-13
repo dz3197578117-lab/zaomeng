@@ -79,6 +79,27 @@ if [ -n "${LAST_TAG}" ] && [ -n "${CODE}" ]; then
     fi
   fi
 
+  # CHANGELOG 日期一致性：**除当前版本外**，任何历史版本都不能还写着「未发布」。
+  # 这个错误连续犯过 4 次（2.1.6 / 2.1.7 / 2.1.9 / 2.1.10）——发布时改了版本号、
+  # 打完 tag 就忘了把 CHANGELOG 标题改成日期，用户看到的变更记录于是永远停在「未发布」。
+  # 不依赖 git tag，因此在 CI 的浅检出里同样有效。
+  stale_versions=$(grep -oE '^## \[[0-9.]+\] - 未发布' "${ROOT}/CHANGELOG.md" 2>/dev/null \
+    | sed -E 's/^## \[([0-9.]+)\] - 未发布/\1/' | grep -vx "${VERSION}" || true)
+  if [ -n "${stale_versions}" ]; then
+    bad "CHANGELOG 里这些版本已经不是最新版，却仍写着「未发布」：
+       $(echo ${stale_versions} | tr '\n' ' ')
+       已发布的版本必须标上发布日期，例如：## [2.1.10] - 2026-10-13"
+  fi
+
+  # 已发布的当前版本不允许仍写「未发布」：打了 tag 就是已发布。
+  # （CI 浅检出可能没有 tag，此时这条跳过；上面的历史版本检查仍然有效。）
+  if [ -n "${VERSION}" ] \
+     && git -C "${ROOT}" rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null 2>&1 \
+     && grep -qE "^## \[${VERSION}\] - 未发布" "${ROOT}/CHANGELOG.md"; then
+    bad "v${VERSION} 已经打过 tag（已发布），但 CHANGELOG 里仍写着「未发布」。
+       请把标题改成发布当天日期，例如：## [${VERSION}] - 2026-10-13"
+  fi
+
   # 版本号 / tag 一致性：版本号改了却没打 tag，就是「改了但没发布」。
   # 这种错位会让用户拿不到修复（仓库写着新版、Releases 还是旧版）。
   if [ -n "${VERSION}" ] && [ -n "${LAST_TAG}" ] && [ "v${VERSION}" != "${LAST_TAG}" ]; then

@@ -45,6 +45,34 @@ class SessionManifestTest {
     }
 
     @Test
+    fun `session creation normalizes quoted participant names`() {
+        val dir = createTempDirectory("zaomeng-session-name-normalization")
+        try {
+            val storage = StorageService(dir.toString().toPath())
+            storage.writeRunManifest("run-1", buildJsonObject { put("run_id", "run-1"); put("title", "测试") })
+            val service = SessionManagementService(storage, DialogueService(storage))
+
+            // 实机诊断数据：参与者带引号、受控角色是干净写法——归一化后必须是同一个人。
+            val created = service.createDialogueSession(
+                runId = "run-1",
+                mode = "act",
+                participants = listOf("\"李慧英\"", "\"陆城\"", "陆城"),
+                controlledCharacter = "陆城",
+            )
+            val sessionId = created["session_id"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val loaded = storage.loadSessionManifest("run-1", sessionId)
+
+            assertEquals(
+                listOf("李慧英", "陆城"),
+                loaded["participants"]?.jsonArray?.map { it.jsonPrimitive.content },
+            )
+            assertEquals("陆城", loaded["controlled_character"]?.jsonPrimitive?.contentOrNull)
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun `insert session ignores controlled character from stale clients`() {
         val dir = createTempDirectory("zaomeng-insert-session")
         try {

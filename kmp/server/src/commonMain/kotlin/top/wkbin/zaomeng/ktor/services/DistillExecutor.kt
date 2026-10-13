@@ -222,12 +222,14 @@ class DistillExecutor(
                 .take(limit)
         }
         // 回退：按常见分隔符拆分，去掉序号、引号与书名号。
+        // 这里可能拿到「JSON 数组被当字符串按逗号切开」的碎片（`["李慧英"`），
+        // 首尾引号不成对，交给 normalizeListFragment 处理；规则仍收敛在 CharacterNameNormalizer。
         val trimmed = clean
             .split(',', '，', '、', ';', '；', '\n', '|')
             .map(String::trim)
             .filter(String::isNotBlank)
         return trimmed.mapNotNull { raw ->
-            PersonaProfileNormalizer.normalizeCharacterName(raw)
+            CharacterNameNormalizer.normalizeListFragment(raw)
                 .takeIf(PersonaProfileNormalizer::isPlausibleCharacterName)
         }.distinct().take(limit)
     }

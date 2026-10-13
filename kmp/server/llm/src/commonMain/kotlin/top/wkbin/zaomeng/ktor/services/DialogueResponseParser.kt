@@ -39,15 +39,18 @@ object DialogueResponseParser {
         if (text.isEmpty()) throw IllegalArgumentException("Model returned an empty reply.")
         val items = loadResponseItems(text)
         val allowed = allowedSpeakers.map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        // 禁止名单与允许名单使用同一个身份键：`陆城` 与 `"陆城"` 必须视为同一人，
+        // 否则带引号的受控角色写法能绕过禁止名单被当成合法回复。
         val forbidden = forbiddenFixed + forbiddenSpeakers
-            .mapNotNull { it.trim().lowercase().ifEmpty { null } }
+            .map(::normalizeSpeakerName)
+            .filter(String::isNotEmpty)
         val clean = mutableListOf<DialogueResponse>()
         for (element in items) {
             if (element !is JsonObject) continue
             val rawSpeaker = element["speaker"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
             val message = element["message"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
             if (rawSpeaker.isEmpty() || message.isEmpty()) continue
-            if (rawSpeaker.lowercase() in forbidden) continue
+            if (normalizeSpeakerName(rawSpeaker) in forbidden) continue
             val canonical = canonicalSpeaker(rawSpeaker, allowed) ?: continue
             val innerThought = element["inner_thought"]?.jsonPrimitive?.contentOrNull?.trim()
                 ?.take(50)?.ifEmpty { null }
@@ -87,13 +90,14 @@ object DialogueResponseParser {
             return null
         }
         val forbidden = (forbiddenFixed + forbiddenSpeakers)
-            .mapNotNull { it.trim().lowercase().ifEmpty { null } }
+            .map(::normalizeSpeakerName)
+            .filter(String::isNotEmpty)
             .toSet()
         val eligible = allowedSpeakers
             .map(String::trim)
             .filter(String::isNotEmpty)
             .filterNot { it in setOf("旁白", "场景提示") }
-            .filterNot { it.lowercase() in forbidden }
+            .filterNot { normalizeSpeakerName(it) in forbidden }
             .distinct()
         if (eligible.size != 1) return null
         return listOf(DialogueResponse(speaker = eligible.single(), message = text))
@@ -236,25 +240,22 @@ object DialogueResponseParser {
     private fun canonicalSpeaker(speaker: String, allowed: Set<String>): String? {
         if (speaker in allowed) return speaker
         val normalized = normalizeSpeakerName(speaker)
+        if (normalized.isEmpty()) return null
         for (name in allowed) {
             if (normalizeSpeakerName(name) == normalized) return name
         }
         return null
     }
 
-    private val NAME_WRAPPERS = charArrayOf(
-        '"', '\'', '“', '”', '‘', '’', '「', '」', '『', '』',
-        '【', '】', '《', '》', '[', ']', '(', ')', '（', '）', '`',
-    )
-
     /**
-     * speaker 归一化：忽略空白与包裹引号。
+     * speaker 身份键：忽略空白与包裹引号（区分「首尾成对」与单侧引号由
+     * [CharacterNameNormalizer] 统一负责），并忽略大小写。
      *
      * 人物名可能带着引号存进会话参与者列表（模型提取主角时经常返回
-     * `["\"李慧英\""]` 这类元素），而模型输出的是干净名字；不剥掉包裹字符就会
+     * `["\"李慧英\""]` 这类元素），而模型输出的是干净名字；不统一身份键就会
      * 匹配失败，整轮回复被过滤成「没有可用回复」。这里两侧都归一化，
      * 让历史书卷里的脏名字也能继续用。
      */
     internal fun normalizeSpeakerName(value: String): String =
-        value.filterNot { it.isWhitespace() || it in NAME_WRAPPERS }.lowercase()
+        CharacterNameNormalizer.identityKey(value)
 }

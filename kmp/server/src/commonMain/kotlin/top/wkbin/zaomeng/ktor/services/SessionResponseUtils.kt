@@ -73,7 +73,8 @@ fun pageTranscript(
 }
 
 fun toTranscriptItemDto(item: JsonObject): TranscriptItemDto = TranscriptItemDto(
-    speaker = item.stringValue("speaker"),
+    // 展示层兜底：历史数据里的说话人可能带包裹引号，标签不能显示成 `"李慧英"`。
+    speaker = CharacterNameNormalizer.normalize(item.stringValue("speaker")),
     message = item.stringValue("message"),
     innerThought = item.stringValue("inner_thought"),
     role = item.stringValue("role"),

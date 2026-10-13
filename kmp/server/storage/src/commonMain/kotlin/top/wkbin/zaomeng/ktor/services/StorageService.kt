@@ -557,7 +557,96 @@ class StorageService(
             ?: throw NoSuchElementException("Session manifest not found: $sessionId")
 
         val decoded = json.decodeFromString(JsonObject.serializer(), content)
-        return withCharacterAvatars(materializeSessionTranscript(runId, sessionId, decoded), runId)
+        // 读取侧归一化：历史数据里的参与者/受控角色/说话人可能带包裹引号（`"陆城"`），
+        // 直接回给客户端会让说话人标签显示 `"李慧英"`。头像先按原始名字注入，
+        // 再连同 character_avatars 的键一起归一化，避免旧书卷头像丢失。
+        return normalizeSessionCharacterNames(
+            withCharacterAvatars(materializeSessionTranscript(runId, sessionId, decoded), runId),
+        )
+    }
+
+    /**
+     * 会话响应归一化：participants / controlled_character / muted_characters / transcript.speaker
+     * 统一按 [CharacterNameNormalizer] 去掉首尾成对引号，并把 `character_avatars` 的键
+     * 改成归一化后的名字（值沿用归一化前算出的版本号，避免旧书卷头像丢失）。
+     */
+    private fun normalizeSessionCharacterNames(manifest: JsonObject): JsonObject {
+        val rawParticipants = (manifest["participants"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+            .orEmpty()
+        val normalizedParticipants = CharacterNameNormalizer.normalizeNames(rawParticipants)
+        val rawAvatars = manifest["character_avatars"] as? JsonObject
+        return buildJsonObject {
+            manifest.forEach { (key, value) ->
+                when (key) {
+                    "participants" -> put(
+                        key,
+                        buildJsonArray { normalizedParticipants.forEach { add(JsonPrimitive(it)) } },
+                    )
+                    "character_avatars" -> if (rawAvatars == null) {
+                        put(key, value)
+                    } else {
+                        put(key, buildJsonObject {
+                            normalizedParticipants.forEach { name ->
+                                val identity = CharacterNameNormalizer.identityKey(name)
+                                val version = rawAvatars.entries
+                                    .firstOrNull { (raw, _) -> CharacterNameNormalizer.identityKey(raw) == identity }
+                                    ?.value
+                                    ?.let { (it as? JsonPrimitive)?.contentOrNull }
+                                    .orEmpty()
+                                put(name, JsonPrimitive(version))
+                            }
+                        })
+                    }
+                    "controlled_character" -> put(
+                        key,
+                        JsonPrimitive(
+                            CharacterNameNormalizer.normalize((value as? JsonPrimitive)?.contentOrNull.orEmpty()),
+                        ),
+                    )
+                    "muted_characters" -> {
+                        val muted = value as? JsonArray
+                        if (muted == null) {
+                            put(key, value)
+                        } else {
+                            put(
+                                key,
+                                buildJsonArray {
+                                    CharacterNameNormalizer.normalizeNames(
+                                        muted.mapNotNull { (it as? JsonPrimitive)?.contentOrNull },
+                                    ).forEach { add(JsonPrimitive(it)) }
+                                },
+                            )
+                        }
+                    }
+                    "transcript" -> {
+                        val transcript = value as? JsonArray
+                        if (transcript == null) {
+                            put(key, value)
+                        } else {
+                            put(
+                                key,
+                                buildJsonArray {
+                                    transcript.forEach { entry ->
+                                        val obj = entry as? JsonObject
+                                        val speaker = (obj?.get("speaker") as? JsonPrimitive)?.contentOrNull
+                                        if (obj == null || speaker == null) {
+                                            add(entry)
+                                        } else {
+                                            add(buildJsonObject {
+                                                obj.forEach { (entryKey, entryValue) -> put(entryKey, entryValue) }
+                                                put("speaker", JsonPrimitive(CharacterNameNormalizer.normalize(speaker)))
+                                            })
+                                        }
+                                    }
+                                },
+                            )
+                        }
+                    }
+                    else -> put(key, value)
+                }
+            }
+        }
     }
 
     // ------------------------------------------------------------------

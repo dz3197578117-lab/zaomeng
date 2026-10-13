@@ -38,7 +38,7 @@
 | `kmp/server/src/commonMain/.../ktor/services/GgufMetadataReader.kt` | 流式读 GGUF 头，拿上下文长度等元信息 |
 | `kmp/server/src/commonMain/.../ktor/routes/OnDeviceModelRoute.kt` | `/api/web/on-device/*` 路由 |
 | `kmp/core/contracts/.../data/api/OnDeviceModelContracts.kt` | 端侧状态/模型 DTO |
-| `kmp/feature/settings/.../OnDeviceModelSection.kt` | 模型编辑页内的端侧区块 |
+| `kmp/feature/settings/.../OnDeviceModelContent.kt` | 端侧区块内容（原 `OnDeviceModelSection.kt`；已从模型编辑页拆出，只由独立页承载） |
 | `kmp/feature/settings/.../OnDeviceModelsScreen.kt` | 「本机模型（端侧）」页面 |
 | `kmp/feature/settings/.../OnDeviceModelsViewModel.kt` | 页面状态与轮询 |
 | `kmp/ui/shared/src/commonMain/.../platform/ModelFileImporter.kt` | 导入 GGUF：FileKit 选文件 + 流式分片拷贝 |

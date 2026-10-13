@@ -16,12 +16,18 @@ import top.wkbin.zaomeng.data.api.OnDeviceStatusDto
 import top.wkbin.zaomeng.data.api.SaveModelSettingsRequest
 import top.wkbin.zaomeng.data.api.StartOnDeviceRequest
 
+/** 去掉 .gguf 扩展名（与端侧服务里的 --alias 保持一致）。 */
+internal fun onDeviceStem(fileName: String): String {
+    val index = fileName.lastIndexOf('.')
+    return if (index > 0) fileName.substring(0, index) else fileName
+}
+
 /**
  * 独立「本机模型」页的状态。
  *
- * 和 `ModelProfileEditorViewModel` 里那套端侧状态的区别：那边是**编辑某个档案时顺手配端侧**，
- * 所以「一键」只能是把手填到表单里、还得用户自己保存；这里是**专门管端侧的页面**，
- * 没有表单也没有「档案」概念，所以「启用本机推理」直接创建/更新档案并激活。
+ * 端侧状态（运行状态、模型目录、下载/导入进度、日志）**只**归这里管，模型档案编辑页不再持有
+ * 任何端侧字段——编辑 API 档案时看不到端侧配置，端侧配置也不会因为离开编辑页而丢掉。
+ * 因为这里没有表单也没有「档案」概念，「启用本机推理」直接创建/更新档案并激活。
  */
 data class OnDeviceModelsUiState(
     val onDevice: OnDeviceStatusDto? = null,

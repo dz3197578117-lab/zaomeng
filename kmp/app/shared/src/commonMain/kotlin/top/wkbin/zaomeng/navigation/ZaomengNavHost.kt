@@ -200,6 +200,7 @@ fun ZaomengNavHost(
                     onEditProfile = { profileId ->
                         backStack.add(ModelProfileEditorDestination(profileId))
                     },
+                    onOpenOnDeviceModels = { backStack.add(OnDeviceModelsDestination) },
                 )
             }
             entry(OnDeviceModelsDestination) {

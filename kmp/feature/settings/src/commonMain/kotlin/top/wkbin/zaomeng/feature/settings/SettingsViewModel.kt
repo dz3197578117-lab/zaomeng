@@ -105,7 +105,7 @@ val modelCatalogs = listOf(
         needsApiKey = false,
     ),
     // 端侧内嵌推理：App 自己启动 llama-server 并监听 127.0.0.1，所以既没有默认地址也没有密钥。
-    // 接口地址与模型名由编辑页的「本机模型（端侧）」区域一键回填。
+    // 接口地址与模型名由独立页「本机模型（端侧）」的「启用本机推理」自动落成 provider = local 的档案。
     ModelCatalog(
         "local",
         "本机模型（端侧）",

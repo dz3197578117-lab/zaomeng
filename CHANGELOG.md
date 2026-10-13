@@ -6,7 +6,45 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
-## [2.1.10] - 未发布
+## [2.1.11] - 未发布
+
+### 变更
+
+- **「本机模型（端侧）」从模型档案编辑页拆成独立页**：以前新增/编辑 API 档案时，
+  表单中部会整块出现端侧配置（导入 .gguf、下载模型、上下文长度、线程数、启动、运行日志），
+  看起来像是档案的一部分。
+  - 端侧状态与轮询原先在模型档案编辑页的 ViewModel 里另存了一份，现已删除，
+    统一由 `OnDeviceModelsViewModel` 持有；编辑页只剩档案表单、API Key、推理参数与能力检测。
+  - 模型档案列表页顶部新增「本机模型（端侧）」入口（设置首页原有入口保留）；
+    启动模型后在端侧页点「启用本机推理」，即创建/更新 `provider = local` 的档案并设为当前模型——
+    原先编辑页里的「填入本机地址」由这个动作取代。
+
+### 修复
+
+- **修复角色名混入字面引号**（`"李慧英"` / `"陆城"`）。诊断里的形状是同一角色同时出现在允许与禁止名单：
+  `allowed_responders: "李慧英"、"陆城"、旁白、场景提示`，而 `forbidden_responders: 陆城、作者`
+  —— 带引号的 `"陆城"` 被判合法、干净的 `陆城` 被判非法，模型输出的正常名字于是被拒，
+  反复 `dialogue.parse_failed` 重试，严重时两次都失败变成 `dialogue.stream_error`；
+  界面上说话人标签也直接显示成 `"李慧英"`。
+  - **根因**：会话创建、名单拼装、解析器、读取展示**四处都不做名字归一化**，
+    只要上游（模型提取主角时会返回 `["\"李慧英\"", …]` 这种「字符串里再套一层引号」的元素）
+    带进引号，就会一路存活到落盘与展示。
+  - **修复**：新增 `CharacterNameNormalizer`（只剥**首尾成对**的引号/括号，
+    单侧引号与名字中间的引号保留），写入口归一化；
+    允许/禁止名单改为按**身份键**取差集，保证同一角色不会同时出现在两个名单里；
+    解析器与流式链路共用同一身份键；读取侧归一化会话响应与消息分页的说话人，
+    并**同步改名头像键**（先按原始名字注入再归一化，旧书卷头像不丢）。
+  - 新增 12 + 4 个回归测试用例，其中含**实机形状**（`participants` 带引号、`controlled_character` 干净）
+    下「两个名单身份不相交、且人物档案不丢」。
+
+### 已知限制
+
+- 只覆盖说话人/参与者这条线：`state.presence`、`scene_progress`、`event_signals`、`speaker_activity`、
+  关系图键等**次要界面**在**旧数据**上仍可能显示带引号的名字（生成链路已安全）。
+- `redistill` / `resumeDistill` **故意不归一化**旧名字：否则会在带引号的旧目录旁新建一个干净目录，
+  同一角色被扫描成两条，比原 bug 更糟。需要时另行做数据迁移。
+
+## [2.1.10] - 2026-10-13
 
 ### 修复
 
@@ -248,7 +286,8 @@
 早期版本（含从上游造梦 2.0 继续改动的部分）逐文件清单见
 [`docs/changes-from-upstream.md`](docs/changes-from-upstream.md)。
 
-[2.1.10]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.9...HEAD
+[2.1.11]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.10...HEAD
+[2.1.10]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.9...v2.1.10
 [2.1.9]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.8...v2.1.9
 [2.1.8]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.7...v2.1.8
 [2.1.7]: https://github.com/dz3197578117-lab/zaomeng/compare/v2.1.6...v2.1.7

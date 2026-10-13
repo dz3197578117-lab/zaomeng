@@ -150,4 +150,20 @@ class DialogueResponseParserTest {
         assertEquals(1, parsed.size)
         assertEquals("陆城", parsed.single().speaker)
     }
+
+    @Test
+    fun `quoted spelling of a forbidden speaker is rejected`() {
+        val content = """
+            [{"speaker":"\"陆城\"","message":"这事我不掺和。"},
+             {"speaker":"李慧英","message":"批文的事，你帮不帮？"}]
+        """.trimIndent()
+        val parsed = DialogueResponseParser.parse(
+            content,
+            allowedSpeakers = listOf("\"陆城\"", "李慧英"),
+            forbiddenSpeakers = listOf("陆城"),
+        )
+
+        // 禁止名单与允许名单必须按同一身份比较：带引号的受控角色不能借写法绕过禁止名单
+        assertEquals(listOf("李慧英"), parsed.map { it.speaker })
+    }
 }

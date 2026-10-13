@@ -98,12 +98,16 @@ class DialogueStreamService(
         // Otherwise a model response for the user-controlled character is briefly rendered and
         // then disappears when the committed transcript correctly filters it out.
         val inputMap = (payload["input"] as? Map<*, *>)?.mapKeys { it.key.toString() } ?: emptyMap()
-        val participants = ((inputMap["allowed_responders"] as? List<*>) ?: emptyList<Any?>())
-            .mapNotNull { it?.toString()?.trim() }.filter { it.isNotEmpty() } + listOf("旁白", "场景提示")
+        // 与最终解析共用同一份身份归一化：历史会话里存的 `"陆城"` 要当成 `陆城`，
+        // 否则同一角色会同时出现在允许与禁止名单，模型输出干净名字会被整轮过滤。
+        val participants = CharacterNameNormalizer.normalizeNames(
+            ((inputMap["allowed_responders"] as? List<*>) ?: emptyList<Any?>())
+                .mapNotNull { it?.toString() },
+        ) + listOf("旁白", "场景提示")
         val forbidden = listOf(
-            inputMap["controlled_character"]?.toString()?.trim().orEmpty(),
-            inputMap["speaker"]?.toString()?.trim().orEmpty(),
-        )
+            inputMap["controlled_character"]?.toString().orEmpty(),
+            inputMap["speaker"]?.toString().orEmpty(),
+        ).map(CharacterNameNormalizer::normalize).filter(String::isNotEmpty)
 
         // 5. 创建流式解析器（密钥由 LlmClient 从活动模型配置与 Keystore 解析，无需在此获取）
         val parser = DialogueStreamParser(chunkSize = 24)
@@ -375,11 +379,6 @@ internal fun filterDialogueStreamEvents(
 }
 
 private fun normalizeDialogueSpeaker(value: String): String =
-    // 与 DialogueResponseParser.normalizeSpeakerName 保持一致：
-    // 忽略空白与包裹引号，人物名带引号时也能匹配上。
-    value.filterNot { it.isWhitespace() || it in SPEAKER_NAME_WRAPPERS }.lowercase()
-
-private val SPEAKER_NAME_WRAPPERS = charArrayOf(
-    '"', '\'', '“', '”', '‘', '’', '「', '」', '『', '』',
-    '【', '】', '《', '》', '[', ']', '(', ')', '（', '）', '`',
-)
+    // 与 DialogueResponseParser.normalizeSpeakerName 共用同一个身份键：
+    // 忽略空白与首尾成对引号，人物名带引号时也能匹配上。
+    CharacterNameNormalizer.identityKey(value)

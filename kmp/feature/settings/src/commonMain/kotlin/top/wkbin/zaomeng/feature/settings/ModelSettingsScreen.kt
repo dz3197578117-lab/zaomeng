@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -25,6 +24,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -76,6 +76,7 @@ fun ModelSettingsScreen(
     onBack: () -> Unit,
     onAddProfile: () -> Unit,
     onEditProfile: (String) -> Unit,
+    onOpenOnDeviceModels: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -112,11 +113,17 @@ fun ModelSettingsScreen(
             contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 92.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            // 端侧入口独立成页：档案列表只管「用哪个模型服务」，不再把端侧配置塞进档案表单。
+            item(key = "on-device-entry") {
+                OnDeviceEntryCard(onClick = onOpenOnDeviceModels)
+            }
             if (state.error.isNotBlank() || state.message.isNotBlank()) {
-                item { StatusMessage(state.error.ifBlank { state.message }, state.error.isNotBlank()) }
+                item(key = "status-message") {
+                    StatusMessage(state.error.ifBlank { state.message }, state.error.isNotBlank())
+                }
             }
             if (state.profiles.isEmpty()) {
-                item {
+                item(key = "empty-profiles") {
                     EmptyProfiles(onAddProfile)
                 }
             } else {
@@ -238,8 +245,8 @@ fun ModelProfileEditorScreen(
         )
     }
 
-    // 进入编辑页就拉一次端侧状态：启动/下载中会自动续上轮询
-    LaunchedEffect(Unit) { viewModel.refreshOnDevice() }
+    // 端侧（本机模型）配置与这个表单无关：它在「本机模型（端侧）」独立页里，
+    // 由 OnDeviceModelsViewModel 持有，避免编辑 API 档案时被端侧状态干扰。
 
     Scaffold(
         topBar = {
@@ -391,43 +398,6 @@ fun ModelProfileEditorScreen(
                     }
                 }
             }
-            item {
-                OnDeviceModelSection(
-                    status = state.onDevice,
-                    busy = state.onDeviceBusy,
-                    selectedModel = state.onDeviceSelectedModel,
-                    contextSize = state.onDeviceContextSize,
-                    threads = state.onDeviceThreads,
-                    disableThinking = state.onDeviceDisableThinking,
-                    downloadUrl = state.onDeviceDownloadUrl,
-                    downloadFileName = state.onDeviceDownloadFileName,
-                    importing = state.onDeviceImporting,
-                    importFileName = state.onDeviceImportFileName,
-                    importCopiedBytes = state.onDeviceImportCopiedBytes,
-                    importTotalBytes = state.onDeviceImportTotalBytes,
-                    logs = state.onDeviceLogs,
-                    showLogs = state.onDeviceShowLogs,
-                    onRefresh = { viewModel.refreshOnDevice() },
-                    onSelectModel = viewModel::selectOnDeviceModel,
-                    onContextSizeChange = viewModel::updateOnDeviceContextSize,
-                    onThreadsChange = viewModel::updateOnDeviceThreads,
-                    onDisableThinkingChange = viewModel::updateOnDeviceDisableThinking,
-                    onStart = viewModel::startOnDevice,
-                    onStop = viewModel::stopOnDevice,
-                    onDownloadUrlChange = viewModel::updateOnDeviceDownloadUrl,
-                    onDownloadFileNameChange = viewModel::updateOnDeviceDownloadFileName,
-                    onDownload = viewModel::downloadOnDeviceModel,
-                    onCancelDownload = viewModel::cancelOnDeviceDownload,
-                    onImportStarted = viewModel::onDeviceImportStarted,
-                    onImportProgress = viewModel::onDeviceImportProgress,
-                    onImportSucceeded = viewModel::onDeviceImportFinished,
-                    onImportFailed = viewModel::onDeviceImportFailed,
-                    onImportCancelled = viewModel::onDeviceImportCancelled,
-                    onDeleteModel = viewModel::deleteOnDeviceModel,
-                    onApplyEndpoint = viewModel::applyOnDeviceEndpoint,
-                    onToggleLogs = viewModel::toggleOnDeviceLogs,
-                )
-            }
             if (supportsReasoningControls(state)) {
                 item {
                     EditorSection("模型推理") {
@@ -528,6 +498,47 @@ fun ModelProfileEditorScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * 档案列表顶部的「本机模型（端侧）」入口。
+ *
+ * 端侧配置从这里单独进页，不再混进「新增/编辑模型档案」表单：
+ * 一个档案描述的是一个模型服务端点，端侧是「本机另起一个 llama.cpp 端点」，
+ * 两者生命周期不同（端侧要先导入模型、再启动，然后才谈得上回填地址）。
+ */
+@Composable
+private fun OnDeviceEntryCard(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(
+                Icons.Outlined.Memory,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("本机模型（端侧）", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "导入或下载 GGUF 模型，在本机离线运行推理；启动后可一键启用本机推理，不需要 API Key。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = "本机模型（端侧）",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

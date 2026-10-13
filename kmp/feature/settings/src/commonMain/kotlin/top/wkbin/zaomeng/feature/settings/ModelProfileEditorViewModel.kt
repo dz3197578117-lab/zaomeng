@@ -3,20 +3,15 @@ package top.wkbin.zaomeng.feature.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import top.wkbin.zaomeng.data.ModelSettingsRepository
-import top.wkbin.zaomeng.data.api.DownloadOnDeviceModelRequest
 import top.wkbin.zaomeng.data.api.ModelProfileDto
 import top.wkbin.zaomeng.data.api.ModelCapabilityReportDto
-import top.wkbin.zaomeng.data.api.OnDeviceStatusDto
 import top.wkbin.zaomeng.data.api.SaveModelSettingsRequest
-import top.wkbin.zaomeng.data.api.StartOnDeviceRequest
 import top.wkbin.zaomeng.data.api.TestModelSettingsRequest
 
 data class ModelProfileEditorUiState(
@@ -53,28 +48,6 @@ data class ModelProfileEditorUiState(
     val message: String = "",
     val error: String = "",
     val completed: Boolean = false,
-    // ---------------- 端侧推理（本机 llama.cpp） ----------------
-    /** null = 还没拉到状态。 */
-    val onDevice: OnDeviceStatusDto? = null,
-    val onDeviceBusy: Boolean = false,
-    val onDeviceSelectedModel: String = "",
-    val onDeviceContextSize: String = "0",
-    val onDeviceThreads: String = "0",
-    val onDeviceDisableThinking: Boolean = true,
-    val onDeviceDownloadUrl: String = "",
-    val onDeviceDownloadFileName: String = "",
-    /**
-     * 本地导入（从文件选择器搬一个已下载好的 .gguf 进模型目录）。
-     *
-     * 复制发生在 UI 层——只有 UI 拿得到系统选择器返回的 `content://` URI，
-     * 且后端与 UI 同进程、共用同一个文件系统，搬完只要刷一次状态就能被扫到。
-     */
-    val onDeviceImporting: Boolean = false,
-    val onDeviceImportFileName: String = "",
-    val onDeviceImportCopiedBytes: Long = 0L,
-    val onDeviceImportTotalBytes: Long = 0L,
-    val onDeviceLogs: String = "",
-    val onDeviceShowLogs: Boolean = false,
     val original: EditorSnapshot? = null,
 ) {
     val isDirty: Boolean
@@ -100,24 +73,12 @@ data class EditorSnapshot(
     val apiKeyRequired: Boolean,
 )
 
-private const val ON_DEVICE_POLL_INTERVAL_MS = 1_000L
-private const val ON_DEVICE_POLL_LIMIT = 600
-
-/** 去掉 .gguf 扩展名（与端侧服务里的 --alias 保持一致）。 */
-internal fun onDeviceStem(fileName: String): String {
-    val index = fileName.lastIndexOf('.')
-    return if (index > 0) fileName.substring(0, index) else fileName
-}
-
 class ModelProfileEditorViewModel(
     private val repository: ModelSettingsRepository,
     private val requestedProfileId: String,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ModelProfileEditorUiState())
     val state: StateFlow<ModelProfileEditorUiState> = mutableState.asStateFlow()
-
-    /** 端侧启动/下载期间的轮询任务。 */
-    private var onDevicePollJob: Job? = null
 
     init {
         load()
@@ -331,297 +292,6 @@ class ModelProfileEditorViewModel(
     /** UI 消费完成信号后复位，避免 entry 复用/残留下一次打开立即触发返回。 */
     fun consumeCompleted() {
         mutableState.update { it.copy(completed = false) }
-    }
-
-    // ------------------------------------------------------------------
-    // 端侧推理（本机 llama.cpp）
-    // ------------------------------------------------------------------
-
-    /** 拉一次端侧状态；若正在启动/下载会自己续上轮询。 */
-    fun refreshOnDevice(startPolling: Boolean = true) {
-        viewModelScope.launch {
-            refreshOnDeviceOnce()
-            if (startPolling) ensureOnDevicePolling()
-        }
-    }
-
-    private suspend fun refreshOnDeviceOnce() {
-        try {
-            val status = repository.onDeviceStatus()
-            mutableState.update { current ->
-                current.copy(
-                    onDevice = status,
-                    onDeviceSelectedModel = current.onDeviceSelectedModel
-                        .takeIf { selected -> status.models.any { it.fileName == selected } }
-                        ?: status.modelFile.takeIf { it.isNotBlank() && status.running }
-                        ?: status.models.firstOrNull()?.fileName.orEmpty(),
-                )
-            }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Throwable) {
-            mutableState.update { it.copy(error = error.message ?: "端侧状态读取失败。") }
-        }
-    }
-
-    private fun ensureOnDevicePolling() {
-        if (onDevicePollJob?.isActive == true) return
-        val status = state.value.onDevice ?: return
-        if (!status.starting && status.download?.active != true) return
-        onDevicePollJob = viewModelScope.launch {
-            repeat(ON_DEVICE_POLL_LIMIT) {
-                delay(ON_DEVICE_POLL_INTERVAL_MS)
-                refreshOnDeviceOnce()
-                val latest = state.value.onDevice ?: return@launch
-                if (!latest.starting && latest.download?.active != true) return@launch
-            }
-        }
-    }
-
-    fun selectOnDeviceModel(fileName: String) =
-        mutableState.update { it.copy(onDeviceSelectedModel = fileName, error = "", message = "") }
-
-    fun updateOnDeviceContextSize(value: String) =
-        mutableState.update { it.copy(onDeviceContextSize = value.filter(Char::isDigit).take(5)) }
-
-    fun updateOnDeviceThreads(value: String) =
-        mutableState.update { it.copy(onDeviceThreads = value.filter(Char::isDigit).take(2)) }
-
-    fun updateOnDeviceDisableThinking(value: Boolean) =
-        mutableState.update { it.copy(onDeviceDisableThinking = value) }
-
-    fun updateOnDeviceDownloadUrl(value: String) =
-        mutableState.update { it.copy(onDeviceDownloadUrl = value) }
-
-    fun updateOnDeviceDownloadFileName(value: String) =
-        mutableState.update { it.copy(onDeviceDownloadFileName = value) }
-
-    fun toggleOnDeviceLogs() {
-        val next = !state.value.onDeviceShowLogs
-        mutableState.update { it.copy(onDeviceShowLogs = next) }
-        if (next) loadOnDeviceLogs()
-    }
-
-    fun loadOnDeviceLogs() {
-        viewModelScope.launch {
-            try {
-                val logs = repository.onDeviceLogs(8_000)
-                mutableState.update { it.copy(onDeviceLogs = logs.log.ifBlank { "（暂无日志）" }) }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                mutableState.update { it.copy(onDeviceLogs = error.message ?: "日志读取失败。") }
-            }
-        }
-    }
-
-    fun startOnDevice() {
-        val current = state.value
-        val status = current.onDevice ?: return
-        val fileName = current.onDeviceSelectedModel.ifBlank { status.modelFile }
-        if (fileName.isBlank()) {
-            mutableState.update { it.copy(error = "请先选择一个端侧模型。") }
-            return
-        }
-        viewModelScope.launch {
-            mutableState.update { it.copy(onDeviceBusy = true, error = "", message = "") }
-            try {
-                val started = repository.startOnDevice(
-                    StartOnDeviceRequest(
-                        modelFile = fileName,
-                        contextSize = current.onDeviceContextSize.toIntOrNull() ?: 0,
-                        threads = current.onDeviceThreads.toIntOrNull() ?: 0,
-                        disableThinking = current.onDeviceDisableThinking,
-                    ),
-                )
-                mutableState.update {
-                    it.copy(onDevice = started, onDeviceBusy = false, message = "正在加载模型，首次加载需要十几秒到几分钟…")
-                }
-                ensureOnDevicePolling()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                mutableState.update { it.copy(onDeviceBusy = false, error = error.message ?: "启动端侧推理失败。") }
-                refreshOnDevice(startPolling = false)
-            }
-        }
-    }
-
-    fun stopOnDevice() {
-        viewModelScope.launch {
-            mutableState.update { it.copy(onDeviceBusy = true, error = "", message = "") }
-            try {
-                val stopped = repository.stopOnDevice()
-                mutableState.update { it.copy(onDevice = stopped, onDeviceBusy = false) }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                mutableState.update { it.copy(onDeviceBusy = false, error = error.message ?: "停止端侧推理失败。") }
-            }
-        }
-    }
-
-    fun downloadOnDeviceModel() {
-        val current = state.value
-        val url = current.onDeviceDownloadUrl.trim()
-        if (url.isBlank()) {
-            mutableState.update { it.copy(error = "请填写模型下载直链。") }
-            return
-        }
-        viewModelScope.launch {
-            mutableState.update { it.copy(onDeviceBusy = true, error = "", message = "") }
-            try {
-                val status = repository.downloadOnDeviceModel(
-                    DownloadOnDeviceModelRequest(
-                        url = url,
-                        fileName = current.onDeviceDownloadFileName.trim(),
-                    ),
-                )
-                mutableState.update { it.copy(onDevice = status, onDeviceBusy = false, message = "已开始下载…") }
-                ensureOnDevicePolling()
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                mutableState.update { it.copy(onDeviceBusy = false, error = error.message ?: "下载失败。") }
-            }
-        }
-    }
-
-    fun cancelOnDeviceDownload() {
-        viewModelScope.launch {
-            try {
-                val status = repository.cancelOnDeviceDownload()
-                mutableState.update { it.copy(onDevice = status, message = "已取消下载。") }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                mutableState.update { it.copy(error = error.message ?: "取消下载失败。") }
-            }
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // 本地导入：把用户手机上已有的 .gguf 搬进模型目录
-    //
-    // 复制动作由 UI 层执行（只有 UI 拿得到系统选择器返回的 `content://` URI），
-    // 目标路径用状态里的 `modelsDir`——后端与 UI 同进程、同一个文件系统，
-    // 所以搬完只要重扫一次目录就能被 listModels() 扫到，无需新增后端接口。
-    // ------------------------------------------------------------------
-
-    fun onDeviceImportStarted(fileName: String, totalBytes: Long) {
-        mutableState.update {
-            it.copy(
-                onDeviceImporting = true,
-                onDeviceImportFileName = fileName,
-                onDeviceImportCopiedBytes = 0L,
-                onDeviceImportTotalBytes = totalBytes.coerceAtLeast(0L),
-                error = "",
-                message = "正在导入 $fileName…",
-            )
-        }
-    }
-
-    fun onDeviceImportProgress(copiedBytes: Long, totalBytes: Long) {
-        mutableState.update { current ->
-            if (!current.onDeviceImporting) {
-                current
-            } else {
-                current.copy(
-                    onDeviceImportCopiedBytes = copiedBytes,
-                    // 来源（云盘挂载等）可能不上报大小，那就保持 0，让 UI 用不确定进度条
-                    onDeviceImportTotalBytes = if (totalBytes > 0) totalBytes else current.onDeviceImportTotalBytes,
-                )
-            }
-        }
-    }
-
-    fun onDeviceImportFinished(fileName: String, sizeBytes: Long) {
-        mutableState.update {
-            it.copy(
-                onDeviceImporting = false,
-                onDeviceImportFileName = "",
-                onDeviceImportCopiedBytes = sizeBytes,
-                onDeviceImportTotalBytes = sizeBytes,
-                onDeviceSelectedModel = fileName,
-                error = "",
-                message = "已导入 $fileName，点「启动」即可加载。",
-            )
-        }
-        // 重扫目录，让新模型带上 GGUF 元数据（架构 / 上下文长度 / 量化）出现在下拉里
-        viewModelScope.launch { refreshOnDeviceOnce() }
-    }
-
-    fun onDeviceImportFailed(message: String) {
-        mutableState.update {
-            it.copy(
-                onDeviceImporting = false,
-                onDeviceImportFileName = "",
-                onDeviceImportCopiedBytes = 0L,
-                onDeviceImportTotalBytes = 0L,
-                message = "",
-                error = message,
-            )
-        }
-    }
-
-    fun onDeviceImportCancelled() {
-        mutableState.update {
-            it.copy(
-                onDeviceImporting = false,
-                onDeviceImportFileName = "",
-                onDeviceImportCopiedBytes = 0L,
-                onDeviceImportTotalBytes = 0L,
-                message = "已取消导入。",
-            )
-        }
-    }
-
-    fun deleteOnDeviceModel(fileName: String) {
-        viewModelScope.launch {
-            mutableState.update { it.copy(onDeviceBusy = true, error = "", message = "") }
-            try {
-                val status = repository.deleteOnDeviceModel(fileName)
-                mutableState.update {
-                    it.copy(
-                        onDevice = status,
-                        onDeviceBusy = false,
-                        onDeviceSelectedModel = it.onDeviceSelectedModel.takeIf { selected -> selected != fileName }.orEmpty(),
-                        message = "已删除 $fileName。",
-                    )
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Throwable) {
-                mutableState.update { it.copy(onDeviceBusy = false, error = error.message ?: "删除失败。") }
-            }
-        }
-    }
-
-    /**
-     * 把当前运行中的端侧端点回填到表单。
-     *
-     * 这是整个端侧方案的关键一步：端侧对上层只是「一个不需要 API Key 的本机 OpenAI 端点」，
-     * 回填后一切现有功能（对话、摘要、关系抽取、蒸馏）都不需要任何额外代码就会走本机。
-     */
-    fun applyOnDeviceEndpoint() {
-        val status = state.value.onDevice ?: return
-        if (!status.running || status.baseUrl.isBlank()) {
-            mutableState.update { it.copy(error = "端侧推理尚未运行，请先启动一个模型。") }
-            return
-        }
-        val modelId = status.modelAlias.ifBlank { onDeviceStem(status.modelFile) }
-        mutableState.update {
-            it.copy(
-                provider = "local",
-                selectedCatalogId = "local",
-                baseUrl = status.baseUrl,
-                model = modelId,
-                apiKey = "",
-                apiKeyRequired = false,
-                error = "",
-                message = "已回填本机端点：${status.baseUrl}（模型 $modelId），保存后启用即生效。",
-            )
-        }
     }
 
     private fun load() {

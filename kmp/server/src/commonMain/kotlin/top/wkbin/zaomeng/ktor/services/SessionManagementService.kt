@@ -68,9 +68,12 @@ class SessionManagementService(
         if (mode !in listOf("observe", "act", "insert", "control", "free")) {
             throw IllegalArgumentException("Invalid mode: $mode")
         }
+        // 写入口归一化：客户端可能把带引号的历史名字（`"陆城"`）传进来，
+        // 直接落盘会让同一角色在允许/禁止名单里各出现一次。
+        val normalizedParticipants = CharacterNameNormalizer.normalizeNames(participants)
         val normalizedControlledCharacter = if (mode == "act") {
-            controlledCharacter.trim().also { controlled ->
-                if (controlled.isBlank() || controlled !in participants) {
+            CharacterNameNormalizer.normalize(controlledCharacter).also { controlled ->
+                if (controlled.isBlank() || controlled !in normalizedParticipants) {
                     throw IllegalArgumentException("Controlled character must be one of the participants in act mode")
                 }
             }
@@ -91,7 +94,7 @@ class SessionManagementService(
             sessionId = sessionId,
             runId = runId,
             mode = mode,
-            participants = participants,
+            participants = normalizedParticipants,
             controlledCharacter = normalizedControlledCharacter,
             sceneCardId = sceneCardId,
             sceneProfile = sceneProfile,
@@ -131,11 +134,18 @@ class SessionManagementService(
         selfProfile: JsonObject = JsonObject(emptyMap()),
         startChapter: Int = 0,
     ): JsonObject {
-        val normalizedControlledCharacter = controlledCharacter.takeIf { mode == "act" }.orEmpty()
-        if ((mode == "observe" || mode == "act") && participants.size < 2) {
+        // 写入口归一化：会话参与者是「人物名进入系统」的关键入口，带引号的旧名字
+        // 会让同一角色同时出现在允许与禁止回复名单里（见 CharacterNameNormalizer）。
+        val normalizedParticipants = CharacterNameNormalizer.normalizeNames(participants)
+        val normalizedControlledCharacter = if (mode == "act") {
+            CharacterNameNormalizer.normalize(controlledCharacter)
+        } else {
+            ""
+        }
+        if ((mode == "observe" || mode == "act") && normalizedParticipants.size < 2) {
             throw IllegalArgumentException("At least two participants are required for $mode mode")
         }
-        if (mode == "insert" && participants.size < 1) {
+        if (mode == "insert" && normalizedParticipants.isEmpty()) {
             throw IllegalArgumentException("At least one participant is required for insert mode")
         }
         // 「从原文某一章开始」：本地解析该章开头的原文片段，注入开场提示词。
@@ -148,7 +158,7 @@ class SessionManagementService(
         val session = createDialogueSession(
             runId = runId,
             mode = mode,
-            participants = participants,
+            participants = normalizedParticipants,
             controlledCharacter = normalizedControlledCharacter,
             sceneCardId = sceneCardId,
             sceneProfile = sceneProfile,
@@ -161,7 +171,7 @@ class SessionManagementService(
         try {
             val openingMessage = buildOpeningMessage(
                 mode = mode,
-                participants = participants,
+                participants = normalizedParticipants,
                 controlledCharacter = normalizedControlledCharacter,
                 sceneProfile = sceneProfile,
                 selfProfile = selfProfile,
@@ -179,7 +189,7 @@ class SessionManagementService(
                 val generated = autoSessionTitle(
                     session = session,
                     mode = mode,
-                    participants = participants,
+                    participants = normalizedParticipants,
                     controlledCharacter = normalizedControlledCharacter,
                     sceneProfile = sceneProfile,
                     selfProfile = selfProfile,
@@ -426,16 +436,18 @@ class SessionManagementService(
         title = manifest.stringValue("title"),
         mode = manifest.stringValue("mode"),
         modeDisplay = manifest.stringValue("mode_display"),
-        participants = (manifest["participants"] as? JsonArray)
-            ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
-            .orEmpty(),
+        participants = CharacterNameNormalizer.normalizeNames(
+            (manifest["participants"] as? JsonArray)
+                ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                .orEmpty(),
+        ),
         characterAvatars = (manifest["character_avatars"] as? JsonObject)
             ?.mapNotNull { (name, value) ->
                 (value as? JsonPrimitive)?.contentOrNull?.let { name to it }
             }
             ?.toMap()
             .orEmpty(),
-        controlledCharacter = manifest.stringValue("controlled_character"),
+        controlledCharacter = CharacterNameNormalizer.normalize(manifest.stringValue("controlled_character")),
         status = manifest.stringValue("status"),
         turnCount = (manifest["turn_count"] as? JsonPrimitive)?.intOrNull ?: 0,
         currentTurnId = manifest.stringValue("current_turn_id"),

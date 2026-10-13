@@ -56,4 +56,70 @@ class CharacterNameNormalizationTest {
         assertFalse(PersonaProfileNormalizer.isPlausibleCharacterName("这个角色的名字特别长特别长特别长特别长"))
         assertTrue(PersonaProfileNormalizer.isPlausibleCharacterName("\"李慧英\""))
     }
+
+    @Test
+    fun `paired chinese quotes are stripped`() {
+        assertEquals("李慧英", CharacterNameNormalizer.normalize("“李慧英”"))
+        assertEquals("李慧英", CharacterNameNormalizer.normalize("‘李慧英’"))
+        assertEquals("李慧英", CharacterNameNormalizer.normalize("「李慧英」"))
+        assertEquals("李慧英", CharacterNameNormalizer.normalize("『李慧英』"))
+    }
+
+    @Test
+    fun `paired quotes keep inner quotes untouched`() {
+        assertEquals("陆\"城", CharacterNameNormalizer.normalize("\"陆\"城\""))
+        assertEquals("陆‘城", CharacterNameNormalizer.normalize("“陆‘城”"))
+        assertEquals("O'Brien", CharacterNameNormalizer.normalize("'O'Brien'"))
+    }
+
+    @Test
+    fun `single sided quotes are not stripped`() {
+        assertEquals("\"陆城", CharacterNameNormalizer.normalize("\"陆城"))
+        assertEquals("陆城\"", CharacterNameNormalizer.normalize("陆城\""))
+        assertEquals("“陆城", CharacterNameNormalizer.normalize("“陆城"))
+    }
+
+    @Test
+    fun `blank and quote only names normalize to empty`() {
+        assertEquals("", CharacterNameNormalizer.normalize("   "))
+        assertEquals("", CharacterNameNormalizer.normalize(""))
+        assertEquals("", CharacterNameNormalizer.normalize("\"\""))
+        assertEquals("", CharacterNameNormalizer.normalize("  \"\"  "))
+        assertEquals("", CharacterNameNormalizer.normalize("「」"))
+        assertTrue(CharacterNameNormalizer.normalizeNames(listOf(" ", "\"\"", "陆城")).contains("陆城"))
+    }
+
+    @Test
+    fun `quoted and clean spelling share one identity`() {
+        assertEquals(
+            CharacterNameNormalizer.identityKey("陆城"),
+            CharacterNameNormalizer.identityKey("\"陆城\""),
+        )
+        assertEquals(
+            CharacterNameNormalizer.identityKey(" 陆 城 "),
+            CharacterNameNormalizer.identityKey("陆城"),
+        )
+        assertFalse(
+            CharacterNameNormalizer.identityKey("陆城") == CharacterNameNormalizer.identityKey("李慧英"),
+        )
+    }
+
+    @Test
+    fun `list normalization dedupes quoted and clean spellings`() {
+        assertEquals(
+            listOf("陆城", "李慧英"),
+            CharacterNameNormalizer.normalizeNames(listOf("\"陆城\"", "陆城", " 李慧英 ", "「」", "")),
+        )
+    }
+
+    @Test
+    fun `list fragments from comma split json arrays are cleaned`() {
+        // 模型把 JSON 数组当字符串输出、代码按逗号切分后的碎片
+        assertEquals("李慧英", CharacterNameNormalizer.normalizeListFragment("[\"李慧英\""))
+        assertEquals("陆城", CharacterNameNormalizer.normalizeListFragment("\"陆城\"]"))
+        assertEquals("李慧英", CharacterNameNormalizer.normalizeListFragment("『李慧英』"))
+        // 注意：通用归一化仍然只剥成对引号，单侧引号不会被额外剥掉
+        assertEquals("\"陆城", CharacterNameNormalizer.normalize("\"陆城"))
+        assertEquals("陆城", CharacterNameNormalizer.normalizeListFragment("\"陆城"))
+    }
 }
