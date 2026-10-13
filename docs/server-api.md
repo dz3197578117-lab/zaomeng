@@ -1226,6 +1226,56 @@ data: {"index":0,"speaker":"林黛玉","role":"character","field":"message","tex
 - 错误映射（整个端侧分组统一）：`400` 请求体不合法或缺参数 / `404` 模型不存在 /
   `409` 平台不支持、可执行文件缺失、或已有下载任务在进行 / `500` 其它失败。
 
+### 9.2 语音模型（离线神经 TTS）
+
+按需下载**多说话人中文语音模型**（VITS，供离线神经 TTS 朗读使用）。
+
+与 9.1 分开而不是合并：那边是**单个 `.gguf` 平铺**在模型目录、文件名必须以 `.gguf` 结尾；
+这边是**每个模型一个子目录、多个文件**（清单最长的模型有 7 个文件）。混在一起会让 9.1 的
+「已就位模型列表」把语音文件当成 GGUF 列出来。
+
+模型清单（仓库 / 文件名 / 字节数 / 音色数）由**客户端**持有（与语音引擎放在一起，见
+`NeuralVoiceCatalog`）；服务端只负责**校验并执行**下载。
+
+| 方法 | 路径 | 请求 | 成功响应 |
+|---|---|---|---|
+| GET | `/api/web/voice/status?model_id=X` | — | `200` `{"model_id":"X","present_files":[…],"present_bytes":N,"download":{…}}` |
+| POST | `/api/web/voice/download` | `DownloadVoiceModelRequest`（见下） | `200` **立即返回**（`download.active=true`），进度靠轮询 `/status` |
+| POST | `/api/web/voice/download/cancel` | — | `200` 取消后的状态 |
+| DELETE | `/api/web/voice/models/{model_id}` | — | `200` 删除后的现状 |
+
+`DownloadVoiceModelRequest`：
+
+```json
+{
+  "model_id": "vits-zh-hf-theresa",
+  "files": [
+    {
+      "file_name": "theresa.onnx",
+      "url": "https://hf-mirror.com/csukuangfj/vits-zh-hf-theresa/resolve/main/theresa.onnx",
+      "size_bytes": 121913906
+    }
+  ],
+  "overwrite": false
+}
+```
+
+- 目录：`<runtimeDir>/tts/<model_id>/`。**每个模型独立子目录**是必需的：候选模型之间有同名文件
+  （`lexicon.txt` / `tokens.txt` / 四个 `.fst`），平铺会互相覆盖，而症状只是「读音变怪」，极难定位。
+- `model_id` 与 `file_name` 都只允许 `[A-Za-z0-9._-]`（分别最长 64 / 200），且**不含 `..`**——
+  两者都会参与拼路径，必须防目录穿越。
+- `url` 必须 **https**，且主机在**白名单**内（`huggingface.co` / `hf-mirror.com`）。
+  带 userinfo 的伪主机（`https://huggingface.co@evil.com/…`）会被拒。
+  新增镜像站请改 `VoiceModelRequestValidator.ALLOWED_HOSTS`（集中一处，别散落到调用点）。
+- `size_bytes` 用于**跳过已下好的文件**：大小一致且未传 `overwrite` 时跳过。
+  119 MB 的模型不该因为缺一个 `.fst` 就整个重下一遍；跳过的文件会在 `download.skipped_files` 里列出。
+- 失败时**只清理 `.part`**，不删已存在的目标文件（避免把上一版好模型一起毁掉）。
+- 错误映射与 9.1 相同：`400` 校验失败（含不受信地址）/ `409` 平台不支持或已有下载在进行 /
+  `500` 其它失败。
+
+**`/status` 刻意不返回「是否就绪」**：判定「齐了没有」需要完整文件清单，而清单在客户端。
+服务端只如实报告目录里有什么，由客户端用 `missingFileNames()` 判定——同一份知识不在两端各写一次。
+
 ## 10. 插件
 
 ### 10.1 插件列表、状态、配置与日志
