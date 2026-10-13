@@ -1,5 +1,7 @@
 package top.wkbin.zaomeng.feature.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,10 +10,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -26,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import top.wkbin.zaomeng.data.api.OnDeviceStatusDto
@@ -54,9 +59,11 @@ internal fun OnDeviceModelContent(
     selectedModel: String,
     contextSize: String,
     threads: String,
+    gpuLayers: String,
     disableThinking: Boolean,
     downloadUrl: String,
     downloadFileName: String,
+    downloadEndpointId: String,
     importing: Boolean,
     importFileName: String,
     importCopiedBytes: Long,
@@ -67,11 +74,14 @@ internal fun OnDeviceModelContent(
     onSelectModel: (String) -> Unit,
     onContextSizeChange: (String) -> Unit,
     onThreadsChange: (String) -> Unit,
+    onGpuLayersChange: (String) -> Unit,
     onDisableThinkingChange: (Boolean) -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onDownloadUrlChange: (String) -> Unit,
     onDownloadFileNameChange: (String) -> Unit,
+    onDownloadEndpointChange: (String) -> Unit,
+    onPickPreset: (OnDeviceModelPreset) -> Unit,
     onDownload: () -> Unit,
     onCancelDownload: () -> Unit,
     onImportStarted: (fileName: String, totalBytes: Long) -> Unit,
@@ -127,6 +137,13 @@ internal fun OnDeviceModelContent(
                 onPick = modelImporter::launch,
                 onCancel = modelImporter::cancel,
             )
+            OnDevicePresetArea(
+                status = status,
+                busy = busy,
+                endpointId = downloadEndpointId,
+                onEndpointChange = onDownloadEndpointChange,
+                onPickPreset = onPickPreset,
+            )
             OnDeviceDownloadArea(
                 status = status,
                 busy = busy,
@@ -147,9 +164,11 @@ internal fun OnDeviceModelContent(
                 applying = applying,
                 contextSize = contextSize,
                 threads = threads,
+                gpuLayers = gpuLayers,
                 disableThinking = disableThinking,
                 onContextSizeChange = onContextSizeChange,
                 onThreadsChange = onThreadsChange,
+                onGpuLayersChange = onGpuLayersChange,
                 onDisableThinkingChange = onDisableThinkingChange,
                 onStart = onStart,
                 onStop = onStop,
@@ -379,9 +398,11 @@ private fun OnDeviceRunControls(
     applying: Boolean,
     contextSize: String,
     threads: String,
+    gpuLayers: String,
     disableThinking: Boolean,
     onContextSizeChange: (String) -> Unit,
     onThreadsChange: (String) -> Unit,
+    onGpuLayersChange: (String) -> Unit,
     onDisableThinkingChange: (Boolean) -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
@@ -399,6 +420,14 @@ private fun OnDeviceRunControls(
         onValueChange = onThreadsChange,
         label = "线程数",
         placeholder = "0 = 由 llama.cpp 自动决定",
+    )
+    EditorField(
+        value = gpuLayers,
+        onValueChange = onGpuLayersChange,
+        label = "GPU 层数",
+        placeholder = "0 = 全部走 CPU；99 = 尽量全放 GPU",
+        supportingText = "只有编译时带上了 GPU 后端（Adreno / OpenCL）才生效；" +
+            "没带时 llama-server 会忽略它并继续用 CPU。先填 99 试，显存不够或反而变慢就往下调，0 回到纯 CPU。",
     )
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -442,6 +471,109 @@ private fun OnDeviceRunControls(
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+}
+
+/**
+ * 内置模型清单：点一下即自动下载并选中。
+ *
+ * 「下载源」刻意放在清单正上方：官方站与镜像站的直链是同构的（只有主机名不同），而国内
+ * 直连官方站多半不通——换源必须一眼看得到，不能藏在别处。
+ */
+@Composable
+private fun OnDevicePresetArea(
+    status: OnDeviceStatusDto,
+    busy: Boolean,
+    endpointId: String,
+    onEndpointChange: (String) -> Unit,
+    onPickPreset: (OnDeviceModelPreset) -> Unit,
+) {
+    val endpoint = OnDeviceModelPresets.endpointById(endpointId)
+    val downloaded = status.models.map { it.fileName }.toSet()
+    val enabled = !busy && status.download?.active != true
+
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+    Text("可用的模型", style = MaterialTheme.typography.bodyLarge)
+    Text(
+        text = "点模型名即自动下载并选中，不用自己找直链。体积与「来源」都是实读的仓库元数据；" +
+            "能力本身请以来源里的上游模型卡为准——本项目没有评测过这些模型。",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Text("下载源", style = MaterialTheme.typography.bodyMedium)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OnDeviceModelPresets.endpoints.forEach { option ->
+            FilterChip(
+                selected = option.id == endpoint.id,
+                onClick = { onEndpointChange(option.id) },
+                enabled = enabled,
+                label = { Text(option.label) },
+            )
+        }
+    }
+    Text(
+        text = endpoint.note,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    OnDeviceModelPresets.all.forEach { preset ->
+        OnDevicePresetRow(
+            preset = preset,
+            alreadyDownloaded = preset.fileName in downloaded,
+            enabled = enabled,
+            onClick = { onPickPreset(preset) },
+        )
+    }
+}
+
+@Composable
+private fun OnDevicePresetRow(
+    preset: OnDeviceModelPreset,
+    alreadyDownloaded: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = preset.title,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = if (alreadyDownloaded) "已下载 · 点击选中" else formatBytes(preset.sizeBytes),
+                style = MaterialTheme.typography.labelMedium,
+                color = if (alreadyDownloaded) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            )
+        }
+        Text(
+            text = preset.note,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        // 能力来源：先给文件的确切出处（仓库），再给发布者/上游/元数据快照。
+        Text(
+            text = "来源：" + preset.repo + " · " + preset.provenance.summary(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = "模型卡（能力说明的一手来源，可复制）：" + preset.provenance.baseModelCardUrl(),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
 }
 
 @Composable
@@ -536,7 +668,7 @@ private fun OnDeviceLogArea(
     }
 }
 
-private fun formatBytes(bytes: Long): String = when {
+internal fun formatBytes(bytes: Long): String = when {
     bytes <= 0L -> "未知大小"
     bytes >= 1024L * 1024 * 1024 -> "${oneDecimal(bytes.toDouble() / (1024.0 * 1024 * 1024))} GB"
     bytes >= 1024L * 1024 -> "${bytes / (1024L * 1024)} MB"

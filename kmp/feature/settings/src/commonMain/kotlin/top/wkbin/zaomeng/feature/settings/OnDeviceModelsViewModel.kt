@@ -35,9 +35,19 @@ data class OnDeviceModelsUiState(
     val selectedModel: String = "",
     val contextSize: String = "0",
     val threads: String = "0",
+    /**
+     * GPU 层数（llama-server 的 `-ngl`）。0 = 全部走 CPU。
+     *
+     * 是否有效取决于编进 [libllama-server.so] 的后端：只有带 GPU（OpenCL/Adreno）时才真的用得上，
+     * 否则 llama-server 会打警告 `no usable GPU found, --gpu-layers option will be ignored`
+     * 并继续用 CPU —— 不会失败，只是没效果。
+     */
+    val gpuLayers: String = "0",
     val disableThinking: Boolean = true,
     val downloadUrl: String = "",
     val downloadFileName: String = "",
+    /** 内置模型清单使用的下载源 id（见 [OnDeviceModelPresets]）。 */
+    val downloadEndpointId: String = OnDeviceModelPresets.defaultEndpointId,
     val importing: Boolean = false,
     val importFileName: String = "",
     val importCopiedBytes: Long = 0L,
@@ -123,6 +133,14 @@ class OnDeviceModelsViewModel(
     fun updateThreads(value: String) =
         mutableState.update { it.copy(threads = value.filter(Char::isDigit).take(2)) }
 
+    /**
+     * GPU 层数。`0` = 全 CPU；`99` 是社区惯例的「尽量全部放到 GPU」。
+     *
+     * 允许 0–99：llama.cpp 会把超过模型层数的值夹到实际层数，所以不必先知道模型有多少层。
+     */
+    fun updateGpuLayers(value: String) =
+        mutableState.update { it.copy(gpuLayers = value.filter(Char::isDigit).take(2)) }
+
     fun updateDisableThinking(value: Boolean) =
         mutableState.update { it.copy(disableThinking = value) }
 
@@ -130,6 +148,41 @@ class OnDeviceModelsViewModel(
 
     fun updateDownloadFileName(value: String) =
         mutableState.update { it.copy(downloadFileName = value) }
+
+    fun updateDownloadEndpoint(id: String) =
+        mutableState.update { it.copy(downloadEndpointId = id) }
+
+    /**
+     * 点内置清单里的模型：填好下载源与文件名，直接开始下载，并**同时把它设为选中项**，
+     * 这样下载完成、刷新出文件之后用户不用再点一次（这就是「自动下载配置」）。
+     *
+     * 已经存在同名文件时不重下——那会白花几个 GB，只把它选中并说明。
+     */
+    internal fun downloadPreset(preset: OnDeviceModelPreset) {
+        val endpoint = OnDeviceModelPresets.endpointById(state.value.downloadEndpointId)
+        val alreadyPresent = state.value.onDevice?.models?.any { it.fileName == preset.fileName } == true
+        if (alreadyPresent) {
+            mutableState.update {
+                it.copy(
+                    selectedModel = preset.fileName,
+                    error = "",
+                    message = "${preset.title} 已经在手机里，已选中它，不用重新下载。",
+                )
+            }
+            return
+        }
+        mutableState.update {
+            it.copy(
+                downloadUrl = preset.urlFor(endpoint),
+                downloadFileName = preset.fileName,
+                selectedModel = preset.fileName,
+                error = "",
+                message = "正在从 ${endpoint.label} 下载 ${preset.title}" +
+                    "（${formatBytes(preset.sizeBytes)}）；下载完成后会自动选中。",
+            )
+        }
+        download()
+    }
 
     fun toggleLogs() {
         val next = !state.value.showLogs
@@ -299,6 +352,7 @@ class OnDeviceModelsViewModel(
                         modelFile = fileName,
                         contextSize = current.contextSize.toIntOrNull() ?: 0,
                         threads = current.threads.toIntOrNull() ?: 0,
+                        gpuLayers = current.gpuLayers.toIntOrNull() ?: 0,
                         disableThinking = current.disableThinking,
                     ),
                 )

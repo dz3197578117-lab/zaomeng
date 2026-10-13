@@ -105,7 +105,12 @@ data class StartOnDeviceRequest(
     @SerialName("context_size") val contextSize: Int = 0,
     /** 0 = 自动（用 CPU 大核数的一半）。 */
     @SerialName("threads") val threads: Int = 0,
-    /** GPU 层数；手机端目前只走 CPU，保持 0。 */
+    /**
+     * GPU 层数（llama-server 的 `-ngl`）。0 = 全部走 CPU。
+     *
+     * 只有编进了 GPU 后端（`-DGGML_OPENCL=ON`，Adreno 走 OpenCL）时才真的生效；
+     * 没有 GPU 后端时 llama-server 只打一条 `no usable GPU found` 警告并继续用 CPU。
+     */
     @SerialName("gpu_layers") val gpuLayers: Int = 0,
     /**
      * 关闭思考（`--reasoning-budget 0`）。
