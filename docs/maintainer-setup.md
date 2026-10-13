@@ -256,8 +256,8 @@ GitHub 仓库页顶部的 **About 区（描述 / 主页 / topics）不随仓库�
 
 主页：<https://dz3197578117-lab.github.io/zaomeng/>
 
-topics：`android` `compose-multiplatform` `gguf` `kotlin-multiplatform` `llama-cpp`
-`local-llm` `novel` `offline` `persona` `roleplay`
+topics（GitHub 会按字母序存储）：`adreno` `android` `compose-multiplatform` `gguf`
+`kotlin-multiplatform` `llama-cpp` `local-llm` `novel` `offline` `opencl` `persona` `roleplay`
 
 重建命令（需要一个有 `repo` 权限的令牌）：
 
@@ -271,7 +271,7 @@ curl -sS -X PATCH -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.
 
 curl -sS -X PUT -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.github+json" \
   "https://api.github.com/repos/$REPO/topics" \
-  -d '{"names":["android","compose-multiplatform","gguf","kotlin-multiplatform","llama-cpp","local-llm","novel","offline","persona","roleplay"]}' >/dev/null
+  -d '{"names":["android","compose-multiplatform","gguf","kotlin-multiplatform","llama-cpp","local-llm","novel","offline","persona","roleplay","opencl","adreno"]}' >/dev/null
 ```
 
 两个我实际踩到的坑：
@@ -292,6 +292,7 @@ curl -sS -X PUT -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.gi
 | About 之外：`topics` | 同上（`PUT …/topics`） | ❌ |
 | README「本版改动」表 | [`README.md`](../README.md)（英文版 [`README.en.md`](../README.en.md) 同步） | ⚠️ 只能人工看 |
 | 能力域清单 | [`docs/features.md`](features.md)（按域汇总，每项标「起始版本」） | ⚠️ 只能人工看 |
+| 网站结构化数据里的版本 | [`website/index.html`](../website/index.html) 的 JSON-LD `softwareVersion` | ❌ **没有任何脚本管它**，纯手工 |
 | 逐版本细节 | [`CHANGELOG.md`](../CHANGELOG.md) + [`.github/release-notes/`](../.github/release-notes/) | ✅ `scripts/check-release-ready.sh` |
 
 两条经验：

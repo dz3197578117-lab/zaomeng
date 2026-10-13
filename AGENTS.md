@@ -99,6 +99,7 @@
 |---|---|---|
 | README「本版改动」表 | `README.md`（英文版 `README.en.md` 同步） | ❌ 只能人工看 |
 | 能力域清单（按域汇总 + 每项「起始版本」） | `docs/features.md` | ❌ 只能人工看 |
+| 网站结构化数据里的版本 | `website/index.html` 的 JSON-LD `softwareVersion` | ❌ **没有任何脚本管它**，纯手工 |
 | 逐版本细节 | `CHANGELOG.md` + `.github/release-notes/v<版本>.md` | ✅ `scripts/check-release-ready.sh` |
 | 仓库页 About 描述 / topics | GitHub 设定；**权威文案在 `docs/maintainer-setup.md` 第七节**，改完必须重新 PATCH 到 GitHub | ❌ 只存在 GitHub 上 |
 

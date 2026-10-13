@@ -6,6 +6,86 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.1.15] - 2026-10-13
+
+### 新增
+
+- **内置模型清单：点模型名即自动下载并选中。** 端侧页新增「可用的模型」区，4 个 Qwen GGUF 预设；
+  点一下自动填好直链与文件名、立刻下载，并**同时把它设为选中项**（下载完成、刷新出文件后不用再点一次）。
+  已经下过同名文件时**不重下**（那会白花几个 GB），只把它选中。
+- **下载源可选**：HuggingFace 官方（默认）与 hf-mirror 镜像。两者 `resolve/main` 直链同构，
+  换源只换主机名；换源入口就放在清单正上方（开发机实测 `huggingface.co` 不可达、`hf-mirror.com` 可达，
+  国内不挂代理时官方站多半连不上）。
+- **每个模型都标注「能力来源」**：确切仓库、发布者（及是否官方）、上游基座、元数据读取日期与下载量、
+  上游模型卡地址。清单里的说明**只写能从文件大小推出的东西**（体积、建议可用内存），
+  **不写跑分、不写「谁更强」**——能力以模型卡为准，界面上也明说「本项目没有评测过这些模型」。
+- **「GPU 层数」可在设置里调**：端侧运行控制区新增输入框（`0` = 全 CPU，`99` = 尽量全放 GPU），
+  真正传进 `StartOnDeviceRequest`。没编 GPU 后端时 llama-server 会忽略它并打印
+  `no usable GPU found` 后继续用 CPU——不会失败。
+
+### 构建侧就绪（**本版 APK 内尚未生效**）
+
+- **端侧 GPU 加速（Adreno / OpenCL）与 Arm KleidiAI 的构建支持已进 `build-llama-server-android.sh`**，
+  但**随包的 `kmp/app/androidApp/src/main/jniLibs/arm64-v8a/libllama-server.so` 仍是旧构建**，
+  重新编译需要 llama.cpp 源码树 + NDK（OpenCL 还需 Khronos 的 OpenCL-Headers 与 ICD loader）。
+  因此**本版 APK 的端侧推理仍然只走 CPU**，设置里的「GPU 层数」要等重新构建 `.so` 之后才会生效。
+  输入框提前放出来，是为了让重编后的包可以直接用；它的说明文字也如实写了「只有编译时带上 GPU 后端才生效」。
+- 构建脚本的具体行为：默认 `GGML_OPENCL=1`，自动解析 OpenCL 头与 `libOpenCL.so`
+  （优先 `OPENCL_ROOT`，其次 NDK sysroot），并把 ICD loader 随包放进 `jniLibs`；
+  **缺 OpenCL 时直接报错退出**，不静默编出「有 `NEEDED libOpenCL.so` 却没库可加载」的可执行文件
+  ——那种包在真机上是整个端侧起不来，比慢严重得多。`GGML_OPENCL=0` 可编纯 CPU 版本。
+- CPU 侧改用上游官方 Android 配方的 **`-DGGML_CPU_KLEIDIAI=ON`**：运行时按检测到的 CPU 特性派发
+  （dotprod / fp16 / i8mm），老机型自动回退。此前用抬高全局 `-march` 提速的做法已废弃——
+  那会让 armv8.0 机型 SIGILL，而本仓库只发一个 arm64 `.so` 给所有设备
+  （`+i8mm` 更危险：`-march` 会无条件定义 `__ARM_FEATURE_MATMUL_INT8`，社区有 Pixel 6/7 实测 SIGILL 的记录）。
+
+### 修复
+
+- **内容审核拒绝被漏判成普通错误**（2.1.14 的归类只认文案，漏了机器可读的 `code`）。
+  真机 `tier=full` 导出显示上游返回的是
+  `{"message":"inference request is invalid","code":"data_inspection_failed"}` ——
+  `code` 说明它是商汤的**数据审查（内容审核）拒绝**，而那句 message 读起来完全像参数错误。
+  因为只认 message 措辞，这类拒绝继续走普通错误路径：聊天页显示成应用故障、出现注定无效的
+  「重试」按钮、对话生成探针报 ❌。现新增 `CONTENT_MODERATION_CODES`（机器可读 code，
+  用词干 `data_inspection` 以覆盖后续变体），判据改为**先 code 后措辞**；
+  `max_tokens must be ...` / `model not found` 这类既无 code 又无审核措辞的 4xx 仍走普通路径。
+- **`model_configured` 恒为 false**：保存路径从不写 `ModelProfile.configured`，而诊断读的正是那个
+  存储字段——真机导出里三个档案 provider/model/key 齐全却全部 `configured=false`。
+  现按 `putProfileFields` 的口径从实际字段计算（与仓库此前修 `apiKeyConfigured` 的做法一致），
+  启动自检与 `model.profiles[]` 两处都改用它。
+- **本地（端侧）档案的 `base_url` 会指向死端口**：端侧每次启动换端口，而「本机」档案的 `base_url`
+  是启用那一刻抓下来持久化的；端侧重启后那份就过期，表现为 `ConnectException`
+  （真机：对话生成 ❌ 连 `127.0.0.1:34699`、能力探测连 `127.0.0.1:43495`）。
+  现由端侧服务给出**实时**端口覆盖持久化值。
+  ⚠️ 只修了「在跑但端口变了」这一类；端侧已停止时仍指向旧端口（那时 provider 确实不可用，失败是如实的）。
+
+### 文档与维护
+
+- `docs/server-api.md` 的审核判据段改写为「先 code 后措辞」，并说明为什么必须有 code 这一层。
+- **校正对外描述面里的「起始版本」标注**：**移除 Windows 支持**、**提示词守卫接入开发自检**、
+  **桌面端只支持 macOS / Linux** 其实都在 **2.1.14** 就交付了（tag `v2.1.14` 里
+  `desktopApp/build.gradle.kts` 的 `windows { }` 与 `Main.kt` 的 JNA/DWM 均为 0 处），
+  此前被误标为「未发布」。
+- 新增「**对外描述面同步**」规则（`AGENTS.md` 与 `docs/maintainer-setup.md`）：列出仓库页 About、
+  topics、README「本版改动」表、`docs/features.md`、CHANGELOG 这五个必须一起更新的面，
+  标明哪些能自动校验，并约定「**未发布的能力在起始版本栏就写未发布**，切版本号时统一替换」
+  ——提前写一个还没发布的号，会让这几处与 CHANGELOG 立刻互相矛盾。
+- README 不再引用 `docs/changes-from-upstream.md` 里那个会持续过期的「新增 / 修改 / 删除」计数，
+  改为注明**那是某一轮的快照**（与 README 早已声明的「不写死版本号」同一口径）。
+- 仓库页 topics 增加 `opencl`、`adreno`。
+
+### 已知限制
+
+- **真机上尚未验证**：OpenCL 构建能否在设备上跑起来、`libOpenCL.so` 在 App 沙箱内能否发现
+  厂商（高通）ICD、实际提速幅度，以及「点模型名」的实际下载能否成功
+  （开发机 `huggingface.co` 不可达，只有镜像通）。
+- **内置模型清单没有 SHA256 校验**：拿不到可信的官方摘要，因此没有凭空写入校验值；
+  目前只靠服务端原有的 `.part` 原子改名 + `.gguf` 后缀校验。
+- **`ModelProbes` 仍把「端侧未启动」判成 ❌**：`provider = local` 且端侧停止时，对话生成探针报故障
+  而不是「未启动」。要区分需要给探针传入端侧可用性，尚未做。
+- 桌面端 `packageReleaseDistributionForCurrentOS`（ProGuard + jpackage）仍未在开发机验证：
+  删除 JNA / FileKit-Windows 的 ProGuard 保留规则对 release 打包的影响未经实机验证。
+
 ## [2.1.14] - 2026-10-13
 
 ### 新增
