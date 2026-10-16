@@ -48,29 +48,65 @@ class MergeTranscriptTest {
     }
 
     /**
-     * 同一 turnId 在 append 里出现两次时必须只留一条。
+     * 一个 turnId 对应**一整轮**（用户消息 + 该轮各说话人的回复），幂等的单位是「轮」而非「条」。
      *
-     * 实机症状：角色同一句回复渲染成多个气泡，且每重试一次多一份。
-     * 触发链：发送后连接中断但服务端已提交 → 客户端复用同一 operationId 重试 →
-     * 服务端把同一轮又提交一次 → Complete 事件的 appendedTranscript 里带两条
-     * 同 turnId 的消息。此前只做 base 与 append 之间的去重，append 自身的重复会全部留下。
+     * 实机症状（回归）：角色回复完成后，本轮除最后一条外的消息从界面上消失，
+     * 退出重进会话又全部出现（数据本身完整，只是前台列表被覆盖）。
+     * 根因：去重按「同一 turnId 只保留最后一条」实现，把一整轮压成了一条。
+     * 修复：改按 transcriptKey 逐条去重，只丢弃完全重复的条目。
      */
     @Test
-    fun `duplicate turn ids inside append collapse to a single entry`() {
-        val history = listOf(item("t1", "甲", "第一句"))
+    fun `multi speaker turn is not collapsed to a single entry`() {
+        val history = listOf(item("t1", "甲", "上一轮的话"))
         val append = listOf(
-            item("t2", "乙", "同一句话"),
-            item("t2", "乙", "同一句话"),
+            item("t2", "我", "用户这轮的话"),
+            item("t2", "乙", "乙的回话"),
+            item("t2", "丙", "丙的回话"),
         )
 
         val merged = mergeTranscript(history, append)
 
-        assertEquals(listOf("t1", "t2"), merged.map { it.turnId })
-        assertEquals(2, merged.size, "同一 turnId 只应保留一条：$merged")
+        assertEquals(4, merged.size, "一轮多角色回复不能被压成一条：$merged")
+        assertEquals(listOf("t1", "t2", "t2", "t2"), merged.map { it.turnId })
+        assertEquals(
+            listOf("上一轮的话", "用户这轮的话", "乙的回话", "丙的回话"),
+            merged.map { it.message },
+        )
+        assertUniqueKeys(merged)
     }
 
+    /**
+     * 重试导致同一轮被提交两次：两次内容相同，按 transcriptKey 逐条去重后只留一份，整轮完整。
+     *
+     * 触发链：发送后连接中断但服务端已提交 → 客户端复用同一 operationId 重试 →
+     * 服务端把同一轮又提交一次 → Complete 事件的 appendedTranscript 里出现两份同 turnId 的整轮。
+     */
     @Test
-    fun `append duplicates collapse to the last occurrence keeping order`() {
+    fun `a whole retried turn keeps all of its entries`() {
+        val history = listOf(item("t1", "甲", "第一句"))
+        val append = listOf(
+            item("t2", "我", "用户这轮的话"),
+            item("t2", "乙", "乙的回话"),
+            item("t2", "丙", "丙的回话"),
+            item("t2", "我", "用户这轮的话"),
+            item("t2", "乙", "乙的回话"),
+            item("t2", "丙", "丙的回话"),
+        )
+
+        val merged = mergeTranscript(history, append)
+
+        assertEquals(4, merged.size, "重试只应去掉重复的整轮，不能把一轮压成一条：$merged")
+        assertEquals(listOf("t1", "t2", "t2", "t2"), merged.map { it.turnId })
+        assertUniqueKeys(merged)
+    }
+
+    /**
+     * 同一 turnId 的条目是一轮里不同说话人的话，必须**全部保留**，即使它们不连续。
+     * 真实数据里同一轮的条目总是相邻的，但合并逻辑不应依赖连续性。
+     * （此前这里断言「同一 turnId 只保留最后一条」，那正是消息消失 bug 的错误假设。）
+     */
+    @Test
+    fun `all entries of the same turn are preserved`() {
         val append = listOf(
             item("t1", "甲", "旧"),
             item("t2", "乙", "第二句"),
@@ -79,8 +115,9 @@ class MergeTranscriptTest {
 
         val merged = mergeTranscript(emptyList(), append)
 
-        assertEquals(listOf("t2", "t1"), merged.map { it.turnId })
-        assertEquals("新", merged.last().message, "应保留同一 turnId 的最后一条")
+        assertEquals(listOf("t1", "t2", "t1"), merged.map { it.turnId })
+        assertEquals(3, merged.size, "同一 turnId 的多条不能被压成一条：$merged")
+        assertUniqueKeys(merged)
     }
 
     @Test
@@ -143,6 +180,36 @@ class MergeTranscriptTest {
         val merged = prependTranscript(page, current)
 
         assertEquals(listOf("t1", "t2", "t3"), merged.map { it.turnId })
+        assertUniqueKeys(merged)
+    }
+
+    /** 分页边界把同一轮切开时，两半都必须保留（按 turnId 整块移除会丢掉后半段）。 */
+    @Test
+    fun `paging boundary splitting a turn keeps both halves`() {
+        val earlierPage = listOf(item("t1", "我", "用户这轮的话"))
+        val current = listOf(item("t1", "乙", "乙的回话"), item("t1", "丙", "丙的回话"))
+
+        val merged = prependTranscript(earlierPage, current)
+
+        assertEquals(3, merged.size, "被分页切开的同一轮，后半不能被丢掉：$merged")
+        assertEquals(listOf("t1", "t1", "t1"), merged.map { it.turnId })
+        assertUniqueKeys(merged)
+    }
+
+    /** 一页里含多角色整轮时，向上加载不能把该轮压成一条。 */
+    @Test
+    fun `prepending a multi speaker page keeps the whole turn`() {
+        val current = listOf(item("t3", "丙", "第三轮"))
+        val page = listOf(
+            item("t2", "我", "用户的话"),
+            item("t2", "乙", "乙的回话"),
+            item("t2", "丙", "丙的回话"),
+        )
+
+        val merged = prependTranscript(page, current)
+
+        assertEquals(4, merged.size, "整轮不能被压成一条：$merged")
+        assertEquals(listOf("t2", "t2", "t2", "t3"), merged.map { it.turnId })
         assertUniqueKeys(merged)
     }
 

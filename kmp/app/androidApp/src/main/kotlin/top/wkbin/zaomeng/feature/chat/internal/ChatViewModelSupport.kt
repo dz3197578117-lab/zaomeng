@@ -54,7 +54,17 @@ internal fun committedAppend(
 /**
  * 按 turn_id 幂等合并 transcript：append 中已存在于 base 的条目替换而非重复追加。
  * 断连重试 / 失败恢复时，base 可能已经包含部分或全部本轮条目（本地已拼过、服务端已提交），
- * 直接 `base + append` 会把整段历史重复一遍；按 turn_id 去重后天然幂等。
+ * 直接 `base + append` 会把整段历史重复一遍；去重后天然幂等。
+ *
+ * **去重必须按 [TranscriptItemDto.transcriptKey] 逐条进行，不能按 turnId 去重**：
+ * 一个 turnId 对应**一整轮**——用户消息 + 该轮每个说话人的回复，全部共享同一个 turnId
+ * （见 `DialogueService.updateSessionManifest`：用户消息与每条 response 都 `put("turn_id", turnId)`）。
+ * 早期实现是「同一 turnId 只保留最后一条」，等于把一整轮压成一条，表现为
+ * **角色回复完成后，本轮除最后一条外的消息从界面上消失**（退出重进又全部出现，
+ * 因为落库数据本身完整）。
+ *
+ * key 由 `turnId|speaker|timestamp|正文哈希` 组成：同一轮里不同说话人、不同台词互不相同，
+ * 只有真正的重复（整轮重试、missing 与 appended 拼接重叠）才会撞 key。
  */
 internal fun mergeTranscript(
     base: List<TranscriptItemDto>,
@@ -62,19 +72,12 @@ internal fun mergeTranscript(
 ): List<TranscriptItemDto> {
     if (append.isEmpty()) return base
 
-    // append **自身**也要按 turnId 去重（同一 turnId 保留最后一条，保持原有顺序）。
-    // 只做「base 与 append 之间」的去重挡不住 append 内部或 missing+appended 拼接处的重复，
-    // 那种情况下同一轮会出现两条，全部渲染出来就是多个内容相同的气泡。
-    val lastIndexByTurnId = append.withIndex()
-        .filter { it.value.turnId.isNotBlank() }
-        .associate { it.value.turnId to it.index }
-    val dedupedAppend = append.filterIndexed { index, item ->
-        item.turnId.isBlank() || lastIndexByTurnId[item.turnId] == index
-    }
-
-    val appendedTurnIds = dedupedAppend.map { it.turnId }.filter { it.isNotBlank() }.toSet()
-    if (appendedTurnIds.isEmpty()) return base + dedupedAppend
-    return base.filterNot { it.turnId in appendedTurnIds } + dedupedAppend
+    // append 自身先逐条去重；随后只把 base 中「与 append 完全相同」的条目换掉，
+    // 而不是按 turnId 整轮移除——那样一旦 append 只覆盖了该轮的一部分，base 里的其余条目会被误删。
+    val dedupedAppend = dedupTranscript(append)
+    val appendKeys = dedupedAppend.map { it.transcriptKey() }.toHashSet()
+    if (appendKeys.isEmpty()) return base + dedupedAppend
+    return base.filterNot { it.transcriptKey() in appendKeys } + dedupedAppend
 }
 
 /**
@@ -95,8 +98,11 @@ internal fun dedupTranscript(items: List<TranscriptItemDto>): List<TranscriptIte
  * 而重复条目会让 LazyColumn 的 key 撞车，在主线程抛
  * `IllegalArgumentException: Key "…" was already used` 直接闪退（线上已发生）。
  *
- * 因此这里对页内按 turnId 去重（保留最后一次出现，保持顺序），
- * 并把已经在页里出现过的 turnId 从当前列表里移除，避免同一条消息出现两次。
+ * 去重按 [TranscriptItemDto.transcriptKey] 逐条进行，不能用「同一 turnId 只保留一条」：
+ * 一个 turnId 是一整轮（用户消息 + 该轮各说话人的回复），按 turnId 去重会把整轮压成一条。
+ *
+ * 也不能改成「按 turnId 把 current 里的整轮移除」：分页边界可能把同一轮**切开**
+ * （earlier 拿到该轮前半、current 拿到后半），整块移除会把后半段直接丢掉。
  */
 internal fun prependTranscript(
     earlier: List<TranscriptItemDto>,
@@ -105,19 +111,10 @@ internal fun prependTranscript(
     if (earlier.isEmpty()) return current
     if (current.isEmpty()) return earlier
 
-    val lastIndexByTurnId = earlier.withIndex()
-        .filter { it.value.turnId.isNotBlank() }
-        .associate { it.value.turnId to it.index }
-    val dedupedEarlier = earlier.filterIndexed { index, item ->
-        item.turnId.isBlank() || lastIndexByTurnId[item.turnId] == index
-    }
+    val dedupedEarlier = dedupTranscript(earlier)
 
-    val earlierTurnIds = dedupedEarlier.map { it.turnId }.filter { it.isNotBlank() }.toSet()
-    val keptCurrent = if (earlierTurnIds.isEmpty()) {
-        current
-    } else {
-        current.filterNot { it.turnId in earlierTurnIds }
-    }
+    val earlierKeys = dedupedEarlier.map { it.transcriptKey() }.toHashSet()
+    val keptCurrent = if (earlierKeys.isEmpty()) current else current.filterNot { it.transcriptKey() in earlierKeys }
     return dedupedEarlier + keptCurrent
 }
 
