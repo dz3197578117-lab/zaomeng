@@ -13,6 +13,19 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.Locale
 
+/**
+ * 系统 TTS 引擎的**惰性**封装。
+ *
+ * 此前引擎在构造函数里就 `TextToSpeech(appContext) { … }` 绑定系统服务，而
+ * [rememberPlatformTts] 在**进入对话页**时就构造它。于是出现两个问题：
+ *
+ * 1. 用户从没点过朗读也会绑定一次系统 TTS 服务；离开页面时引擎的异步初始化还没回调，
+ *    `stop()` 会打出 `TextToSpeech: stop failed: not bound to TTS engine`。
+ * 2. `rememberPlatformTts` 的 `onDispose` 只调 `stop()`、**从不调 `shutdown()`**，
+ *    每次进出对话页都会泄漏一个 TextToSpeech 实例与它的 ServiceConnection。
+ *
+ * 现在改为第一次 [speak] 时才 [ensureEngine] 绑定，页面销毁时 [shutdown] 释放。
+ */
 internal class AndroidPlatformTts(context: Context) : PlatformTts {
     private val appContext = context.applicationContext
     private val _isSpeaking = MutableStateFlow(false)
@@ -24,16 +37,22 @@ internal class AndroidPlatformTts(context: Context) : PlatformTts {
     private var tts: TextToSpeech? = null
     private var isInitialized = false
     private var pendingSpeak: (() -> Unit)? = null
+    private var isShutdown = false
 
-    init {
-        tts = TextToSpeech(appContext) { status ->
+    /** 首次朗读时才绑定系统引擎；已经 shutdown 的实例不再复活。 */
+    private fun ensureEngine(): TextToSpeech? {
+        if (isShutdown) return null
+        tts?.let { return it }
+        lateinit var engine: TextToSpeech
+        engine = TextToSpeech(appContext) init@{ status ->
+            if (isShutdown) return@init
             if (status == TextToSpeech.SUCCESS) {
                 isInitialized = true
-                val result = tts?.setLanguage(Locale.CHINESE)
+                val result = engine.setLanguage(Locale.CHINESE)
                 if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    tts?.setLanguage(Locale.SIMPLIFIED_CHINESE)
+                    engine.setLanguage(Locale.SIMPLIFIED_CHINESE)
                 }
-                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {
                         _isSpeaking.value = true
                         _currentSpeakingId.value = utteranceId
@@ -48,22 +67,25 @@ internal class AndroidPlatformTts(context: Context) : PlatformTts {
 
                     @Deprecated("Deprecated in Java")
                     override fun onError(utteranceId: String?) {
-                        if (_currentSpeakingId.value == utteranceId) {
-                            _isSpeaking.value = false
-                            _currentSpeakingId.value = null
-                        }
+                        clearSpeaking(utteranceId)
                     }
 
                     override fun onError(utteranceId: String?, errorCode: Int) {
-                        if (_currentSpeakingId.value == utteranceId) {
-                            _isSpeaking.value = false
-                            _currentSpeakingId.value = null
-                        }
+                        clearSpeaking(utteranceId)
                     }
                 })
                 pendingSpeak?.invoke()
                 pendingSpeak = null
             }
+        }
+        tts = engine
+        return engine
+    }
+
+    private fun clearSpeaking(utteranceId: String?) {
+        if (_currentSpeakingId.value == utteranceId) {
+            _isSpeaking.value = false
+            _currentSpeakingId.value = null
         }
     }
 
@@ -76,23 +98,22 @@ internal class AndroidPlatformTts(context: Context) : PlatformTts {
     ) {
         val clean = cleanSpokenText(text)
         if (clean.isBlank()) return
+        val engine = ensureEngine() ?: return
 
         val action: () -> Unit = {
-            tts?.let { engine ->
-                engine.stop()
-                engine.setPitch(pitch.coerceIn(0.5f, 2.0f))
-                engine.setSpeechRate(speed.coerceIn(0.5f, 2.0f))
-                if (voiceName.isNotBlank()) {
-                    val targetVoice = engine.voices?.firstOrNull { it.name.contains(voiceName, ignoreCase = true) }
-                    if (targetVoice != null) {
-                        engine.voice = targetVoice
-                    }
+            engine.stop()
+            engine.setPitch(pitch.coerceIn(0.5f, 2.0f))
+            engine.setSpeechRate(speed.coerceIn(0.5f, 2.0f))
+            if (voiceName.isNotBlank()) {
+                val targetVoice = engine.voices?.firstOrNull { it.name.contains(voiceName, ignoreCase = true) }
+                if (targetVoice != null) {
+                    engine.voice = targetVoice
                 }
-                val params = Bundle()
-                engine.speak(clean, TextToSpeech.QUEUE_FLUSH, params, id)
-                _isSpeaking.value = true
-                _currentSpeakingId.value = id
             }
+            val params = Bundle()
+            engine.speak(clean, TextToSpeech.QUEUE_FLUSH, params, id)
+            _isSpeaking.value = true
+            _currentSpeakingId.value = id
         }
 
         if (isInitialized) {
@@ -103,26 +124,36 @@ internal class AndroidPlatformTts(context: Context) : PlatformTts {
     }
 
     override fun stop() {
-        tts?.stop()
         _isSpeaking.value = false
         _currentSpeakingId.value = null
+        pendingSpeak = null
+        // 引擎还没绑定完成时调用 stop() 只会打一条 "not bound to TTS engine" 警告，
+        // 而状态上面已经清干净了，直接跳过。
+        if (isInitialized) tts?.stop()
     }
 
     override fun shutdown() {
         stop()
+        isShutdown = true
         tts?.shutdown()
         tts = null
         isInitialized = false
     }
 }
 
+/**
+ * 会话内复用的 TTS 句柄。
+ *
+ * 只在页面存活期间保留；`onDispose` 必须调 [PlatformTts.shutdown]（不是 `stop`），
+ * 否则 TextToSpeech 实例与其 ServiceConnection 会随每次进出页面泄漏。
+ */
 @Composable
 fun rememberPlatformTts(): PlatformTts {
     val context = LocalContext.current
     val platformTts = remember { AndroidPlatformTts(context) }
     DisposableEffect(Unit) {
         onDispose {
-            platformTts.stop()
+            platformTts.shutdown()
         }
     }
     return platformTts

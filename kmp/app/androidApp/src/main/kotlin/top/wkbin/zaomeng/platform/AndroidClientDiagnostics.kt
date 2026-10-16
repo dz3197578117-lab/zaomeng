@@ -42,6 +42,23 @@ object AndroidClientDiagnostics {
     private const val FRAME_100_NANOS = 100_000_000L
 
     /**
+     * 「单帧」的合理上限（纳秒）：超过它就不是卡顿，而是**采样间断**。
+     *
+     * 应用切后台/息屏期间 Choreographer 不再回调，恢复后的第一帧会把整段挂起时间算成一帧——
+     * 真机导出里出现过 `longestFrameMs = 1080010`（1080 秒的「单帧」）。
+     * 真实卡顿极少超过 1 秒，而 >100ms 已经是最高分档，丢弃这一段不会漏报任何有意义的信息。
+     */
+    private const val MAX_PLAUSIBLE_FRAME_NANOS = 1_000_000_000L
+
+    /**
+     * 「主线程阻塞」的合理上限（毫秒）：超过它就不是阻塞，而是采样间断。
+     *
+     * 真实的主线程阻塞超过 5 秒会直接 ANR 而不是留在统计里；而挂起期间看门狗线程仍在跑，
+     * 会把整段挂起时间报成一次「主线程阻塞约 2086682ms」。
+     */
+    private const val MAX_PLAUSIBLE_BLOCK_MS = 10_000L
+
+    /**
      * 采样器状态的互斥锁（E）。
      *
      * 生产者分属三个线程：主线程（帧回调）、看门狗线程（长任务）、闪烁/可访问性线程；
@@ -112,6 +129,10 @@ object AndroidClientDiagnostics {
     // ---- 主线程长任务 ----
     private var blockCount = 0L
     private val blockSamples = ArrayDeque<String>()
+
+    // ---- 采样间断（应用切后台/息屏）：如实上报，但不进帧统计 ----
+    private var samplingGapCount = 0L
+    private var samplingGapMs = 0L
 
     @Volatile
     private var lastFrameAtMillis = 0L
@@ -190,7 +211,13 @@ object AndroidClientDiagnostics {
                 lastFrameNanos = frameTimeNanos
                 lastFrameAtMillis = System.currentTimeMillis()
                 if (previous != 0L) {
-                    recordFrame((frameTimeNanos - previous).coerceAtLeast(0L))
+                    val deltaNanos = (frameTimeNanos - previous).coerceAtLeast(0L)
+                    if (deltaNanos > MAX_PLAUSIBLE_FRAME_NANOS) {
+                        // 切后台/息屏造成的采样间断，不是卡顿：单独计数，不进帧统计。
+                        recordSamplingGap((deltaNanos + 999_999L) / 1_000_000L)
+                    } else {
+                        recordFrame(deltaNanos)
+                    }
                 }
                 Choreographer.getInstance().postFrameCallback(this)
                 // D：把本采样器自身耗时累加上去（纳秒精度；毫秒级取整在单帧上会永远是 0）。
@@ -243,6 +270,19 @@ object AndroidClientDiagnostics {
     }
 
     /**
+     * 记一次采样间断（应用切后台/息屏期间帧回调停止）。
+     *
+     * 这些间隔**不进帧统计**——否则任何一次「切出去再回来」都会在报告里制造一个十几分钟的
+     * 假卡顿；但也不静默丢弃：单独给出次数与总时长，便于区分「真的卡」和「采样断了」。
+     */
+    private fun recordSamplingGap(gapMs: Long) {
+        synchronized(stateLock) {
+            samplingGapCount++
+            samplingGapMs += gapMs
+        }
+    }
+
+    /**
      * 取一份帧指标快照。
      *
      * 全程持锁复制（E）：读侧是 Ktor 线程，写侧有主线程与看门狗线程；
@@ -270,6 +310,8 @@ object AndroidClientDiagnostics {
             ),
             mainThreadBlockCount = blockCount,
             mainThreadBlocks = blockSamples.toList(),
+            samplingGaps = samplingGapCount,
+            samplingGapMs = samplingGapMs,
         )
     }
 
@@ -291,23 +333,32 @@ object AndroidClientDiagnostics {
                 runCatching {
                     Thread.sleep(WATCHDOG_INTERVAL_MS)
                     val gap = System.currentTimeMillis() - lastFrameAtMillis
-                    if (gap >= MAIN_THREAD_BLOCK_MS) {
-                        if (!reportedForThisStall) {
+                    when {
+                        gap >= MAX_PLAUSIBLE_BLOCK_MS -> {
+                            // 帧回调停了这么久，只可能是应用不在前台（采样间断），不是主线程阻塞：
+                            // 真实阻塞超过 5 秒会直接 ANR，不会走到这里。
+                            // 重置基准，否则挂起结束后这个数字会一直累积下去。
+                            lastFrameAtMillis = System.currentTimeMillis()
                             reportedForThisStall = true
-                            val stack = formatWatchdogStack(
-                                Looper.getMainLooper().thread.stackTrace.toList(),
-                                appPackagePrefix = APP_PACKAGE_PREFIX,
-                                innermostFrames = STACK_FRAMES,
-                                appFrames = STACK_APP_FRAMES,
-                            )
-                            synchronized(stateLock) {
-                                blockCount++
-                                if (blockSamples.size >= MAX_BLOCK_SAMPLES) blockSamples.removeFirst()
-                                blockSamples.addLast("主线程阻塞约 ${gap}ms：\n$stack")
+                            recordSamplingGap(gap)
+                        }
+                        gap >= MAIN_THREAD_BLOCK_MS -> {
+                            if (!reportedForThisStall) {
+                                reportedForThisStall = true
+                                val stack = formatWatchdogStack(
+                                    Looper.getMainLooper().thread.stackTrace.toList(),
+                                    appPackagePrefix = APP_PACKAGE_PREFIX,
+                                    innermostFrames = STACK_FRAMES,
+                                    appFrames = STACK_APP_FRAMES,
+                                )
+                                synchronized(stateLock) {
+                                    blockCount++
+                                    if (blockSamples.size >= MAX_BLOCK_SAMPLES) blockSamples.removeFirst()
+                                    blockSamples.addLast("主线程阻塞约 ${gap}ms：\n$stack")
+                                }
                             }
                         }
-                    } else {
-                        reportedForThisStall = false
+                        else -> reportedForThisStall = false
                     }
                 }
             }
@@ -464,6 +515,12 @@ object AndroidClientDiagnostics {
      *
      * 采集内容只有四样：可点与否、标签、宽、高。**不采集文本内容**——
      * 语义树里可能包含用户原文，无差别采集等于把内容带进导出。
+     *
+     * 两项口径（2.2.2 修正，此前会产生大量假阳性）：
+     * - **标签看整棵子树**：Compose 的 Button / IconButton / FilterChip 把可读文本放在子节点，
+     *   可点击的容器节点自身没有标签；只判自身会把标准组件全判成「TalkBack 读不出用途」。
+     * - **尺寸用 `touchBoundsInRoot`**：Material 的 `minimumInteractiveComponentSize` 扩展的是
+     *   触控区域，而 `boundsInRoot` 只是视觉尺寸（Button 40dp / FilterChip 32dp）。
      */
     fun sampleAccessibility() {
         val activity = activityRef ?: return
@@ -484,13 +541,18 @@ object AndroidClientDiagnostics {
 
             val nodes = mutableListOf<ClientDiagnostics.A11yNode>()
             val visited = HashSet<Int>()
-            fun walk(node: Any) {
-                if (nodes.size >= MAX_A11Y_NODES) return
-                val id = runCatching { node.javaClass.getMethod("getId").invoke(node) as Int }.getOrNull() ?: return
-                if (!visited.add(id)) return
+            /** 返回「这棵子树里是否存在可读标签」，父节点据此判定（见下方 label 的说明）。 */
+            fun walk(node: Any): Boolean {
+                if (nodes.size >= MAX_A11Y_NODES) return false
+                val id = runCatching { node.javaClass.getMethod("getId").invoke(node) as Int }.getOrNull() ?: return false
+                if (!visited.add(id)) return false
                 val config = runCatching { node.javaClass.getMethod("getConfig").invoke(node) }.getOrNull()
+                var clickable = false
+                var labelInSubtree = false
+                var widthDp = 0
+                var heightDp = 0
                 if (config != null) {
-                    val contains = runCatching {
+                    clickable = runCatching {
                         config.javaClass.getMethod("contains", keyClass).invoke(config, onClickKey) as Boolean
                     }.getOrDefault(false)
                     val getOrNull = runCatching {
@@ -504,43 +566,54 @@ object AndroidClientDiagnostics {
                         runCatching { method.invoke(config, textKey) as? List<*> }
                             .getOrNull()?.joinToString(" ") { it?.toString().orEmpty() }.orEmpty()
                     }.orEmpty()
+                    labelInSubtree = description.isNotBlank() || text.isNotBlank()
+                    // 触控区域优先于布局尺寸：Material 的 minimumInteractiveComponentSize 扩展的正是
+                    // touchBounds，而 boundsInRoot 只反映视觉尺寸（Button 40dp、IconButton 40dp、
+                    // FilterChip 32dp）。用 boundsInRoot 判「< 48dp」会把标准组件全判成问题。
                     val bounds = runCatching {
+                        node.javaClass.getMethod("getTouchBoundsInRoot").invoke(node)
+                    }.getOrNull() ?: runCatching {
                         node.javaClass.getMethod("getBoundsInRoot").invoke(node)
                     }.getOrNull()
-                    val widthDp = bounds?.let { rect ->
-                        runCatching {
-                            val left = rect.javaClass.getMethod("getLeft").invoke(rect) as Float
-                            val right = rect.javaClass.getMethod("getRight").invoke(rect) as Float
-                            ((right - left) / density).toInt()
-                        }.getOrDefault(0)
-                    } ?: 0
-                    val heightDp = bounds?.let { rect ->
-                        runCatching {
-                            val top = rect.javaClass.getMethod("getTop").invoke(rect) as Float
-                            val bottom = rect.javaClass.getMethod("getBottom").invoke(rect) as Float
-                            ((bottom - top) / density).toInt()
-                        }.getOrDefault(0)
-                    } ?: 0
-                    nodes += ClientDiagnostics.A11yNode(
-                        page = runCatching { ClientDiagnostics.lastPageLabel() }.getOrDefault(""),
-                        ref = "node#$id",
-                        // 只回答「有没有可读标签」：描述或文本任一存在即可，具体内容不回传。
-                        label = if (description.isNotBlank() || text.isNotBlank()) "(有标签)" else "",
-                        clickable = contains,
-                        widthDp = widthDp,
-                        heightDp = heightDp,
-                    )
+                    widthDp = bounds.dpSpan(density, "getLeft", "getRight")
+                    heightDp = bounds.dpSpan(density, "getTop", "getBottom")
                 }
                 val children = runCatching {
                     node.javaClass.getMethod("getChildren").invoke(node) as? List<*>
                 }.getOrNull().orEmpty()
-                children.forEach { child -> child?.let { walk(it) } }
+                // 必须看**整棵子树**再判定标签：Compose 的 Button / IconButton / FilterChip 把可读文本
+                // 放在子节点，可点击的容器节点自身没有 contentDescription 也没有 text。
+                // 只判自身会得到一堆假阳性——真机上「运行诊断」页 8 个按钮全被判成
+                // 「TalkBack 读不出用途」，而它们全都能读。
+                children.forEach { child -> if (child != null && walk(child)) labelInSubtree = true }
+                if (config != null) {
+                    nodes += ClientDiagnostics.A11yNode(
+                        page = runCatching { ClientDiagnostics.lastPageLabel() }.getOrDefault(""),
+                        ref = "node#$id",
+                        // 只回答「有没有可读标签」：描述或文本任一存在即可，具体内容不回传。
+                        label = if (labelInSubtree) "(有标签)" else "",
+                        clickable = clickable,
+                        widthDp = widthDp,
+                        heightDp = heightDp,
+                    )
+                }
+                return labelInSubtree
             }
             walk(root)
             if (nodes.isNotEmpty()) ClientDiagnostics.replaceA11yNodes(nodes)
         }
         samplingNanos.addAndGet(System.nanoTime() - samplerStarted)
         samplingSamples.incrementAndGet()
+    }
+
+    /** 反射读一个 `Rect` 的某条边跨度并换算成 dp（读不到时返回 0，表示「未知」，不计入审计）。 */
+    private fun Any?.dpSpan(density: Float, startGetter: String, endGetter: String): Int {
+        if (this == null || density <= 0f) return 0
+        return runCatching {
+            val start = javaClass.getMethod(startGetter).invoke(this) as Float
+            val end = javaClass.getMethod(endGetter).invoke(this) as Float
+            ((end - start) / density).toInt()
+        }.getOrDefault(0)
     }
 
     private fun findComposeView(root: View): View? {

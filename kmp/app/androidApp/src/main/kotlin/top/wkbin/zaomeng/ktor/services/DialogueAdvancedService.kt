@@ -838,11 +838,16 @@ class DialogueAdvancedService(
         extra: JsonObject = JsonObject(emptyMap()),
     ): JsonObject {
         val file = storage.getDialogueSessionManifestFile(runId, sessionId)
-        val updated = buildJsonObject {
+        val merged = buildJsonObject {
             session.forEach { (key, value) -> put(key, value) }
             extra.forEach { (key, value) -> put(key, value) }
             put("updated_at", nowIsoString())
         }
+        // 改写 transcript 的**唯一出口**：必须同步对齐 transcript_count。
+        // 纠错（删 3 条插 2 条）、场景切换（追加 1 条）、分支（截断前缀）都从这里落盘，
+        // 此前只 put("transcript", …) 而不重算，留下「声明 179 / 实际 178」，
+        // 导致 hasMoreHistory 永远为真、向上翻页 offset 错位、增量补齐判据偏大。
+        val updated = reconcileTranscriptCount(merged)
         storage.writeTextAtomically(file, json.encodeToString(JsonObject.serializer(), updated))
         return updated
     }
@@ -899,6 +904,11 @@ class DialogueAdvancedService(
             put("created_at", timestamp)
             put("updated_at", timestamp)
             put("transcript", buildJsonArray { kept.forEach(::add) })
+            // 分支拿到的是**完整前缀**（`take(keepFrom)`），不是「归档窗口 + 最近 N 条」。
+            // 必须归零归档偏移，否则会沿用父会话的 transcript_start，
+            // materializeSessionTranscript 会把父会话的归档拼到这个前缀前面，拼出错误的全量。
+            put("transcript_start", 0)
+            put("transcript_count", kept.size)
             put("branch_origin", branchOrigin)
             put("branch_graph", graph)
             put("branch_meta", buildJsonObject {

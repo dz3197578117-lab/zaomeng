@@ -43,6 +43,8 @@ object SmoothnessReportBuilder {
             longestFrameMs = frames.longestMs,
             mainThreadBlockCount = frames.mainThreadBlockCount,
             mainThreadBlocks = frames.mainThreadBlocks.take(MAX_BLOCKS),
+            samplingGaps = frames.samplingGaps,
+            samplingGapMs = frames.samplingGapMs,
             pageBuckets = frames.pageBuckets.take(MAX_BUCKETS).map {
                 FrameBucketDto(
                     page = it.page,
@@ -118,6 +120,12 @@ object SmoothnessReportBuilder {
             "帧指标尚无样本（客户端采样未接入或当前平台不支持）；无样本不等于流畅。"
         }
         parts += "主线程阻塞 ${frames.mainThreadBlockCount} 次（阈值以上的当时栈见下）。"
+        // 采样间断（切后台/息屏）已从帧统计里剔除，这里如实说明剔除了多少——
+        // 否则读报告的人无法区分「没有卡顿」和「采样断了很久」。
+        if (frames.samplingGaps > 0) {
+            parts += "另有 ${frames.samplingGaps} 段采样间断共 ${frames.samplingGapMs}ms" +
+                "（应用切后台/息屏期间帧回调停止，已从帧统计中剔除，不算卡顿）。"
+        }
         parts += "重组 / 图片重复请求 / 布局跳动为计数，不是结论。"
         parts += if (flicker.regions.isEmpty()) {
             "疑似闪烁：暂无区域超过变化阈值。"

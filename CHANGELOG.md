@@ -6,6 +6,74 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.2.2] - 2026-10-17
+
+### 修复：`transcript_count` 与真实条数脱钩（2.1.6 起存在）
+
+**症状**：会话的 `transcript_count` 声明值比实际条数多（真机诊断导出里 2/4 个会话分别是
+`179 / 178` 与 `27 / 26`）。这个字段决定「还有更多历史」的显示、向上翻页的 offset
+与增量补齐的判据——声明偏大就会一直显示「还有更多」，并去请求一页并不存在的数据。
+
+**根因**：全仓库有 6 处写 `transcript`，只有 2 处同步写 `transcript_count`。
+纠错（删 N 条插 M 条）、分支（截断为前缀）、场景切换（追加 1 条）、临时 NPC 插件（追加 2 条）
+这 4 条路径直接 `put("transcript", …)` 就落盘，而 `saveSession()` 只做原样合并、**从不重算**。
+
+**修复**（写入侧收口 + 读取侧自愈）：
+
+| 层 | 位置 | 作用 |
+| --- | --- | --- |
+| 写入侧 | `StorageService.updateSessionManifest` | 会话清单的**唯一写入口**，写回前统一对齐计数 |
+| 写入侧 | `DialogueAdvancedService.saveSession`、`PluginHostImpl` | 绕过上面入口直接落盘的路径同样经过对齐 |
+| 分支 | `DialogueAdvancedService.forkSession` | 额外把 `transcript_start` 归零——分支保留的是**完整前缀**，不是「归档窗口 + 最近 N 条」 |
+| 读取侧 | `SessionResponseUtils.transcriptSize` | 以 `transcript_start + 数组长度` 为准，不再信可能陈旧的声明值 |
+| 读取侧自愈 | `StorageService.getDialogueSession` / `loadSessionManifest` | 发现存量数据不一致时就地修正并落盘（幂等，只在真不一致时写，**不改 `updated_at`**，不影响会话排序） |
+
+自愈同时覆盖「`transcript_start > 0` 却找不到任何归档条目」的情况（分支会话沿用父会话偏移的
+典型形态），把它归零——这不改变用户可见内容，`materializeSessionTranscript` 本来也只能给出最近这一段。
+
+### 新增：`chat.advanced_actions` 探针
+
+33 个已知特性里**唯一没有探针**的一个，而上面那批缺陷恰好全部落在它上面（纠错 / 分支 / 场景切换）。
+新探针读持久化状态判定共同不变量：高级动作改写 transcript 之后计数必须与实际条数一致、
+分支会话的归档偏移必须归零。内容质量不做模型评审，不在判定范围内。
+
+### 修复：TTS 引擎泄漏
+
+`rememberPlatformTts()` 在**进入对话页**时就构造 `TextToSpeech`（绑定系统服务），
+而 `onDispose` 只调 `stop()`、**从不调 `shutdown()`**：
+
+- 每次进出对话页泄漏一个 TextToSpeech 实例与它的 ServiceConnection；
+- 用户从没点过朗读也会绑定一次系统 TTS 服务，且因为绑定是异步的，离开页面时
+  `stop()` 会打出 `TextToSpeech: stop failed: not bound to TTS engine`。
+
+改为**首次朗读时才绑定**、页面销毁时 `shutdown()`。朗读功能本身不变。
+
+> 说明：2.1.21 回退的是 2.1.19 / 2.1.20 的「每个角色不同的声音」与「离线神经朗读」，
+> 系统 TTS 朗读按钮一直都在，不是残留。
+
+### 修复：帧采样的假卡顿
+
+应用切后台/息屏期间 Choreographer 不再回调，恢复后的第一帧会把整段挂起时间算成一帧——
+真机导出里出现过 `longestFrameMs = 1080010`（1080 秒的「单帧」），看门狗也报过一次
+「主线程阻塞约 2086682ms」。
+
+现在超过 1 秒的帧间隔、超过 10 秒的帧停顿都判为**采样间断**：不计入帧统计与阻塞统计，
+但在报告里单独给出次数与总时长（`samplingGaps` / `samplingGapMs`），
+让人能区分「真的卡」与「采样断了」。
+
+### 修复：可访问性审计的假阳性
+
+真机上「运行诊断」页 8 个可点击节点全被判成「无语义标签 + 点击目标 < 48dp」，
+而那 8 个其实都是 Material3 标准组件（3 个 IconButton、3 个 OutlinedButton、1 个 FilterChip）。
+问题在采样口径，不在界面：
+
+| 项 | 旧口径（假阳性来源） | 新口径 |
+| --- | --- | --- |
+| 标签 | 只看节点自身的 `contentDescription` / `text` | 看**整棵子树**——Compose 的 Button / IconButton / FilterChip 把可读文本放在子节点 |
+| 尺寸 | `boundsInRoot`（视觉尺寸：Button 40dp、FilterChip 32dp） | `touchBoundsInRoot`（Material 的 `minimumInteractiveComponentSize` 扩展的正是触控区域） |
+
+两项都已修正，真实的可访问性问题仍然会被报出。
+
 ## [2.2.1] - 2026-10-17
 
 ### 修复：角色回复完成后，本轮消息从界面上消失

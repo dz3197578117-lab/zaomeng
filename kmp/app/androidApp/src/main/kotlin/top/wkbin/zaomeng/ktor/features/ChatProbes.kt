@@ -542,11 +542,100 @@ private const val DISCLOSURE_SCAN_ENTRIES = 120
 
 private const val WORLD_MEMORY_READ_LIMIT = 400_000
 
+/**
+ * 高级动作（导演方案 / 续写建议 / 场景切换 / 分支 / 纠错 / 重写）。
+ *
+ * 这一族动作**没有各自的结构化事件**，此前也是 33 个已知特性里**唯一没有探针**的一个——
+ * 而 2.2.2 修掉的 `transcript_count` off-by-one 恰好全部落在它上面（纠错删条、分支截断、
+ * 场景切换追加），所以它长期是个盲区。这里改成读持久化状态判定共同不变量：
+ * 改写 transcript 之后计数必须与实际条数一致，分支会话的归档偏移必须归零。
+ *
+ * 内容质量（导演方案好不好、纠错结果对不对）不做模型评审，不在判定范围内。
+ */
+internal class ChatAdvancedActionsProbe : BaseProbe(
+    id = "chat.advanced_actions",
+    title = "高级动作（导演 / 分支 / 纠错 / 场景切换）",
+    domain = KnownFeature.DOMAIN_CHAT,
+    features = listOf("chat.advanced_actions"),
+) {
+    override suspend fun check(ctx: FeatureProbeContext): ProbeResult {
+        val sessions = focusSessions(ctx, onlyWithTurns = false)
+        if (sessions.isEmpty()) return ProbeResult.noData("还没有任何会话。")
+
+        var checked = 0
+        var branches = 0
+        var corrected = 0
+        var sceneSwitched = 0
+        var failures = 0
+        var warnings = 0
+        val details = mutableListOf<String>()
+        sessions.forEach { focus ->
+            val transcript = focus.manifest.arr("transcript").objects()
+            val facts = AdvancedActionFacts(
+                isBranch = focus.manifest.obj("branch_origin")?.isNotEmpty() == true,
+                transcriptStart = focus.manifest.intOrNull("transcript_start")?.coerceAtLeast(0) ?: 0,
+                declaredCount = focus.manifest.intOrNull("transcript_count"),
+                transcriptEntries = transcript.size,
+                correctedEntries = transcript.count { it.str("corrected_at").isNotBlank() },
+                sceneSwitches = focus.manifest.arr("scene_history").size,
+            )
+            // 没用过高级动作的会话没有判定价值：绝大多数会话都是这一类，直接跳过。
+            if (!facts.touched) return@forEach
+            checked++
+            if (facts.isBranch) branches++
+            if (facts.correctedEntries > 0) corrected++
+            if (facts.sceneSwitches > 0) sceneSwitched++
+            val assessment = assessAdvancedActionIntegrity(facts)
+            when (assessment.status) {
+                ProbeStatus.FAIL -> {
+                    failures++
+                    details += "${focus.runId}/${focus.sessionId}：${assessment.summary}"
+                }
+                ProbeStatus.WARN -> {
+                    warnings++
+                    details += "${focus.runId}/${focus.sessionId}：${assessment.summary}"
+                }
+                else -> Unit
+            }
+        }
+        val evidence = evidenceMap(
+            "sessions_checked" to checked.toString(),
+            "branch_sessions" to branches.toString(),
+            "corrected_sessions" to corrected.toString(),
+            "scene_switched_sessions" to sceneSwitched.toString(),
+            "failures" to failures.toString(),
+            "warnings" to warnings.toString(),
+        )
+        val built = { evidence.toProbeEvidence() }
+        return when {
+            checked == 0 -> ProbeResult.noData(
+                "还没有会话用过高级动作（导演 / 分支 / 纠错 / 场景切换），无法判断。",
+                built(),
+            )
+            failures > 0 -> ProbeResult.fail(
+                "有 $failures/$checked 个会话的高级动作留下了不一致的 transcript 记账。",
+                built(),
+                details.take(20),
+            )
+            warnings > 0 -> ProbeResult.warn(
+                "有 $warnings/$checked 个会话在高级动作后 transcript_count 与实际条数不一致。",
+                built(),
+                details.take(20),
+            )
+            else -> ProbeResult.ok(
+                "$checked 个会话的高级动作改写过 transcript：计数一致、分支归档偏移正确。",
+                built(),
+            )
+        }
+    }
+}
+
 /** 注册会话与对话域的全部探针。 */
 fun registerChatProbes(registry: FeatureProbeRegistry) {
     registry.registerAll(
         ChatTimelineProbe(),
         ChatTranscriptIntegrityProbe(),
+        ChatAdvancedActionsProbe(),
         ChatGenerationProbe(),
         ChatFirstTokenLatencyProbe(),
         ChatLongTermMemoryProbe(),

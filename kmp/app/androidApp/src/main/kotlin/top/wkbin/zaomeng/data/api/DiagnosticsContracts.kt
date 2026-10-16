@@ -590,6 +590,15 @@ data class SmoothnessReportDto(
     val mainThreadBlockCount: Long = 0,
     /** 超阈值阻塞的当时栈（每条已截断；只保留最近若干条）。 */
     val mainThreadBlocks: List<String> = emptyList(),
+    /**
+     * 采样间断（应用切后台/息屏期间帧回调停止）的次数与总时长。
+     *
+     * 这些间隔已从 [totalFrames] / [longestFrameMs] / [mainThreadBlockCount] 中剔除：
+     * 挂起期间 Choreographer 不再回调，恢复后的第一帧会把整段挂起时间算成一帧。
+     * 单独上报是为了让人能区分「真的卡」与「采样断了」。
+     */
+    val samplingGaps: Long = 0,
+    val samplingGapMs: Long = 0,
     val pageBuckets: List<FrameBucketDto> = emptyList(),
     val recompositions: List<RecompositionStatDto> = emptyList(),
     val imageRequests: List<ImageRequestStatDto> = emptyList(),

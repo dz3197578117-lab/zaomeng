@@ -5,6 +5,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -179,6 +180,93 @@ class FeatureProbeAssessmentsTest {
         val transcript = listOf(key("t9", "甲", "ts", "a"), key("t10", "甲", "ts", "b"))
         val assessment = assessSessionIntegrity(transcript, declaredTranscriptCount = 42, transcriptStart = 40)
         assertEquals(ProbeStatus.OK, assessment.status)
+    }
+
+    // ------------------------------------------------------------------
+    // 高级动作（导演 / 分支 / 纠错 / 场景切换）
+    // ------------------------------------------------------------------
+
+    private fun advancedFacts(
+        isBranch: Boolean = false,
+        transcriptStart: Int = 0,
+        declaredCount: Int? = null,
+        entries: Int = 0,
+        corrected: Int = 0,
+        sceneSwitches: Int = 0,
+    ) = AdvancedActionFacts(
+        isBranch = isBranch,
+        transcriptStart = transcriptStart,
+        declaredCount = declaredCount,
+        transcriptEntries = entries,
+        correctedEntries = corrected,
+        sceneSwitches = sceneSwitches,
+    )
+
+    @Test
+    fun `untouched session is not judged by the advanced-action probe`() {
+        assertFalse(advancedFacts(declaredCount = 5, entries = 5).touched)
+        assertTrue(advancedFacts(corrected = 1).touched)
+        assertTrue(advancedFacts(isBranch = true).touched)
+        assertTrue(advancedFacts(sceneSwitches = 1).touched)
+    }
+
+    @Test
+    fun `corrected session with matching count is ok`() {
+        val assessment = assessAdvancedActionIntegrity(
+            advancedFacts(declaredCount = 5, entries = 5, corrected = 2),
+        )
+        assertEquals(ProbeStatus.OK, assessment.status)
+        assertEquals("纠错", assessment.evidence["action"])
+    }
+
+    @Test
+    fun `off by one after correction is a warning`() {
+        // 纠错删掉 1 条角色回复后数组少 1，而 count 没跟着改 —— 2.2.2 之前的真实缺陷
+        val assessment = assessAdvancedActionIntegrity(
+            advancedFacts(declaredCount = 179, entries = 178, corrected = 1),
+        )
+        assertEquals(ProbeStatus.WARN, assessment.status)
+        assertEquals("179", assessment.evidence["declared_count"])
+        assertEquals("178", assessment.evidence["entries"])
+    }
+
+    @Test
+    fun `branch keeping the parent archive offset is a failure`() {
+        // 分支保留的是完整前缀，沿用父会话的 transcript_start 会让读取侧拼出错误的全量
+        val assessment = assessAdvancedActionIntegrity(
+            advancedFacts(isBranch = true, transcriptStart = 40, declaredCount = 42, entries = 2),
+        )
+        assertEquals(ProbeStatus.FAIL, assessment.status)
+        assertTrue(assessment.summary.contains("transcript_start=40"), assessment.summary)
+    }
+
+    @Test
+    fun `branch with a reset archive offset is ok`() {
+        val assessment = assessAdvancedActionIntegrity(
+            advancedFacts(isBranch = true, transcriptStart = 0, declaredCount = 178, entries = 178),
+        )
+        assertEquals(ProbeStatus.OK, assessment.status)
+    }
+
+    @Test
+    fun `archived session compares against start plus entries`() {
+        // 归档会话：manifest 只保留最近 2 条，start=40 → 实际总量应为 42
+        val ok = assessAdvancedActionIntegrity(
+            advancedFacts(transcriptStart = 40, declaredCount = 42, entries = 2, sceneSwitches = 1),
+        )
+        assertEquals(ProbeStatus.OK, ok.status)
+
+        val drifted = assessAdvancedActionIntegrity(
+            advancedFacts(transcriptStart = 40, declaredCount = 41, entries = 2, sceneSwitches = 1),
+        )
+        assertEquals(ProbeStatus.WARN, drifted.status)
+    }
+
+    @Test
+    fun `action label lists every action that touched the session`() {
+        val all = advancedFacts(isBranch = true, corrected = 1, sceneSwitches = 1)
+        assertEquals("分支+纠错+场景切换", all.actionLabel)
+        assertEquals("高级动作", advancedFacts().actionLabel)
     }
 
     // ------------------------------------------------------------------

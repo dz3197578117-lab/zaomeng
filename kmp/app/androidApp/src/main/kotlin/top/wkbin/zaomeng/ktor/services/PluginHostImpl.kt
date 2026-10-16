@@ -373,12 +373,13 @@ class PluginHostImpl(
         })
         val temporaryNpcs = (session["temporary_npcs"]?.jsonObject ?: JsonObject(emptyMap())).toMutableMap()
         temporaryNpcs[name] = record
-        val updated = buildJsonObject {
+        // 追加了 2 条 transcript（场景提示 + 开场白），必须同步对齐 transcript_count。
+        val updated = reconcileTranscriptCount(buildJsonObject {
             session.forEach { (k, v) -> put(k, v) }
             put("participants", buildJsonArray { participants.forEach { add(JsonPrimitive(it)) } })
             put("transcript", buildJsonArray { transcript.forEach { add(it) } })
             put("temporary_npcs", buildJsonObject { temporaryNpcs.forEach { (k, v) -> put(k, v) } })
-        }
+        })
         storage.writeTextAtomically(manifestFile, json.encodeToString(JsonObject.serializer(), updated))
         return buildJsonObject { npc.forEach { (k, v) -> put(k, JsonPrimitive(v)) } }
     }

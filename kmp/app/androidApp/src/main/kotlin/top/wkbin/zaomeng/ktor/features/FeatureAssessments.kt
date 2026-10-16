@@ -904,6 +904,77 @@ fun assessSessionIntegrity(
     }
 }
 
+// ======================================================================
+// 高级动作（导演 / 分支 / 纠错 / 场景切换）
+// ======================================================================
+
+/**
+ * 一个会话里与「高级动作」相关的事实。
+ *
+ * 这些动作（纠错 / 分支 / 场景切换 / 重写 / 临时 NPC 插件）都会改写 `transcript`，
+ * 而它们的**共同不变量**只有一条：改写后 `transcript_count` 必须与实际条数一致，
+ * 且分支会话的 `transcript_start` 必须归零——分支保留的是**完整前缀**，
+ * 不是「归档窗口 + 最近 N 条」，沿用父会话的偏移会在读取时拼出错误的全量。
+ */
+data class AdvancedActionFacts(
+    val isBranch: Boolean,
+    val transcriptStart: Int,
+    val declaredCount: Int?,
+    val transcriptEntries: Int,
+    val correctedEntries: Int,
+    val sceneSwitches: Int,
+) {
+    /** 该会话是否真的被高级动作改写过——没改写过就没有判定价值（探针据此跳过）。 */
+    val touched: Boolean get() = isBranch || correctedEntries > 0 || sceneSwitches > 0
+
+    /** 涉及的动作名，用于结论文案。 */
+    val actionLabel: String
+        get() = buildList {
+            if (isBranch) add("分支")
+            if (correctedEntries > 0) add("纠错")
+            if (sceneSwitches > 0) add("场景切换")
+        }.joinToString("+").ifBlank { "高级动作" }
+}
+
+/**
+ * 高级动作改写 transcript 之后的一致性判定。
+ *
+ * 判据来自 2.2.2 修掉的那类缺陷：`transcript_count` 是分页与增量补齐的依据
+ * （ChatScreen 的 `hasMoreHistory`、ChatViewModel 的翻页 offset、ChatStreamEngine 的
+ * 增量判据），一旦与实际条数脱钩，就表现为「顶部一直显示还有更多历史」+ 翻页 offset 错位。
+ */
+fun assessAdvancedActionIntegrity(facts: AdvancedActionFacts): ProbeAssessment {
+    val expected = facts.transcriptStart + facts.transcriptEntries
+    val evidence = evidenceMapOf(
+        "action" to facts.actionLabel,
+        "is_branch" to facts.isBranch.toString(),
+        "transcript_start" to facts.transcriptStart.toString(),
+        "declared_count" to facts.declaredCount?.toString(),
+        "entries" to facts.transcriptEntries.toString(),
+        "corrected_entries" to facts.correctedEntries.toString(),
+        "scene_switches" to facts.sceneSwitches.toString(),
+    )
+    return when {
+        facts.isBranch && facts.transcriptStart != 0 -> ProbeAssessment(
+            status = ProbeStatus.FAIL,
+            summary = "分支会话的 transcript_start=${facts.transcriptStart}（应为 0）：" +
+                "分支保留的是完整前缀，沿用父会话的归档偏移会在读取时拼出错误的全量。",
+            evidence = evidence,
+        )
+        facts.declaredCount != null && facts.declaredCount != expected -> ProbeAssessment(
+            status = ProbeStatus.WARN,
+            summary = "${facts.actionLabel}之后 transcript_count=${facts.declaredCount} 与实际条数 " +
+                "$expected 不一致（「还有更多历史」与翻页 offset 会出错）。",
+            evidence = evidence,
+        )
+        else -> ProbeAssessment(
+            status = ProbeStatus.OK,
+            summary = "${facts.actionLabel}后计数一致（$expected 条）。",
+            evidence = evidence,
+        )
+    }
+}
+
 /**
  * 人物时间线推进：期望值 `start_chapter + turn_count / TURNS_PER_PERSONA_CHAPTER`
  * 与 `persona_chapter` 实际值是否一致。

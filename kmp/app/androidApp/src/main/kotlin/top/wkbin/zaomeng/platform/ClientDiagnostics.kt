@@ -78,6 +78,15 @@ object ClientDiagnostics {
         val pageBuckets: List<FrameBucket> = emptyList(),
         val mainThreadBlockCount: Long = 0,
         val mainThreadBlocks: List<String> = emptyList(),
+        /**
+         * 采样间断（应用切后台/息屏期间帧回调停止）的次数与总时长。
+         *
+         * 这些间隔**不计入** [totalFrames] / [longestMs] / [mainThreadBlockCount]：
+         * 挂起期间 Choreographer 不再回调，恢复后的第一帧会把整段挂起时间算成一帧。
+         * 单独上报是为了让读报告的人能区分「真的卡」与「采样断了」。
+         */
+        val samplingGaps: Long = 0,
+        val samplingGapMs: Long = 0,
     )
 
     data class RecompositionStat(

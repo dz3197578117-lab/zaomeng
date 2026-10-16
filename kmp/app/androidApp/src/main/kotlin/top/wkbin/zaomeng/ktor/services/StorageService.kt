@@ -442,7 +442,9 @@ class StorageService(
             ?: throw NoSuchElementException("Session manifest not found: $sessionId")
 
         return try {
-            json.decodeFromString(JsonObject.serializer(), content).also { parsed ->
+            val parsed = json.decodeFromString(JsonObject.serializer(), content)
+            val healed = healTranscriptCount(runId, sessionId, parsed)
+            if (healed === parsed) {
                 sessionManifestCacheLock.withLock {
                     sessionManifestCache[cacheKey] = CachedJsonDocument(modifiedAt, size, parsed)
                     while (sessionManifestCache.size > MAX_CACHED_SESSION_MANIFESTS) {
@@ -450,10 +452,62 @@ class StorageService(
                     }
                 }
             }
+            healed
         } catch (e: Exception) {
             throw IllegalStateException("Failed to load session manifest: ${e.message}", e)
         }
     }
+
+    /**
+     * 读取侧自愈：transcript 的记账字段与实际内容不一致时就地修正并落盘（幂等）。
+     *
+     * 2.2.2 之前有 4 条写入路径（纠错 / 分支 / 场景切换 / 临时 NPC 插件）替换了 `transcript`
+     * 却没有同步 `transcript_count`，留下「声明 179 / 实际 178」这类存量数据——修好写入侧
+     * 并不能改变已经落盘的内容。这里在读取入口做一次修正，之后列表、详情与诊断探针看到的
+     * 都是自洽的数据。
+     *
+     * 只在真的不一致时写盘；修正走 [updateSessionManifest] 的路径锁并以磁盘最新内容重算，
+     * 避免与并发写入互相覆盖。**不触碰 `updated_at`**，否则会话列表排序会被自愈打乱。
+     */
+    private fun healTranscriptCount(runId: String, sessionId: String, manifest: JsonObject): JsonObject {
+        val reconciled = normalizeTranscriptBookkeeping(runId, sessionId, manifest)
+        if (reconciled === manifest) return manifest
+        return runCatching {
+            updateSessionManifest(runId, sessionId) { latest ->
+                normalizeTranscriptBookkeeping(runId, sessionId, latest)
+            }
+        }.getOrDefault(reconciled)
+    }
+
+    /**
+     * 把 transcript 的记账字段对齐到实际内容：
+     * 1. `transcript_start > 0` 却找不到任何归档条目 → 该偏移是错的（典型是分支会话沿用了
+     *    父会话的偏移，而分支目录下并没有归档），归零。归零不改变用户可见内容——
+     *    [materializeSessionTranscript] 在这种情况下本来也只能给出最近这一段。
+     * 2. `transcript_count` 与实际条数不一致 → 按 `start + size` 重算。
+     */
+    private fun normalizeTranscriptBookkeeping(
+        runId: String,
+        sessionId: String,
+        manifest: JsonObject,
+    ): JsonObject {
+        val start = manifest["transcript_start"]?.jsonPrimitive?.intOrNull?.coerceAtLeast(0) ?: 0
+        if (start <= 0 || hasTranscriptArchive(runId, sessionId)) return reconcileTranscriptCount(manifest)
+        val transcript = manifest["transcript"] as? JsonArray
+        return buildJsonObject {
+            manifest.forEach { (key, value) ->
+                if (key != "transcript_start" && key != "transcript_count") put(key, value)
+            }
+            put("transcript_start", 0)
+            put("transcript_count", transcript?.size ?: 0)
+        }
+    }
+
+    /** 归档目录里是否存在可读条目（与 [materializeSessionTranscript] 的读取口径一致）。 */
+    private fun hasTranscriptArchive(runId: String, sessionId: String): Boolean = runCatching {
+        val archiveDir = getTranscriptArchiveDirectory(runId, sessionId)
+        isDirectory(archiveDir) && listFiles(archiveDir).any { isFile(it) && it.name.endsWith(".json") }
+    }.getOrDefault(false)
 
     /**
      * 在与原子写相同的路径锁内完成会话清单读-改-写，避免插件动作、对话提交和后台状态刷新互相覆盖。
@@ -469,7 +523,9 @@ class StorageService(
                 ?: throw NoSuchElementException("Session manifest not found: $sessionId")
             val current = runCatching { json.decodeFromString(JsonObject.serializer(), content) }
                 .getOrElse { throw IllegalStateException("Failed to load session manifest: ${it.message}", it) }
-            val updated = transform(current)
+            // 会话清单写入口统一收口：无论调用方改的是哪一块，只要 transcript 被替换过，
+            // transcript_count 都会在这里对齐，避免出现「声明 179 / 实际 178」这类脱钩数据。
+            val updated = reconcileTranscriptCount(transform(current))
             writeBytesLocked(
                 manifestFile,
                 json.encodeToString(JsonObject.serializer(), updated).encodeToByteArray(),
@@ -617,11 +673,14 @@ class StorageService(
             ?: throw NoSuchElementException("Session manifest not found: $sessionId")
 
         val decoded = json.decodeFromString(JsonObject.serializer(), content)
+        // 读取侧自愈：`getDialogueSession` 不经过 loadSessionManifest，这里单独兜一次，
+        // 保证打开会话时拿到的 transcript_count 与实际条数一致。
+        val healed = healTranscriptCount(runId, sessionId, decoded)
         // 读取侧归一化：历史数据里的参与者/受控角色/说话人可能带包裹引号（`"陆城"`），
         // 直接回给客户端会让说话人标签显示 `"李慧英"`。头像先按原始名字注入，
         // 再连同 character_avatars 的键一起归一化，避免旧书卷头像丢失。
         return normalizeSessionCharacterNames(
-            withCharacterAvatars(materializeSessionTranscript(runId, sessionId, decoded), runId),
+            withCharacterAvatars(materializeSessionTranscript(runId, sessionId, healed), runId),
         )
     }
 

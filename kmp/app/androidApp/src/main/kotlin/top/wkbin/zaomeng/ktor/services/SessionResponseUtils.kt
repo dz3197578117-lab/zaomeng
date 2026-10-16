@@ -28,10 +28,39 @@ fun leanSession(session: JsonObject): JsonObject = buildJsonObject {
     put("transcript_count", transcriptSize(session))
 }
 
-fun transcriptSize(session: JsonObject): Int =
-    session["transcript_count"]?.jsonPrimitive?.intOrNull
-        ?: (session["transcript"] as? JsonArray)?.size
-        ?: 0
+/**
+ * 会话 transcript 的**全量条数**：`transcript_start`（已归档数）+ 当前数组长度。
+ *
+ * 这里刻意不优先读 `transcript_count`：它是派生值，历史上有 4 条写入路径（纠错 / 分支 /
+ * 场景切换 / 临时 NPC 插件）直接替换了 `transcript` 却没有同步它，导致「声明 179 / 实际 178」。
+ * 该值决定 `hasMoreHistory`（ChatScreen）、向上翻页 offset（ChatViewModel）与增量补齐判据
+ * （ChatStreamEngine），声明值偏大就会一直显示"还有更多历史"并请求一页不存在的数据。
+ *
+ * 只有当会话没有携带 `transcript` 数组时（轻量响应）才退回读 `transcript_count`。
+ */
+fun transcriptSize(session: JsonObject): Int {
+    val transcript = session["transcript"] as? JsonArray
+        ?: return session["transcript_count"]?.jsonPrimitive?.intOrNull ?: 0
+    val start = session["transcript_start"]?.jsonPrimitive?.intOrNull?.coerceAtLeast(0) ?: 0
+    return start + transcript.size
+}
+
+/**
+ * 把 `transcript_count` 对齐到实际条数（纯内存变换，不落盘）。
+ *
+ * 用于**写入侧收口**：任何替换了 `transcript` 的写入都必须经过它，否则计数会与实际脱钩。
+ * 与 [transcriptSize] 同一口径（`transcript_start + transcript.size`），两者不会互相打架。
+ */
+fun reconcileTranscriptCount(session: JsonObject): JsonObject {
+    val transcript = session["transcript"] as? JsonArray ?: return session
+    val start = session["transcript_start"]?.jsonPrimitive?.intOrNull?.coerceAtLeast(0) ?: 0
+    val expected = start + transcript.size
+    if (session["transcript_count"]?.jsonPrimitive?.intOrNull == expected) return session
+    return buildJsonObject {
+        session.forEach { (key, value) -> if (key != "transcript_count") put(key, value) }
+        put("transcript_count", expected)
+    }
+}
 
 fun transcriptOf(session: JsonObject): List<JsonObject> =
     (session["transcript"] as? JsonArray)
