@@ -6,6 +6,35 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.2.1] - 2026-10-17
+
+### 修复：角色回复完成后，本轮消息从界面上消失
+
+**症状**：一轮对话生成结束后，该轮除最后一条外的消息全部从聊天界面消失——用户消息与
+部分角色的回复都不见了。**退出会话重新进入，它们又全部出现**（数据本身完整，只是前台列表被覆盖）。
+
+**根因**：`mergeTranscript()` 用「同一 turnId 只保留最后一条」做去重，但一个 turnId 实际对应
+**一整轮**的多条消息（用户消息 + 该轮每个说话人的回复，见 `DialogueService.updateSessionManifest`
+中用户消息与每条 response 都 `put("turn_id", turnId)`）。于是每轮生成完成（`Complete` 事件）时，
+除最后一条外的条目全被从本地 transcript 中删除。
+
+该逻辑 2.1.6 为修「同一句回复冒出多个气泡」而引入，2.1.10 又复制到 `prependTranscript`（向上翻页）。
+
+**修复**：去重单位从「条」改为按 `TranscriptItemDto.transcriptKey` 逐条比对
+（key = `turnId|speaker|timestamp|正文哈希`）。同一轮里不同说话人、不同台词 key 互不相同，
+整轮完整保留；只有真正的重复（整轮重试、`missing` 与 `appended` 拼接重叠）才会撞 key。
+
+顺带修掉两个同源的连带隐患：
+
+| 隐患 | 后果 |
+| --- | --- |
+| `base.filterNot { it.turnId in appendedTurnIds }` 按 turnId **整块移除** | `append` 只覆盖该轮一部分时，会误删 base 里该轮的其余条目 |
+| `prependTranscript` 里 `current.filterNot { it.turnId in earlierTurnIds }` | 分页边界**切开同一轮**时，向上翻页会把后半段直接丢掉 |
+
+**测试**：改写 2 个把「同一 turnId 只保留一条」这一错误假设断言成规格的用例，
+新增 3 个回归用例（一轮多角色不压缩、整轮重试、分页边界切开同一轮）。
+单测总数 **470，全部通过**。
+
 ## [2.2.0] - 2026-10-16
 
 ### 重构：单模块 Android 工程，去掉内嵌 HTTP 层

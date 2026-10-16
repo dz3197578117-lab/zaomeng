@@ -126,6 +126,7 @@
 | **端侧推理整个起不来（2.1.16 引入的回归）** | 随包二进制多了非系统依赖 `libOpenCL.so`，而 App 起子进程时没设 `LD_LIBRARY_PATH`，Android 的 linker 又不搜索可执行文件同目录 → `CANNOT LINK EXECUTABLE ... library "libOpenCL.so" not found`。修复：二进制退回**自包含**（NEEDED 只剩系统库），并在 spawn 时显式设置 `LD_LIBRARY_PATH` | **2.1.18** |
 | 蒸馏 60 秒超时失败 | 默认超时不足以跑完一次内容提取 | 2.1.5 |
 | 应用内显示旧版本号 | 版本号手写在源码里 | 2.1.5 |
+| **角色回复后本轮消息从界面消失** | 去重按「同一 turnId 只保留最后一条」实现，但一个 turnId 对应**一整轮**（用户消息 + 该轮每个说话人的回复）→ 每轮生成完成（`Complete`）时除最后一条外全被从本地列表删除。数据落库完整，退出重进即恢复。改为按 `transcriptKey`（`turnId\|speaker\|timestamp\|正文哈希`）逐条去重 | **2.2.1** |
 
 ## 约定与边界
 
