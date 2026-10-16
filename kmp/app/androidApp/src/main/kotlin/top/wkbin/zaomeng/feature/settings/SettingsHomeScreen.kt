@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.outlined.SupportAgent
 import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material3.Card
@@ -51,6 +52,7 @@ fun SettingsHomeScreen(
     onBack: () -> Unit,
     onOpenModelSettings: () -> Unit,
     onOpenOnDeviceModels: () -> Unit,
+    onOpenOfflineSpeech: () -> Unit,
     onOpenChatDisplay: () -> Unit,
     onOpenPlugins: () -> Unit,
     onOpenAppearance: () -> Unit,
@@ -106,6 +108,21 @@ fun SettingsHomeScreen(
                             subtitle = "管理聊天扩展、权限与运行状态。",
                             icon = Icons.Outlined.Extension,
                             onClick = onOpenPlugins,
+                        )
+                    }
+                }
+            }
+            item {
+                Column {
+                    // 与「模型与对话」分开成独立分组：朗读（TTS）与文本推理是两件互不依赖的事，
+                    // 各自有自己的引擎与模型文件。混在一起会让人以为「要先用端侧模型才能朗读」。
+                    SectionTitle("朗读与语音")
+                    SettingsHomeGroup {
+                        SettingsHomeRow(
+                            title = "离线神经语音",
+                            subtitle = "下载多说话人中文模型，让每个角色有不同音色；完全离线。",
+                            icon = Icons.AutoMirrored.Outlined.VolumeUp,
+                            onClick = onOpenOfflineSpeech,
                         )
                     }
                 }

@@ -393,6 +393,9 @@ class ChatSessionGatewayImpl(
         version: String,
     ): ByteArray? = persona.getPersonaAvatar(runId, character, version)
 
+    override suspend fun getPersonaFields(runId: String, character: String): Map<String, String> =
+        persona.getPersona(runId, character).fields
+
     override suspend fun getDialogueMemoryQuality(
         runId: String,
         sessionId: String,

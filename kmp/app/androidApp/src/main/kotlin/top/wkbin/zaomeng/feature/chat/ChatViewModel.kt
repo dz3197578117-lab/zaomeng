@@ -158,6 +158,7 @@ class ChatViewModel(
                         session = session,
                         runSessions = loaded.runSessions,
                         avatarBytes = loaded.avatarBytes,
+                        personaFields = loaded.personaFields,
                         pluginActions = plugins.actions,
                         generationEnhancers = plugins.enhancers,
                         memoryQuality = loaded.memoryQuality,

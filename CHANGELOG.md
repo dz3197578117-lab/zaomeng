@@ -6,6 +6,68 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.3.0] - 2026-10-17
+
+### 新增：多角色语音（重新移植 2.1.19 / 2.1.20 的语音特性）
+
+2.1.19 / 2.1.20 引入过「每个角色不同的声音」与「离线神经朗读」，2.1.21 因真机问题
+（试听闪退、所有人一个声音）**整体回退**；随后 2.2.0 把 33 个模块合并成单模块，
+那批代码没有跟着搬过来，于是**设置里连入口都没有**。本版把它移植回来。
+
+移植不是 `git revert`：旧实现依赖已经消失的多模块结构与内嵌 HTTP 层，需要逐层改写：
+
+| 层 | 旧形态 | 新形态 |
+| --- | --- | --- |
+| 声线档案 / 情绪 / 引擎选择 | `ui:shared` 的 `commonMain` + `expect/actual` | 单模块 `platform/`，去掉 `expect`（模块已无 jvm 目标） |
+| 神经引擎 | `androidMain` + 构建期从 `ui:shared` 下载 AAR | `platform/`，AAR 由 `:app:androidApp` 的 `downloadSherpaOnnx` 下载并校验 sha256 |
+| 语音模型下载 | `ktor/services` + **4 条 HTTP 路由** | 只留服务，路由删除——客户端经 `ModelSettingsRepository` **进程内直连**（2.2.0 已去掉内嵌 HTTP 层） |
+| 设置页 | `feature:settings` 模块 | 并入 `:app:androidApp` 的 `feature/settings` |
+| 偏好 | `AppPreferencesRepository`（data:remote） | 同一份 `chatDisplay` 偏好，字段原样恢复 |
+
+**保留 2.1.20 的两处原生崩溃修复**（它们是 2.1.19/2.1.20 回退的直接原因之一）：
+
+- sherpa-onnx 的 `OfflineTts` **不是线程安全的**，而 `stop()` 只能取消协程、打断不了已进入 JNI
+  的 `generate()`——连点两次会让两次原生调用撞在同一个对象上（原生崩溃，Java 侧 `try/catch`
+  兜不住）。现在**合成与播放整段串行化**（互斥锁覆盖「加载引擎 → 合成 → 播放」）。
+- `stop()` 不再直接释放正在被写入的 `AudioTrack`，**音轨只由持有它的那个协程释放**
+  （同一轨道双重释放会崩）。
+- 另加：切换引擎时释放旧实例（否则旧的原生引擎会一直留在内存里）、加载前检查可用内存并给出
+  可读原因、`setCast` 一次性分配互不相同的说话人编号（同场不撞车、同一角色永远同一音色）。
+
+### 修复：朗读在 Android 11+ 完全没声音（回退时被一起删掉的清单声明）
+
+`AndroidManifest.xml` 缺 `<queries>` 里的 `android.intent.action.TTS_SERVICE`。targetSdk 30+
+的包可见性限制会让 App **枚举不到任何 TTS 引擎**，`TextToSpeech` 初始化直接回调 ERROR，
+表现为「点朗读完全没声音、也没有任何报错」。本项目的 targetSdk 是 **36**，所以这条是必需的。
+回退语音特性时它被一并删除，**2.1.21 起的所有版本（含 2.2.x）都受影响**，本版补回。
+
+顺带把系统 TTS 的初始化失败也**记进日志**（引擎初始化非 SUCCESS / 缺中文语音数据两种情况），
+把「没声音」从「无从查起」变成一条可排查的记录。
+
+### 修复：更新说明在弹窗里显示成一堆原始标记
+
+更新弹窗把发布说明**逐行原样**渲染，只剥掉行首的 `- `/`* `。于是正文里的 `**加粗**`、
+反引号、`### 标题`、表格竖线全部**连标记一起显示**，加上 2.2.2 那份面向维护者的技术记录
+（`179/178`、`transcript_count`、探针编号…），对用户完全不可读。
+
+- 弹窗改为解析一个很小的 Markdown 子集：标题 / 圆点条目 / 序号条目 / 引用 / 分隔线分行成块，
+  行内 `**粗体**` 与 `` `代码` `` 按样式渲染，表格去掉竖线按 ` · ` 连接；**认不出来的行退化为
+  普通段落**，不丢内容。解析是纯函数 `parseReleaseNotes`，配 6 个单测。
+- 发布说明的写法也改了：**面向用户的一句话 + 要点列表**，技术细节留在 CHANGELOG。
+  2.2.2 的 Release 正文已就地更新（用户当前装的是 2.2.1，弹窗读的是远端 Release body）。
+
+### 验证
+
+```
+./gradlew :app:androidApp:compileDebugKotlin     BUILD SUCCESSFUL（无新增警告）
+./gradlew :app:androidApp:testDebugUnitTest      114 测试类 / 576 用例 / 0 失败 0 错误
+```
+
+新增 95 个语音相关用例（声线派生与撞车、情绪与标点韵律、引擎降级四种原因、模型目录与路径
+拼装、下载服务、UI 状态机），另 6 个更新说明排版用例。其中 `SpeechVoiceTest` 里那条
+「8 个中文角色名必须派生出 8 条不同声线」的定点回归仍在——它当初抓出的是
+「李慕白与顾青声线完全相同」的真 bug。
+
 ## [2.2.2] - 2026-10-17
 
 ### 修复：`transcript_count` 与真实条数脱钩（2.1.6 起存在）

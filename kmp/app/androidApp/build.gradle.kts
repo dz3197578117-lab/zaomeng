@@ -13,6 +13,8 @@
 //     换成纯 AndroidX 坐标是后续独立步骤。
 // ============================================================================
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.net.URI
+import java.security.MessageDigest
 import java.util.Properties
 import java.util.zip.ZipFile
 
@@ -96,6 +98,13 @@ android {
         versionCode = providers.gradleProperty("zaomeng.versionCode").get().toInt()
         versionName = providers.gradleProperty("zaomeng.versionName").get()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            // 只分发 arm64-v8a。端侧推理（libllama-server.so）本来就只编了这一档，
+            // 而神经 TTS 的 AAR 里还带 armeabi-v7a / x86 / x86_64 共 91 MB 原生库——
+            // 不加过滤，那些包会原样进 APK，用户白下 91 MB 却永远用不到。
+            abiFilters += "arm64-v8a"
+        }
     }
 
     sourceSets["main"].apply {
@@ -222,6 +231,17 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(platform(libs.androidx.compose.bom))
 
+    // 离线神经 TTS 引擎（sherpa-onnx）。原生库随 AAR 分发，ABI 由上面的 ndk.abiFilters
+    // 收敛到 arm64-v8a。这里用**任务名**（字符串）而不是 Kotlin 变量引用：下载任务的声明
+    // 在本文件末尾，而 dependencies 块在脚本执行时就要求值，直接引用变量会拿到未初始化的值。
+    // builtBy 用任务名是惰性解析的，没有这个顺序问题。
+    implementation(
+        files(
+            rootProject.layout.projectDirectory.dir(".gradle/sherpa-onnx")
+                .file("sherpa-onnx-${libs.versions.sherpaOnnx.get()}.aar"),
+        ).builtBy("downloadSherpaOnnx"),
+    )
+
     // 内嵌 Ktor 服务端 + 客户端（localhost HTTP/SSE 链路，后续步骤整体去掉）
     // 只保留 Ktor **客户端**：对外 HTTP（模型 API / 在线书库 / 更新检查 / llama-server）。
     // 内嵌的本地 HTTP 服务端已整体移除，客户端改为进程内直连 AppServices。
@@ -311,4 +331,82 @@ tasks.withType<Test>().configureEach {
     val existing = System.getProperty("java.library.path").orEmpty()
     val nativesPath = nativesDir.absolutePath
     systemProperty("java.library.path", if (existing.isEmpty()) nativesPath else "$nativesPath:$existing")
+}
+
+// ---------------------------------------------------------------------------
+// 离线神经 TTS 引擎（sherpa-onnx）：构建期下载 AAR，绝不把 50 MB 二进制提交进仓库
+// ---------------------------------------------------------------------------
+// 为什么不用 Maven 坐标：
+//   ① Maven Central 上查无此物；
+//   ② JitPack 上只有 `com.github.k2-fsa:sherpa-onnx` 的 **jar**（不含原生库），
+//      Android 可用的 `sherpa-onnx-<版本>.aar` 只发布在 GitHub Release 的资产里。
+// 所以只能按 URL 取，并**校验 sha256**——原生库一旦被换掉或下坏，症状是运行时静默不响，
+// 很难查；宁可在这里直接失败。
+//
+// 缓存位置选 `kmp/.gradle/`：它已被 kmp/.gitignore 覆盖，且不会被 `clean` 清掉，
+// 因此换分支或 clean 之后不必重新下载 48 MB。
+//
+// ⚠️ 若所在网络访问不了 github.com，可以用资产 API 端点绕过：
+//   `api.github.com/repos/k2-fsa/sherpa-onnx/releases/assets/<id>` 加请求头
+//   `Accept: application/octet-stream`，它会 302 到可访问的 release-assets 域。
+// 下好后放到下面的缓存路径即可，任务会校验摘要并跳过下载。
+val sherpaOnnxVersion = libs.versions.sherpaOnnx.get()
+val sherpaOnnxAarSha256 = "633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96"
+val sherpaOnnxAarFile: File = rootProject.layout.projectDirectory
+    .dir(".gradle/sherpa-onnx")
+    .file("sherpa-onnx-$sherpaOnnxVersion.aar")
+    .asFile
+
+// 注意：这里必须用顶部 import 的 `MessageDigest`，不能写 `java.security.MessageDigest`——
+// 在 Android 的 Kotlin DSL 脚本里 `java` 会被 Gradle 的 java 扩展遮蔽，
+// 写全限定名会得到 `Unresolved reference 'security'`（踩过一次）。
+fun sha256Of(file: File): String =
+    MessageDigest.getInstance("SHA-256")
+        .digest(file.readBytes())
+        .joinToString("") { "%02x".format(it) }
+
+val downloadSherpaOnnx: TaskProvider<Task> = tasks.register("downloadSherpaOnnx") {
+    description = "下载并校验 sherpa-onnx 的 Android AAR（离线神经 TTS 引擎）"
+    outputs.file(sherpaOnnxAarFile)
+    outputs.upToDateWhen {
+        sherpaOnnxAarFile.isFile && sha256Of(sherpaOnnxAarFile) == sherpaOnnxAarSha256
+    }
+    doLast {
+        if (sherpaOnnxAarFile.isFile && sha256Of(sherpaOnnxAarFile) == sherpaOnnxAarSha256) {
+            logger.lifecycle("[sherpa-onnx] 缓存已存在且校验通过：${sherpaOnnxAarFile.absolutePath}")
+            return@doLast
+        }
+        sherpaOnnxAarFile.parentFile.mkdirs()
+        val url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/" +
+            "v$sherpaOnnxVersion/sherpa-onnx-$sherpaOnnxVersion.aar"
+        val temp = File(sherpaOnnxAarFile.parentFile, "${sherpaOnnxAarFile.name}.part")
+        var lastError: Exception? = null
+        for (attempt in 1..5) {
+            try {
+                logger.lifecycle("[sherpa-onnx] 开始下载（第 $attempt 次）：$url")
+                temp.delete()
+                URI(url).toURL().openStream().use { input ->
+                    temp.outputStream().use { output -> input.copyTo(output) }
+                }
+                val digest = sha256Of(temp)
+                if (digest != sherpaOnnxAarSha256) {
+                    error("sherpa-onnx AAR 校验失败：期望 $sherpaOnnxAarSha256，实际 $digest")
+                }
+                temp.renameTo(sherpaOnnxAarFile)
+                logger.lifecycle("[sherpa-onnx] 下载完成：${sherpaOnnxAarFile.length()} B")
+                return@doLast
+            } catch (exception: Exception) {
+                lastError = exception
+                temp.delete()
+                logger.warn("[sherpa-onnx] 第 $attempt 次失败：${exception.message}")
+                Thread.sleep(3_000)
+            }
+        }
+        throw GradleException(
+            "下载 sherpa-onnx AAR 失败：${lastError?.message}。" +
+                "若 github.com 不可达，可按本任务上方注释用资产 API 端点手动下载到 " +
+                "${sherpaOnnxAarFile.absolutePath}",
+            lastError,
+        )
+    }
 }

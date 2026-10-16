@@ -4,6 +4,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import top.wkbin.zaomeng.data.api.DownloadOnDeviceModelRequest
+import top.wkbin.zaomeng.data.api.DownloadVoiceModelRequest
+import top.wkbin.zaomeng.data.api.VoiceModelStatusDto
 import top.wkbin.zaomeng.data.api.ModelCapabilityReportDto
 import top.wkbin.zaomeng.data.api.ModelConnectionTestDto
 import top.wkbin.zaomeng.data.api.ModelListResponseDto
@@ -15,6 +17,7 @@ import top.wkbin.zaomeng.data.api.StartOnDeviceRequest
 import top.wkbin.zaomeng.data.api.TestModelSettingsRequest
 import top.wkbin.zaomeng.ktor.services.OnDeviceModelService
 import top.wkbin.zaomeng.ktor.services.SettingsManagementService
+import top.wkbin.zaomeng.ktor.services.VoiceModelDownloadService
 
 /**
  * 模型设置 + 端侧推理：**进程内直连**（原 `KtorModelSettingsClient`）。
@@ -32,6 +35,7 @@ import top.wkbin.zaomeng.ktor.services.SettingsManagementService
 class ModelSettingsClient(
     private val settings: SettingsManagementService,
     private val onDevice: OnDeviceModelService,
+    private val voice: VoiceModelDownloadService,
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -118,6 +122,19 @@ class ModelSettingsClient(
     suspend fun onDeviceCancelDownload(): OnDeviceStatusDto = onDevice.cancelDownload()
 
     suspend fun onDeviceDeleteModel(fileName: String): OnDeviceStatusDto = onDevice.deleteModel(fileName)
+
+    // ------------------------------------------------------------------
+    // 语音模型（离线神经 TTS）—— 服务返回类型化 DTO，直接透传
+    // ------------------------------------------------------------------
+
+    suspend fun voiceModelStatus(modelId: String): VoiceModelStatusDto = voice.status(modelId)
+
+    suspend fun voiceModelDownload(payload: DownloadVoiceModelRequest): VoiceModelStatusDto =
+        voice.startDownload(payload)
+
+    suspend fun voiceModelCancelDownload(): VoiceModelStatusDto = voice.cancelDownload()
+
+    suspend fun voiceModelDelete(modelId: String): VoiceModelStatusDto = voice.deleteModel(modelId)
 
     private inline fun <reified T> decode(payload: JsonObject): T =
         json.decodeFromJsonElement(payload)

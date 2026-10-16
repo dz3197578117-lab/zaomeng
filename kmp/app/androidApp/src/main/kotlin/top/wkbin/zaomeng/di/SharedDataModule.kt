@@ -64,6 +64,7 @@ internal fun sharedDataModule(platform: AppPlatform) = module {
         ModelSettingsClient(
             settings = get<AppServices>().graph.settingsManagement,
             onDevice = get<AppServices>().graph.onDeviceModels,
+            voice = get<AppServices>().graph.voiceModels,
         )
     }
     single {

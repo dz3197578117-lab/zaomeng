@@ -32,6 +32,23 @@ data class ChatDisplayPreferences(
     val backgroundImageUri: String = "",
     val backgroundOpacity: Float = 0.35f,
     val backgroundBlurRadius: Float = 0f,
+    /**
+     * 是否使用**离线神经 TTS** 朗读（关闭 = 系统 TTS）。
+     *
+     * 放在**对话显示偏好**里而不是顶层：朗读是对话体验的一部分，而这份偏好已经被
+     * 「ViewModel → 聊天页」整条链路带着走，不必再造一条通路。
+     * 默认关闭——系统 TTS 不需要下载任何东西就一定可用，是安全默认。
+     */
+    val neuralSpeechEnabled: Boolean = false,
+    /** 选用的神经语音模型 id（见 `NeuralVoiceCatalog`）；空串表示未选。 */
+    val ttsNeuralModelId: String = "",
+    /**
+     * 神经语音模型在本机的**绝对目录**，由下载服务回报（`VoiceModelStatusDto.directory`）。
+     *
+     * 客户端**不自己拼**这个路径：「模型放在哪」只在一处定义，
+     * 两端各记一份会悄悄漂移，而路径不对的症状只是「没声音」。
+     */
+    val ttsNeuralModelDir: String = "",
 )
 
 data class AppPreferences(
@@ -78,6 +95,9 @@ class AppPreferencesRepository(
                     backgroundImageUri = values[KEY_CHAT_BACKGROUND_IMAGE_URI].orEmpty(),
                     backgroundOpacity = (values[KEY_CHAT_BACKGROUND_OPACITY] ?: 0.35f).coerceIn(0.1f, 1f),
                     backgroundBlurRadius = (values[KEY_CHAT_BACKGROUND_BLUR_RADIUS] ?: 0f).coerceIn(0f, 32f),
+                    neuralSpeechEnabled = values[KEY_CHAT_NEURAL_SPEECH] ?: false,
+                    ttsNeuralModelId = values[KEY_TTS_NEURAL_MODEL_ID].orEmpty(),
+                    ttsNeuralModelDir = values[KEY_TTS_NEURAL_MODEL_DIR].orEmpty(),
                 ),
                 themeMode = ThemeMode.fromStorageValue(values[KEY_THEME_MODE]),
                 themeSeedColorArgb = values[KEY_THEME_SEED_COLOR] ?: 0L,
@@ -227,6 +247,12 @@ class AppPreferencesRepository(
             else values[KEY_CHAT_BACKGROUND_IMAGE_URI] = preferences.backgroundImageUri
             values[KEY_CHAT_BACKGROUND_OPACITY] = preferences.backgroundOpacity.coerceIn(0.1f, 1f)
             values[KEY_CHAT_BACKGROUND_BLUR_RADIUS] = preferences.backgroundBlurRadius.coerceIn(0f, 32f)
+            // 朗读引擎也在这里落盘：不写的话，用户一改字号就会把引擎选择悄悄重置回系统 TTS。
+            values[KEY_CHAT_NEURAL_SPEECH] = preferences.neuralSpeechEnabled
+            if (preferences.ttsNeuralModelId.isBlank()) values.remove(KEY_TTS_NEURAL_MODEL_ID)
+            else values[KEY_TTS_NEURAL_MODEL_ID] = preferences.ttsNeuralModelId
+            if (preferences.ttsNeuralModelDir.isBlank()) values.remove(KEY_TTS_NEURAL_MODEL_DIR)
+            else values[KEY_TTS_NEURAL_MODEL_DIR] = preferences.ttsNeuralModelDir
         }
     }
 
@@ -294,6 +320,9 @@ class AppPreferencesRepository(
         val KEY_CHAT_BACKGROUND_IMAGE_URI = stringPreferencesKey("chat_background_image_uri")
         val KEY_CHAT_BACKGROUND_OPACITY = floatPreferencesKey("chat_background_opacity")
         val KEY_CHAT_BACKGROUND_BLUR_RADIUS = floatPreferencesKey("chat_background_blur_radius")
+        val KEY_CHAT_NEURAL_SPEECH = booleanPreferencesKey("chat_neural_speech_enabled")
+        val KEY_TTS_NEURAL_MODEL_ID = stringPreferencesKey("tts_neural_model_id")
+        val KEY_TTS_NEURAL_MODEL_DIR = stringPreferencesKey("tts_neural_model_dir")
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         val KEY_THEME_SEED_COLOR = longPreferencesKey("theme_seed_color")
         val KEY_DYNAMIC_COLOR_ENABLED = booleanPreferencesKey("dynamic_color_enabled")

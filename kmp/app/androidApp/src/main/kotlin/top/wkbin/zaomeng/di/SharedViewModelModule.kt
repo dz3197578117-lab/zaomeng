@@ -23,6 +23,7 @@ import top.wkbin.zaomeng.feature.settings.PluginsViewModel
 import top.wkbin.zaomeng.feature.settings.RuntimeDiagnosticsViewModel
 import top.wkbin.zaomeng.feature.settings.RuntimeLogViewModel
 import top.wkbin.zaomeng.feature.settings.SettingsViewModel
+import top.wkbin.zaomeng.feature.settings.VoiceModelSettingsViewModel
 import top.wkbin.zaomeng.feature.storyrecap.StoryRecapViewModel
 import top.wkbin.zaomeng.feature.timeline.WorldTimelineViewModel
 
@@ -44,6 +45,8 @@ internal fun sharedViewModelModule(platform: AppPlatform) = module {
     viewModel { RuntimeDiagnosticsViewModel(get(), get()) }
     viewModel { ModelProfilesViewModel(get()) }
     viewModel { OnDeviceModelsViewModel(get()) }
+    // 离线神经朗读：下载语音模型 + 开关（依赖模型设置仓库与偏好仓库）
+    viewModel { VoiceModelSettingsViewModel(get(), get()) }
     viewModel { PluginsViewModel(get()) }
     viewModel { PluginBuilderViewModel(get()) }
     viewModel { parameters -> ModelProfileEditorViewModel(get(), parameters.get()) }
@@ -54,7 +57,7 @@ internal fun sharedViewModelModule(platform: AppPlatform) = module {
     viewModel { parameters -> OriginalKnowledgeViewModel(get(), get(), parameters.get()) }
     viewModel { parameters -> StoryRecapViewModel(get(), parameters.get(), parameters.get()) }
     viewModel { OnlineLibraryViewModel(get(), get()) }
-    viewModel { PersonaViewModel(get()) }
+    viewModel { PersonaViewModel(get(), get()) }
     viewModel { ImportBookViewModel(get(), get(), get(), get(), get()) }
     viewModel { parameters -> RedistillViewModel(get(), parameters.get(), get(), get(), get()) }
     viewModel { parameters ->

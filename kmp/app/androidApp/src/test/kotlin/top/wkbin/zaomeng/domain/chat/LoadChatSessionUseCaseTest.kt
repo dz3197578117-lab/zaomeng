@@ -35,8 +35,32 @@ class LoadChatSessionUseCaseTest {
         assertEquals(2, loaded.session.transcriptCount)
         assertTrue(loaded.runSessions.isEmpty())
         assertTrue(loaded.avatarBytes.isEmpty())
+        // 人物字段是逐角色 best-effort：读取失败时该角色仍然在表里（值为空），
+        // 于是朗读侧回落到「按角色名派生声线」，而不会让打开会话失败。
+        assertEquals(mapOf("林冲" to emptyMap<String, String>()), loaded.personaFields)
         assertEquals(MemoryQualityReportDto(), loaded.memoryQuality)
         assertEquals("desc", gateway.requestedMessageOrder)
+    }
+
+    @Test
+    fun loadsAuthoredVoiceFieldsForEveryCharacter() = runTest {
+        val gateway = FakeChatSessionGateway(
+            session = DialogueSessionDto(
+                runId = "run-1",
+                sessionId = "session-1",
+                status = "ready",
+                characterAvatars = mapOf("林冲" to "v1", "鲁智深" to "v1"),
+            ),
+        )
+
+        val loaded = LoadChatSessionUseCase(gateway)("run-1", "session-1")
+
+        assertEquals(listOf("林冲", "鲁智深"), gateway.requestedPersonaCharacters)
+        assertEquals(
+            mapOf("voice_pitch" to "1.25", "voice_name" to "zh-cn-x-y"),
+            loaded.personaFields["林冲"],
+        )
+        assertEquals(2, loaded.personaFields.size)
     }
 
     @Test
@@ -66,6 +90,7 @@ private class FakeChatSessionGateway(
 ) : ChatSessionGateway {
     var recoveryRequested = false
     var requestedMessageOrder = ""
+    var requestedPersonaCharacters = mutableListOf<String>()
 
     override suspend fun listSessions(runId: String?): List<DialogueSessionDto> {
         if (failOptionalData) error("optional list unavailable")
@@ -105,6 +130,12 @@ private class FakeChatSessionGateway(
     ): ByteArray? {
         if (failOptionalData) error("optional avatar unavailable")
         return byteArrayOf(1)
+    }
+
+    override suspend fun getPersonaFields(runId: String, character: String): Map<String, String> {
+        if (failOptionalData) error("optional persona fields unavailable")
+        requestedPersonaCharacters += character
+        return mapOf("voice_pitch" to "1.25", "voice_name" to "zh-cn-x-y")
     }
 
     override suspend fun getDialogueMemoryQuality(

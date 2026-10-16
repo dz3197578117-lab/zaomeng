@@ -10,10 +10,14 @@ import top.wkbin.zaomeng.data.api.PersonaQualityReportDto
 import top.wkbin.zaomeng.data.api.PersonaRepairChangeDto
 import top.wkbin.zaomeng.data.api.PersonaRepairProposalDto
 import top.wkbin.zaomeng.data.api.StoryRecapDto
+import top.wkbin.zaomeng.data.preferences.AppPreferencesRepository
+import top.wkbin.zaomeng.platform.SpeechEngine
+import top.wkbin.zaomeng.platform.SpeechEngineSelection
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -82,12 +86,38 @@ data class PersonaUiState(
 
 class PersonaViewModel(
     private val repository: PersonaRepository,
+    private val preferences: AppPreferencesRepository,
 ) : ViewModel() {
     private var noticeSequence = 0L
     private val _uiState = MutableStateFlow(PersonaUiState())
     val uiState: StateFlow<PersonaUiState> = _uiState.asStateFlow()
 
+    /**
+     * 朗读引擎选择。**刻意单独一条流**，不塞进 [PersonaUiState]：
+     * 那个状态在 [load] 里会被整体重置（`PersonaUiState(runId, character, isLoading = true)`），
+     * 放进去每次加载都会被冲掉。
+     *
+     * 人设页的「试听」必须与聊天里听到的一致——否则用户会「试听满意、进聊天却是另一个声音」，
+     * 正是这次要消灭的困惑。
+     */
+    private val _speechSelection = MutableStateFlow(SpeechEngineSelection())
+    val speechSelection: StateFlow<SpeechEngineSelection> = _speechSelection.asStateFlow()
+
     private var loadJob: Job? = null
+
+    init {
+        viewModelScope.launch { refreshSpeechSelection() }
+    }
+
+    /** 从偏好读引擎选择（模型 id 与目录都由下载服务回报，客户端不自己拼路径）。 */
+    suspend fun refreshSpeechSelection() {
+        val display = runCatching { preferences.preferences.first() }.getOrNull()?.chatDisplay ?: return
+        _speechSelection.value = SpeechEngineSelection(
+            engine = if (display.neuralSpeechEnabled) SpeechEngine.NEURAL else SpeechEngine.SYSTEM,
+            neuralModelId = display.ttsNeuralModelId,
+            neuralModelDir = display.ttsNeuralModelDir,
+        )
+    }
 
     fun load(runId: String, character: String) {
         val normalizedRunId = runId.trim()
