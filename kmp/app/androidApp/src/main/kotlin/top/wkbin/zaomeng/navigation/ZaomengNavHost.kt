@@ -15,8 +15,11 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.ui.Modifier
@@ -169,7 +172,7 @@ fun ZaomengNavHost(
                 PageRecompositionProbe("书卷架") {
                     BookshelfScreen(
                         viewModel = viewModel,
-                        showTopBarActions = !wideLayout,
+                        showTopBarActions = false,
                         onImport = { backStack.add(ImportBookDestination) },
                         onOpenSettings = { backStack.add(ModelSettingsDestination) },
                         onOpenCards = { backStack.add(CardLibraryDestination) },
@@ -483,18 +486,41 @@ fun ZaomengNavHost(
             }
         }
     } else {
-        CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides navEventOwner) {
-            NavDisplay(
-                backStack = backStack,
-                modifier = Modifier.fillMaxSize(),
-                onBack = popBack,
-                entryProvider = navEntryProvider,
-                predictivePopTransitionSpec = { _ -> lightPredictivePopTransition() },
-                entryDecorators = listOf(
-                    rememberSaveableStateHolderNavEntryDecorator(),
-                    rememberViewModelStoreNavEntryDecorator(),
-                ),
-            )
+        // 手机端：底部导航 + 内容区。只有在顶级目的地才显示底栏；
+        // 书卷详情、对话、设置子页等把垂直空间完整还给内容。
+        val currentTopLevel = backStack.lastOrNull()?.takeIf { it.isTopLevelDestination() }
+        Scaffold(
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            bottomBar = {
+                if (currentTopLevel != null) {
+                    AppBottomBar(
+                        selectedDestination = currentTopLevel,
+                        onSelectDestination = { destination ->
+                            // 与宽屏侧栏一致：保留书卷架为栈底，先弹掉其上所有内容再压入所选 tab。
+                            while (backStack.size > 1) {
+                                backStack.removeLastOrNull()
+                            }
+                            if (backStack.lastOrNull() != destination) {
+                                backStack.add(destination)
+                            }
+                        },
+                    )
+                }
+            },
+        ) { innerPadding ->
+            CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides navEventOwner) {
+                NavDisplay(
+                    backStack = backStack,
+                    modifier = Modifier.fillMaxSize().padding(innerPadding),
+                    onBack = popBack,
+                    entryProvider = navEntryProvider,
+                    predictivePopTransitionSpec = { _ -> lightPredictivePopTransition() },
+                    entryDecorators = listOf(
+                        rememberSaveableStateHolderNavEntryDecorator(),
+                        rememberViewModelStoreNavEntryDecorator(),
+                    ),
+                )
+            }
         }
     }
         // 应用内悬浮窗（不是系统悬浮窗）：浮在本应用界面之上，切页面也在

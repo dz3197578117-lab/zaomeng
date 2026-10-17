@@ -44,7 +44,7 @@ import androidx.navigation3.runtime.NavKey
  *
  * 只承载顶级目的地；内容页（书卷详情、会话、设置子页等）仍然推入内容区的返回栈。
  */
-private data class TopLevelRailItem(
+internal data class TopLevelRailItem(
     val destination: NavKey,
     val label: String,
     val icon: ImageVector,
@@ -52,7 +52,8 @@ private data class TopLevelRailItem(
 )
 
 // 静态顶级目的地清单：与组合生命周期无关，文件级只创建一次。
-private val topLevelRailItems = listOf(
+// 宽屏侧栏与窄屏底部导航共用同一份，避免两处入口不一致。
+internal val topLevelRailItems = listOf(
     TopLevelRailItem(
         destination = BookshelfDestination,
         label = "书卷架",

@@ -11,6 +11,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import top.wkbin.zaomeng.platform.formatOneDecimal
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppCardVariant
+import top.wkbin.zaomeng.ui.theme.AppSpacing
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Archive
@@ -393,16 +396,14 @@ private fun ImportSourceCard(
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        variant = AppCardVariant.Elevated,
+        contentPadding = PaddingValues(AppSpacing.lg),
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
                 verticalAlignment = Alignment.Top,
             ) {
                 icon()
@@ -419,6 +420,7 @@ private fun ImportSourceCard(
                 onClick = onClick,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = enabled,
+                shape = MaterialTheme.shapes.small,
             ) {
                 Text(actionLabel)
             }

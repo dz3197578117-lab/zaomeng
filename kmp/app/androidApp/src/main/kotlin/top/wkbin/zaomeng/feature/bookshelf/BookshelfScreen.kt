@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -42,20 +43,26 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -66,7 +73,13 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import top.wkbin.zaomeng.backend.BackendState
 import top.wkbin.zaomeng.data.api.RunManifestDto
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppCardVariant
+import top.wkbin.zaomeng.ui.components.AppEmptyState
+import top.wkbin.zaomeng.ui.theme.AppAlpha
 import top.wkbin.zaomeng.ui.theme.AppDimens
+import top.wkbin.zaomeng.ui.theme.AppPillShape
+import top.wkbin.zaomeng.ui.theme.AppSpacing
 import top.wkbin.zaomeng.ui.format.toLocalDateTimeDisplay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -94,15 +107,17 @@ fun BookshelfScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // 大标题随列表滚动折叠：首屏有「书卷」的仪式感，滚动后又把空间还给内容。
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+
     Scaffold(
-        modifier = modifier,
+        modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(
+            LargeTopAppBar(
                 title = {
                     Text(
                         text = "造梦",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.headlineMedium,
                     )
                 },
                 actions = {
@@ -118,6 +133,7 @@ fun BookshelfScreen(
                         }
                     }
                 },
+                scrollBehavior = scrollBehavior,
             )
         },
         floatingActionButton = {
@@ -463,93 +479,135 @@ private fun RunCard(run: RunManifestDto, onClick: () -> Unit) {
         null
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    AppCard(
+        modifier = Modifier.fillMaxWidth(),
+        variant = AppCardVariant.Elevated,
+        onClick = onClick,
+        contentPadding = PaddingValues(AppSpacing.lg),
     ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                Column(modifier = Modifier.weight(1f)) {
+        Row(verticalAlignment = Alignment.Top) {
+            BookSpine(title = run.title)
+            Spacer(Modifier.width(AppSpacing.md))
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+            ) {
+                Row(verticalAlignment = Alignment.Top) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = run.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (run.updatedAt.isNotBlank()) {
+                            Text(
+                                text = "更新于 ${run.updatedAt.toLocalDateTimeDisplay("时间未记录")}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(AppSpacing.sm))
+                    Column(
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(AppSpacing.xs),
+                    ) {
+                        if (run.betaFeature?.kind == "cross_book_crossover") {
+                            Surface(
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                shape = AppPillShape,
+                            ) {
+                                Text("Beta 共演", Modifier.padding(horizontal = 9.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                        StatusPill(run.status)
+                    }
+                }
+
+                if (run.status == "running") {
+                    if (progress == null) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    } else {
+                        LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+
+                Text(
+                    text = if (run.betaFeature?.kind == "cross_book_crossover") {
+                        "独立人物快照空间，不会改动来源书卷。"
+                    } else {
+                        run.progress.message.ifBlank { statusDescription(run.status) }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+
+                run.novelSources.lastOrNull()?.sourceName?.takeIf(String::isNotBlank)?.let { sourceName ->
                     Text(
-                        text = run.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 2,
+                        text = if (run.novelSources.size > 1) {
+                            "当前来源：$sourceName · 共 ${run.novelSources.size} 份正文"
+                        } else {
+                            "来源：$sourceName"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (run.updatedAt.isNotBlank()) {
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.lg)) {
+                    Text(
+                        text = if (totalCharacters > 0) "$completedCharacters / $totalCharacters 位人物" else "等待人物资料",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    run.novelSources.firstOrNull()?.charCount?.takeIf { it > 0 }?.let { count ->
                         Text(
-                            text = "更新于 ${run.updatedAt.toLocalDateTimeDisplay("时间未记录")}",
+                            text = "${count.formatCount()} 字",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
-                Spacer(Modifier.width(12.dp))
-                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    if (run.betaFeature?.kind == "cross_book_crossover") {
-                        Surface(
-                            color = MaterialTheme.colorScheme.tertiaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                            shape = RoundedCornerShape(999.dp),
-                        ) {
-                            Text("Beta 共演", Modifier.padding(horizontal = 9.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                    StatusPill(run.status)
-                }
-            }
-
-            if (run.status == "running") {
-                if (progress == null) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                } else {
-                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-                }
-            }
-
-            Text(
-                text = if (run.betaFeature?.kind == "cross_book_crossover") {
-                    "独立人物快照空间，不会改动来源书卷。"
-                } else {
-                    run.progress.message.ifBlank { statusDescription(run.status) }
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            run.novelSources.lastOrNull()?.sourceName?.takeIf(String::isNotBlank)?.let { sourceName ->
-                Text(
-                    text = if (run.novelSources.size > 1) {
-                        "当前来源：$sourceName · 共 ${run.novelSources.size} 份正文"
-                    } else {
-                        "来源：$sourceName"
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text(
-                    text = if (totalCharacters > 0) "$completedCharacters / $totalCharacters 位人物" else "等待人物资料",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                run.novelSources.firstOrNull()?.charCount?.takeIf { it > 0 }?.let { count ->
-                    Text(
-                        text = "${count.formatCount()} 字",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
         }
+    }
+}
+
+// 书脊配色：按标题哈希稳定取用，同一本书永远是同一种颜色。
+private val bookSpinePalette = listOf(
+    listOf(Color(0xFFB4553F), Color(0xFF7E3B2E)),
+    listOf(Color(0xFF4A6B8A), Color(0xFF25384A)),
+    listOf(Color(0xFF6E7F5E), Color(0xFF3F4B36)),
+    listOf(Color(0xFF8A6E4A), Color(0xFF4A3825)),
+    listOf(Color(0xFF7C5A7D), Color(0xFF4A2F4E)),
+)
+
+/**
+ * 书脊色块：书卷没有封面图，用「标题哈希 → 固定配色」给它一个稳定的视觉身份，
+ * 让书架从「一堆一样的卡片」变成可以靠颜色扫读的书架。
+ */
+@Composable
+private fun BookSpine(title: String) {
+    val colors = bookSpinePalette[(title.hashCode() and 0x7FFFFFFF) % bookSpinePalette.size]
+    Box(
+        modifier = Modifier
+            .width(56.dp)
+            .height(76.dp)
+            .clip(MaterialTheme.shapes.small)
+            .background(Brush.verticalGradient(colors)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = title.take(1).ifBlank { "书" },
+            style = MaterialTheme.typography.headlineMedium,
+            color = Color.White.copy(alpha = AppAlpha.Strong),
+        )
     }
 }
 
@@ -567,7 +625,7 @@ private fun StatusPill(status: String) {
         failed -> MaterialTheme.colorScheme.onErrorContainer
         else -> MaterialTheme.colorScheme.onSecondaryContainer
     }
-    Surface(color = container, contentColor = content, shape = RoundedCornerShape(999.dp)) {
+    Surface(color = container, contentColor = content, shape = AppPillShape) {
         Text(
             text = statusLabel(status),
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
@@ -578,18 +636,15 @@ private fun StatusPill(status: String) {
 
 @Composable
 private fun EmptyBookshelf(onImport: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-    ) {
-        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("书架还是空的", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                "放入 TXT 正文开始蒸馏人物，或者导入以前导出的书卷包。",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Button(onClick = onImport) { Text("导入第一本书") }
-        }
+    AppCard(variant = AppCardVariant.Outlined, contentPadding = PaddingValues(0.dp)) {
+        AppEmptyState(
+            title = "书架还是空的",
+            description = "放入 TXT 正文开始蒸馏人物，或者导入以前导出的书卷包。",
+            icon = Icons.Outlined.CollectionsBookmark,
+            action = {
+                Button(onClick = onImport) { Text("导入第一本书") }
+            },
+        )
     }
 }
 

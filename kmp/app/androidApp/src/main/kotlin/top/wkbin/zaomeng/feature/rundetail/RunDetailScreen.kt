@@ -72,6 +72,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -83,6 +84,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import top.wkbin.zaomeng.ui.theme.AppAlpha
 import top.wkbin.zaomeng.ui.theme.AppDimens
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
@@ -954,9 +956,22 @@ private fun RunHero(run: RunManifestDto) {
     val completed = maxOf(run.progress.completedCount, run.availableCharacters.size)
     val progress = if (total > 0) (completed.toFloat() / total).coerceIn(0f, 1f) else null
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        shape = RoundedCornerShape(24.dp),
+    val shape = MaterialTheme.shapes.extraLarge
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(
+                // 从主色容器渐变到纸面：给「书卷」一个封面感，同时右下方自然过渡到列表底色，
+                // 避免整块大色卡造成视觉压迫。
+                Brush.linearGradient(
+                    colors = listOf(
+                        MaterialTheme.colorScheme.primaryContainer,
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = AppAlpha.Strong),
+                        MaterialTheme.colorScheme.surfaceContainerLow,
+                    ),
+                ),
+            ),
     ) {
         Column(modifier = Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.Top) {
@@ -964,13 +979,12 @@ private fun RunHero(run: RunManifestDto) {
                     Text(
                         run.title,
                         style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                     Text(
                         run.novelId.ifBlank { run.runId },
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = AppAlpha.Muted),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -1018,12 +1032,11 @@ private fun Metric(label: String, value: String, modifier: Modifier = Modifier) 
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
+            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = AppAlpha.Muted),
         )
         Text(
             value,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onPrimaryContainer,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

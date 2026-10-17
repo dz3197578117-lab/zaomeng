@@ -86,7 +86,10 @@ import top.wkbin.zaomeng.data.api.DialogueSessionDto
 import top.wkbin.zaomeng.data.api.NovelChapterDto
 import top.wkbin.zaomeng.data.api.ReusableCardDto
 import top.wkbin.zaomeng.data.api.RunManifestDto
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppCardVariant
 import top.wkbin.zaomeng.ui.format.toLocalDateTimeDisplay
+import top.wkbin.zaomeng.ui.theme.AppSpacing
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -721,21 +724,21 @@ private fun SessionCard(
     onRename: () -> Unit,
     onToggleSelection: () -> Unit,
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(enabled = !deleting) {
-                if (selectionMode) onToggleSelection() else onOpen()
-            },
-        colors = CardDefaults.cardColors(
-            containerColor = if (selected) {
-                MaterialTheme.colorScheme.secondaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceContainerLow
-            },
-        ),
+    // 删除中不响应点击（与原 clickable(enabled = !deleting) 行为一致）
+    val onCardClick: (() -> Unit)? = if (deleting) {
+        null
+    } else {
+        { if (selectionMode) onToggleSelection() else onOpen() }
+    }
+
+    AppCard(
+        modifier = Modifier.fillMaxWidth(),
+        variant = AppCardVariant.Outlined,
+        onClick = onCardClick,
+        contentPadding = PaddingValues(AppSpacing.md),
+        containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else null,
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Row(
                 modifier = Modifier.heightIn(min = 34.dp),
                 verticalAlignment = Alignment.CenterVertically,

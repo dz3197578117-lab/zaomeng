@@ -85,3 +85,6 @@ clawhub-zaomeng-skill/runtime/data/
 # 发布产物：Android APK 改由 GitHub Actions 在推送 v* tag 时构建并上传到 Release，
 # 不再进入版本控制（此前每发一版仓库体积 +39 MB，且依赖手工提交二进制）。
 # 上面的 `dist/` 规则继续挡住 skill 包等本地产物。流程见 docs/release-android.md。
+
+# 本地构建产物（APK 等，不随源码分发）
+/build-artifacts/

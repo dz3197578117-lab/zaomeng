@@ -2,6 +2,7 @@
 <resources>
 
     <style name="Theme.MyApplication" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">#FFFFFBFE</item>
+        <!-- 冷启动/转场底色，与 ZaomengLightColorScheme.background（宣纸暖白）一致 -->
+        <item name="android:windowBackground">#FFFBF7F0</item>
     </style>
 </resources>

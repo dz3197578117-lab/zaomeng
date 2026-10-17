@@ -1,23 +1,18 @@
 package top.wkbin.zaomeng.feature.settings
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
+import top.wkbin.zaomeng.ui.components.AppListItem
 
+/**
+ * 设置列表行。
+ *
+ * 改造前这里是手写 Row（64dp 高、16dp 水平内边距、图标直接裸放在文字旁）。
+ * 现在委托给全局 [AppListItem]：图标带圆形底色、间距走 token、点击区符合 48dp 无障碍下限，
+ * 且与书卷详情、会话等页面的列表行保持同一套视觉规则。
+ *
+ * 保持原函数签名不变，因此设置模块内所有既有调用点零改动即可升级。
+ */
 @Composable
 fun SettingsRow(
     title: String,
@@ -27,18 +22,13 @@ fun SettingsRow(
     enabled: Boolean = true,
     onClick: (() -> Unit)? = null,
 ) {
-    val modifier = if (onClick != null) Modifier.clickable(enabled = enabled, onClick = onClick) else Modifier
-    Row(
-        modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        leadingIcon?.let { Icon(it, contentDescription = null, tint = MaterialTheme.colorScheme.primary) }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        }
-        value?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        if (onClick != null) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
+    AppListItem(
+        title = title,
+        subtitle = subtitle,
+        leadingIcon = leadingIcon,
+        value = value,
+        showChevron = onClick != null,
+        enabled = enabled,
+        onClick = onClick,
+    )
 }

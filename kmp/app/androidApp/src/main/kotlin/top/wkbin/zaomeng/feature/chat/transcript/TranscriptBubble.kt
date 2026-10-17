@@ -1,6 +1,7 @@
 package top.wkbin.zaomeng.feature.chat
 
 import top.wkbin.zaomeng.ui.components.ChatBackgroundImage
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -138,6 +139,8 @@ import top.wkbin.zaomeng.platform.rememberClipboardTextWriter
 import top.wkbin.zaomeng.platform.rememberPlatformImage
 import top.wkbin.zaomeng.ui.graphics.decodeImageBitmap
 import top.wkbin.zaomeng.ui.format.toLocalDateTimeDisplay
+import top.wkbin.zaomeng.ui.theme.AppAlpha
+import top.wkbin.zaomeng.ui.theme.appBubbleShape
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.contentOrNull
@@ -181,7 +184,7 @@ internal fun TranscriptBubble(
                             onClick = {},
                             onLongClick = { if (!streaming) menuExpanded = true },
                         ),
-                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.55f),
+                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = AppAlpha.Subtle),
                     shape = RoundedCornerShape(8.dp),
                 ) {
                     Column(Modifier.padding(horizontal = 14.dp, vertical = verticalPadding)) {
@@ -338,18 +341,19 @@ internal fun TranscriptBubble(
                     } else {
                         MaterialTheme.colorScheme.surfaceContainerHigh
                     },
-                    shape = RoundedCornerShape(
-                        topStart = 18.dp,
-                        topEnd = 18.dp,
-                        bottomStart = if (isUser) 18.dp else 4.dp,
-                        bottomEnd = if (isUser) 4.dp else 18.dp,
-                    ),
+                    shape = appBubbleShape(isMine = isUser),
+                    border = if (isUser) {
+                        null
+                    } else {
+                        // 角色气泡与宣纸底对比偏弱，加一道极淡描边把边界「托」出来
+                        BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+                    },
                 ) {
                     Column(Modifier.padding(horizontal = 12.dp, vertical = verticalPadding)) {
                         if (isUser) Text(
                             text = if (item.speaker == "作者") "作者" else "你 · ${item.speaker}",
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = AppAlpha.Muted),
                             fontWeight = FontWeight.SemiBold,
                         )
                         ParentheticalMessageText(
