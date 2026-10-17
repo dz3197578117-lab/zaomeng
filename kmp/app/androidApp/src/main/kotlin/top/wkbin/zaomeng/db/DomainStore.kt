@@ -10,6 +10,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.intOrNull
 import okio.Path
+import top.wkbin.zaomeng.ktor.services.effectiveTranscriptStart
 import top.wkbin.zaomeng.platform.parseYaml
 import top.wkbin.zaomeng.platform.runBlockingPlatform
 
@@ -169,7 +170,7 @@ class DomainStore(
                 runId = runId,
                 sessionId = sessionId,
                 transcript = manifest["transcript"] as? JsonArray ?: JsonArray(emptyList()),
-                startSeq = manifest["transcript_start"]?.jsonPrimitive?.intOrNull?.coerceAtLeast(0) ?: 0,
+                startSeq = effectiveTranscriptStart(manifest),
             )
         }
     }

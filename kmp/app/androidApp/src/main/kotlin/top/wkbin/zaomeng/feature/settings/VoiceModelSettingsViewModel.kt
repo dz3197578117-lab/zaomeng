@@ -46,6 +46,8 @@ data class VoiceModelUiState(
     val downloadEndpointId: String = OnDeviceModelPresets.defaultEndpointId,
     /** 是否启用离线神经 TTS 朗读（关闭 = 系统 TTS）。 */
     val enabled: Boolean = false,
+    /** 系统朗读使用的 TTS 引擎包名；空串 = 跟随系统默认（可选中 NekoSpeak 等第三方引擎）。 */
+    val systemEnginePackage: String = "",
     /** 文件已齐全的模型。 */
     val readyModelIds: Set<String> = emptySet(),
     /** 模型 id → 缺失的必需文件名（包括 4 个文本正则化 FST）。 */
@@ -119,6 +121,7 @@ class VoiceModelSettingsViewModel(
             mutableState.update { current ->
                 current.copy(
                     enabled = display?.neuralSpeechEnabled ?: false,
+                    systemEnginePackage = display?.systemTtsEnginePackage.orEmpty(),
                     selectedModelId = display?.ttsNeuralModelId?.takeIf { it.isNotBlank() }
                         ?: current.selectedModelId,
                 )
@@ -145,6 +148,14 @@ class VoiceModelSettingsViewModel(
                 modelDir = mutableState.value.modelDirectories[mutableState.value.selectedModelId].orEmpty(),
                 enabled = enabled,
             )
+        }
+    }
+
+    /** 选择系统朗读引擎；传空串表示跟随系统默认。 */
+    fun selectSystemEngine(packageName: String) {
+        mutableState.update { it.copy(systemEnginePackage = packageName) }
+        viewModelScope.launch {
+            runCatching { preferences.setSystemTtsEnginePackage(packageName) }
         }
     }
 

@@ -38,7 +38,10 @@ class VoiceModelDownloadServiceTest {
 
     @Test
     fun `model id and file name reject path traversal`() {
-        for (bad in listOf("..", "../x", "a/../b", "/abs", "a/b", "a\\b", ".hidden", "", "   ", "a b")) {
+        // 文件名从 Kokoro 起允许相对子路径（espeak-ng-data/phontab），所以 `a/b` 不再算非法；
+        // 但**穿越语义**仍必须拒绝：上跳、绝对路径、空段、反斜杠（Windows 分隔符在 Android 上是普通字符，
+        // 会让清单与实际落盘路径不一致）。
+        for (bad in listOf("..", "../x", "a/../b", "/abs", "a\\b", ".hidden", "", "   ", "a b", "a//b")) {
             assertFailsWith<IllegalArgumentException>("模型 id 应拒绝「$bad」") {
                 VoiceModelRequestValidator.requireModelId(bad)
             }
@@ -46,6 +49,15 @@ class VoiceModelDownloadServiceTest {
                 VoiceModelRequestValidator.requireFileName(bad)
             }
         }
+        // 子路径是合法输入（Kokoro 的依赖文件都在子目录里）
+        assertEquals(
+            "espeak-ng-data/phontab",
+            VoiceModelRequestValidator.requireFileName("espeak-ng-data/phontab"),
+        )
+        assertEquals(
+            "dict/jieba.dict.utf8",
+            VoiceModelRequestValidator.requireFileName("dict/jieba.dict.utf8"),
+        )
     }
 
     @Test

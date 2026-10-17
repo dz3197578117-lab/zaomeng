@@ -49,6 +49,13 @@ data class ChatDisplayPreferences(
      * 两端各记一份会悄悄漂移，而路径不对的症状只是「没声音」。
      */
     val ttsNeuralModelDir: String = "",
+    /**
+     * 系统朗读使用的 TTS 引擎包名；空串 = 跟随系统默认。
+     *
+     * 用于接入 NekoSpeak 这类第三方引擎：它用标准 TTS API 暴露克隆音色与名人音色，
+     * 选中后造梦的角色分配会落到它的音色上。
+     */
+    val systemTtsEnginePackage: String = "",
 )
 
 data class AppPreferences(
@@ -98,6 +105,7 @@ class AppPreferencesRepository(
                     neuralSpeechEnabled = values[KEY_CHAT_NEURAL_SPEECH] ?: false,
                     ttsNeuralModelId = values[KEY_TTS_NEURAL_MODEL_ID].orEmpty(),
                     ttsNeuralModelDir = values[KEY_TTS_NEURAL_MODEL_DIR].orEmpty(),
+                    systemTtsEnginePackage = values[KEY_CHAT_SYSTEM_TTS_ENGINE].orEmpty(),
                 ),
                 themeMode = ThemeMode.fromStorageValue(values[KEY_THEME_MODE]),
                 themeSeedColorArgb = values[KEY_THEME_SEED_COLOR] ?: 0L,
@@ -237,6 +245,14 @@ class AppPreferencesRepository(
         }
     }
 
+    /** 选择系统朗读引擎；传空串表示跟随系统默认。 */
+    suspend fun setSystemTtsEnginePackage(packageName: String) {
+        dataStore.edit { values ->
+            if (packageName.isBlank()) values.remove(KEY_CHAT_SYSTEM_TTS_ENGINE)
+            else values[KEY_CHAT_SYSTEM_TTS_ENGINE] = packageName
+        }
+    }
+
     suspend fun saveChatDisplayPreferences(preferences: ChatDisplayPreferences) {
         dataStore.edit { values ->
             values[KEY_CHAT_FONT_SCALE] = preferences.fontSizeScale
@@ -253,6 +269,8 @@ class AppPreferencesRepository(
             else values[KEY_TTS_NEURAL_MODEL_ID] = preferences.ttsNeuralModelId
             if (preferences.ttsNeuralModelDir.isBlank()) values.remove(KEY_TTS_NEURAL_MODEL_DIR)
             else values[KEY_TTS_NEURAL_MODEL_DIR] = preferences.ttsNeuralModelDir
+            if (preferences.systemTtsEnginePackage.isBlank()) values.remove(KEY_CHAT_SYSTEM_TTS_ENGINE)
+            else values[KEY_CHAT_SYSTEM_TTS_ENGINE] = preferences.systemTtsEnginePackage
         }
     }
 
@@ -321,6 +339,7 @@ class AppPreferencesRepository(
         val KEY_CHAT_BACKGROUND_OPACITY = floatPreferencesKey("chat_background_opacity")
         val KEY_CHAT_BACKGROUND_BLUR_RADIUS = floatPreferencesKey("chat_background_blur_radius")
         val KEY_CHAT_NEURAL_SPEECH = booleanPreferencesKey("chat_neural_speech_enabled")
+        val KEY_CHAT_SYSTEM_TTS_ENGINE = stringPreferencesKey("chat_system_tts_engine_package")
         val KEY_TTS_NEURAL_MODEL_ID = stringPreferencesKey("tts_neural_model_id")
         val KEY_TTS_NEURAL_MODEL_DIR = stringPreferencesKey("tts_neural_model_dir")
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")

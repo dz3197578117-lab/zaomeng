@@ -32,7 +32,12 @@ internal object VoiceModelRequestValidator {
     val ALLOWED_HOSTS = setOf("huggingface.co", "hf-mirror.com")
 
     private val ID_PATTERN = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-    private val FILE_PATTERN = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$")
+
+    /**
+     * 允许相对子路径（Kokoro 的 `espeak-ng-data/phontab`、`dict/jieba.dict.utf8`）。
+     * 仍禁止 `..`、前导 `/` 与 `//`，避免写到模型目录之外。
+     */
+    private val FILE_PATTERN = Regex("^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
 
     /** 模型 id：限定字符集，且必须字母数字开头（挡掉 `.` / `..` / 隐藏文件名）。 */
     fun requireModelId(raw: String): String {
@@ -43,12 +48,13 @@ internal object VoiceModelRequestValidator {
         return value
     }
 
-    /** 文件名：同样的字符集约束，另挡掉路径分隔符。 */
+    /** 文件名：允许相对子路径，但挡掉 `..` 与空段（防止越出模型目录）。 */
     fun requireFileName(raw: String): String {
         val value = raw.trim()
         require(value.isNotEmpty()) { "缺少文件名。" }
-        require(FILE_PATTERN.matches(value)) { "文件名只允许字母数字与 . _ -（最长 200 位）：$value" }
+        require(FILE_PATTERN.matches(value)) { "文件名只允许字母数字与 . _ - /（最长 200 位）：$value" }
         require(!value.contains("..")) { "文件名不允许包含 .." }
+        require(!value.contains("//")) { "文件名不允许包含空路径段：$value" }
         return value
     }
 
@@ -166,7 +172,8 @@ class VoiceModelDownloadService internal constructor(
                     if (cancelFlag.value) {
                         error("下载已取消。")
                     }
-                    val target = dir / file.fileName
+                    // 相对子路径逐段拼接：Kokoro 的文件在 espeak-ng-data/、dict/ 等子目录里。
+                    val target = file.fileName.split('/').fold(dir) { path, segment -> path / segment }
                     val existing = fileSize(target)
                     if (!request.overwrite && file.sizeBytes > 0 && existing == file.sizeBytes) {
                         skipped += file.fileName
@@ -196,6 +203,8 @@ class VoiceModelDownloadService internal constructor(
                         skipped = skipped,
                         message = "正在下载 ${file.fileName}",
                     )
+                    // 子目录里的文件要先建父目录，否则 .part 写入会直接失败。
+                    runCatching { target.parent?.let { fileSystem.createDirectories(it) } }
                     available.download(
                         url = file.url,
                         target = target,
@@ -232,7 +241,10 @@ class VoiceModelDownloadService internal constructor(
                 // 只清理 .part：失败时 target 要么不存在、要么是上一版好文件，
                 // 删 target 会把已经下好的东西一起毁掉（端侧 GGUF 那边踩过同一个坑）。
                 runCatching {
-                    fileSystem.list(dir).filter { it.name.endsWith(PART_SUFFIX) }.forEach { fileSystem.delete(it) }
+                    fileSystem.listRecursively(dir)
+                        .filter { it.name.endsWith(PART_SUFFIX) }
+                        .toList()
+                        .forEach { fileSystem.delete(it) }
                 }
                 stateFlow.update {
                     it.copy(
@@ -275,9 +287,23 @@ class VoiceModelDownloadService internal constructor(
     // 内部
     // ------------------------------------------------------------------
 
+    /**
+     * 已下载文件的**相对路径**列表（递归）。
+     *
+     * 必须递归：Kokoro 的文件在 `espeak-ng-data/`、`dict/` 子目录里，
+     * 只列顶层会让完整性检查认为「一个文件都没有」，进而把已下好的 400 MB 当成未下载。
+     * 用 `/` 分隔（而不是系统分隔符），与目录清单里的写法一致。
+     */
     private fun presentFileNames(dir: Path): List<String> =
         if (fileSystem.exists(dir)) {
-            runCatching { fileSystem.list(dir).map { it.name }.sorted() }.getOrDefault(emptyList())
+            runCatching {
+                fileSystem.listRecursively(dir)
+                    .filter { it != dir }
+                    .filter { runCatching { fileSystem.metadata(it).isRegularFile }.getOrDefault(false) }
+                    .map { it.relativeTo(dir).segments.joinToString("/") }
+                    .sorted()
+                    .toList()
+            }.getOrDefault(emptyList())
         } else {
             emptyList()
         }

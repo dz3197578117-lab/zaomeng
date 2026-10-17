@@ -9,6 +9,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,6 +52,13 @@ class MainActivity : ComponentActivity() {
             GlobalContext.get().get<AppPreferencesRepository>().currentPreferences()
         }
         super.onCreate(savedInstanceState)
+        // 预热 Material3 大标题的静态初始化：真机诊断显示 TopAppBarState.<clinit> 首次约 285ms，
+        // 这笔成本原本落在书卷架首帧上（最长帧 397ms）。放后台线程预热，主线程不等它，
+        // 冷启动不变慢；通常到首帧时已经初始化完。
+        Thread({ runCatching { TopAppBarState(0f, 0f, 0f) } }, "appbar-warmup").apply {
+            isDaemon = true
+            start()
+        }
         // R7：挂上帧指标 / 主线程长任务看门狗 / 疑似闪烁（默认关闭）采样；
         // R6：定期采样可访问性语义树。全部只采样、只上报，失败不影响启动。
         top.wkbin.zaomeng.platform.AndroidClientDiagnostics.install(this)

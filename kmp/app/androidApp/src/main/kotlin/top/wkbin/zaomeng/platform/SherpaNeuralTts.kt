@@ -238,6 +238,12 @@ internal class SherpaNeuralTts(
     private fun speakerIdFor(speaker: String, speakerCount: Int): Int {
         if (speakerCount <= 0) return 0
         val names = cast.ifEmpty { listOf(speaker) }
+        // Kokoro 的 103 个音色里只有 45–52 是中文。按 0..numSpeakers 派生会落到英文音色上，
+        // 读中文得到的是一串乱码音；这里先按模型的白名单收窄，再在收窄后的池里分配。
+        val usable = model.selectableSpeakers?.filter { it in 0 until speakerCount }
+        if (!usable.isNullOrEmpty()) {
+            return assignNeuralSpeakers(names, usable)[speaker] ?: neuralSpeakerId(speaker, usable)
+        }
         return assignNeuralSpeakers(names, speakerCount)[speaker]
             ?: neuralSpeakerId(speaker, speakerCount)
     }

@@ -3,6 +3,8 @@ package top.wkbin.zaomeng.ktor.features
 import kotlinx.serialization.json.JsonObject
 import top.wkbin.zaomeng.data.api.KnownFeature
 import top.wkbin.zaomeng.ktor.services.KNOWLEDGE_LEDGER_DISCLOSURE_PATTERNS
+import top.wkbin.zaomeng.ktor.services.effectiveTranscriptStart
+import top.wkbin.zaomeng.ktor.services.isBranchSession
 
 /**
  * 会话与对话域探针。
@@ -179,7 +181,7 @@ internal class ChatTranscriptIntegrityProbe : BaseProbe(
             val assessment = assessSessionIntegrity(
                 transcript = keys,
                 declaredTranscriptCount = focus.manifest.intOrNull("transcript_count"),
-                transcriptStart = focus.manifest.intOrNull("transcript_start"),
+                transcriptStart = effectiveTranscriptStart(focus.manifest),
             )
             checked++
             when (assessment.status) {
@@ -572,8 +574,8 @@ internal class ChatAdvancedActionsProbe : BaseProbe(
         sessions.forEach { focus ->
             val transcript = focus.manifest.arr("transcript").objects()
             val facts = AdvancedActionFacts(
-                isBranch = focus.manifest.obj("branch_origin")?.isNotEmpty() == true,
-                transcriptStart = focus.manifest.intOrNull("transcript_start")?.coerceAtLeast(0) ?: 0,
+                isBranch = isBranchSession(focus.manifest),
+                transcriptStart = effectiveTranscriptStart(focus.manifest),
                 declaredCount = focus.manifest.intOrNull("transcript_count"),
                 transcriptEntries = transcript.size,
                 correctedEntries = transcript.count { it.str("corrected_at").isNotBlank() },

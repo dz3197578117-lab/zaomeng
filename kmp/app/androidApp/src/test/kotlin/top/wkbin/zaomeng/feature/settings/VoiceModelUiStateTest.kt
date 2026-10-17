@@ -107,7 +107,10 @@ class VoiceModelUiStateTest {
     fun `every catalog model reports a plausible download size`() {
         for (model in NeuralVoiceCatalog.models) {
             val text = formatMegabytes(model.totalBytes)
-            assertTrue(text.contains("11"), "${model.id} 的显示体积应在 110+ MB 量级，实际 $text")
+            // VITS 约 116 MB，Kokoro 约 403 MB：都必须是「百 MB 量级」，
+            // 不能因为格式化成 GB 或四舍五入成 0 而让人以为不用下。
+            val mb = Regex("([0-9]+(?:\\.[0-9]+)?)").find(text)?.groupValues?.get(1)?.toDoubleOrNull()
+            assertTrue(mb != null && mb >= 100, "${model.id} 的显示体积不合理：$text")
         }
     }
 }

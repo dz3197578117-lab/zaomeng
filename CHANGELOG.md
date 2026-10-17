@@ -6,6 +6,85 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.5.0] - 2026-10-18
+
+### 修复：连崩三次，诊断包里却一条堆栈都没有
+
+真机（realme RMX5010 / Android 17）覆盖安装 2.4.0 后，`01:00:12`、`01:00:40`、`01:00:43`
+连续三次 `CRASH（Java 崩溃）`，第四次启动才成功。但导出的诊断包里
+`crashEntries=0`、`crashBytes=0`，全文一条 `FATAL EXCEPTION` 都没有——**现场完全丢失**。
+
+两个原因，都已修：
+
+1. **捕获链装得太晚**。完整的 `installCrashHandler()` 在 `Application.onCreate`，
+   而那几次崩溃发生在更早的阶段（Application 类初始化 / `attachBaseContext`）。
+   新增 `EarlyCrashRecorder`，在 `attachBaseContext` 里装一个**只依赖 `filesDir`** 的
+   最小记录器（不碰 Koin、协程、日志框架），写到同一个 `crashes/crash-*.log` 目录，
+   格式与 `parseCrash` 对齐，诊断导出能直接读到。完整链装好后它会自动让位，不会重复记录。
+2. **写盘失败被静默吞掉**。`writeUncaught` 原来用 `runCatching { … }` 包住写盘，
+   失败时什么痕迹都不留。现在失败会往运行日志写一行
+   `崩溃记录写盘失败：<异常>`，至少能知道「为什么没有堆栈」。
+
+⚠️ 这次修的是**下次能抓到**，崩溃根因仍未定位——它没有留下任何证据。
+
+### 修复：分支会话的 `transcript_start` 残留父会话偏移
+
+自检探针 `chat.advanced_actions` 报了唯一一条 FAIL：
+`sess-7bc1ce5174d0` 的分支会话 `transcript_start=101`（应为 0）。
+分支保留的是父会话的**完整前缀**，沿用父会话的归档偏移会在读取时把父会话的归档拼到前缀前面，
+拼出错误的全量历史。
+
+写入侧从 2.2.2 起已经归零，但**升级前产生的分支会话仍残留旧值**。
+新增 `TranscriptBookkeeping.effectiveTranscriptStart()`：只要 manifest 带分支标记
+（`branch_origin` 或 `branch_meta.is_mainline=false`）就按 0 读取。这是个**纯内存归一**，
+不改写磁盘——旧版本还会读这些文件，悄悄改写会让两个版本行为不一致。
+`DomainStore`、`SessionResponseUtils`（两处）、`ChatProbes`（两处）统一走这个入口，补 5 个回归用例。
+
+### 语音：新增 Kokoro 高音质模型（8 个精调中文音色）
+
+原有的三个 VITS 模型都是 2022–2023 年的社区模型，804 个音色里质量并不均匀
+（代码注释里自己写过「有清晰好听的，也有发闷、含糊、带噪声的」），而角色音色是按名字哈希
+**随机**落进去的——落到一个含糊音色上就无从更换。
+
+新增 `kokoro-multi-lang-v1_1` 作为第四个模型：24 kHz、中英混读，103 个音色里
+**45–52 是中文**（`zf_xiaobei` / `zf_xiaoni` / `zf_xiaoxiao` / `zf_xiaoyi` /
+`zm_yunjian` / `zm_yunxi` / `zm_yunxia` / `zm_yunyang`，4 女 4 男），每个都经过精调。
+代价是约 403 MB，且合成速度约为 VITS 的一半。
+
+配套改动：
+- 引擎层按 `NeuralEngineKind` 分派 VITS / Kokoro 两套 `OfflineTtsModelConfig`；
+- 下载器支持**相对子路径**（`espeak-ng-data/phontab`、`dict/jieba.dict.utf8`）与递归完整性检查；
+- 音色分配加白名单：Kokoro 只会在 45–52 里挑，否则会拿到英文音色、读中文变成乱码音；
+- `espeak-ng-data` 只取中文/英文音素化必需的 11 个文件（官方整目录 355 个文件 / 18 MB，
+  其中 90% 是其它语言的词典）。
+
+### 语音：可选系统朗读引擎（NekoSpeak）
+
+造梦原先只会绑定系统默认 TTS 引擎。现在「设置 → 朗读引擎与音色」顶部可以**指定引擎**：
+枚举 `android.intent.action.TTS_SERVICE` 列出设备上已安装的引擎，选中后用
+`TextToSpeech(context, listener, packageName)` 绑定。
+
+这样 NekoSpeak（`com.nekospeak.tts`，支持 Pocket-TTS 零样本克隆、名人音色、100+ Piper 社区音色）
+就能作为第二个方案接入——它走标准 TTS API，因此造梦既有的「按角色分配 voice」逻辑
+（`voice_name` → `engine.voices` 匹配 → `KEY_PARAM_VOICE_NAME`）直接作用在它的音色上，
+不需要复刻克隆能力。
+
+三种方案并存：系统 TTS（跟随系统）/ 系统 TTS + 指定引擎 / 内置神经 TTS。
+
+### 性能：首屏 285ms 主线程阻塞
+
+真机诊断里唯一一条 `mainThreadBlocks`：
+
+```
+主线程阻塞约 285ms：
+  at androidx.compose.material3.TopAppBarState.<clinit>(AppBar.kt:2213)
+  at …rememberTopAppBarState
+  at …BookshelfScreenKt.BookshelfScreen(BookshelfScreen.kt:111)
+```
+
+是 2.4.0 给书卷架加的大标题折叠引入的类首次初始化。改为在 `MainActivity.onCreate` 里
+起后台线程预热，主线程不等它，冷启动不变慢。
+
 ## [2.4.0] - 2026-10-18
 
 ### 界面：换掉脚手架默认配色，补齐整条设计系统

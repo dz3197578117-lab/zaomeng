@@ -119,8 +119,8 @@ fun SettingsHomeScreen(
                     SectionTitle("朗读与语音")
                     SettingsHomeGroup {
                         SettingsHomeRow(
-                            title = "离线神经语音",
-                            subtitle = "下载多说话人中文模型，让每个角色有不同音色；完全离线。",
+                            title = "朗读引擎与音色",
+                            subtitle = "可选系统朗读引擎（如 NekoSpeak），或下载离线神经模型；每个角色可分配不同音色。",
                             icon = Icons.AutoMirrored.Outlined.VolumeUp,
                             onClick = onOpenOfflineSpeech,
                         )

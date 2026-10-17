@@ -37,7 +37,16 @@ private const val TAG = "PlatformTts"
  * `<queries>` 里的 `android.intent.action.TTS_SERVICE`，枚举不到任何引擎）；
  * ② 引擎在、但没有中文语音数据（能初始化却读不出中文，现象同样是「没声音」）。
  */
-internal class AndroidPlatformTts(context: Context) : PlatformTts {
+internal class AndroidPlatformTts(
+    context: Context,
+    /**
+     * 指定的系统 TTS 引擎包名；空串表示跟随系统默认。
+     *
+     * 用于接入 NekoSpeak 这类第三方引擎：它通过标准 TTS API 暴露克隆音色与名人音色，
+     * 用户选中后，造梦的角色分配就能落到它上面。
+     */
+    private val enginePackage: String = "",
+) : PlatformTts {
     private val appContext = context.applicationContext
     private val _isSpeaking = MutableStateFlow(false)
     override val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
@@ -56,7 +65,7 @@ internal class AndroidPlatformTts(context: Context) : PlatformTts {
         if (isShutdown) return null
         tts?.let { return it }
         lateinit var engine: TextToSpeech
-        engine = TextToSpeech(appContext) init@{ status ->
+        val initListener = TextToSpeech.OnInitListener init@{ status ->
             if (isShutdown) return@init
             if (status == TextToSpeech.SUCCESS) {
                 isInitialized = true
@@ -102,6 +111,12 @@ internal class AndroidPlatformTts(context: Context) : PlatformTts {
                 Log.e(TAG, failure)
                 pendingSpeak = null
             }
+        }
+        // 指定了引擎就绑定它（NekoSpeak 等第三方引擎），否则用系统默认。
+        engine = if (enginePackage.isBlank()) {
+            TextToSpeech(appContext, initListener)
+        } else {
+            TextToSpeech(appContext, initListener, enginePackage)
         }
         tts = engine
         return engine
@@ -219,7 +234,7 @@ fun rememberPlatformTts(selection: SpeechEngineSelection = SpeechEngineSelection
         } else {
             // 降级必须留痕：否则用户会以为「所谓不同音色就是这样」，而他听到的一直是系统 TTS。
             decision.fallbackReason?.let { Log.w(TAG, it) }
-            AndroidPlatformTts(context)
+            AndroidPlatformTts(context, selection.systemEnginePackage)
         }
     }
     // key 里带 platformTts 而不是 Unit：切换引擎会**换掉实例**，

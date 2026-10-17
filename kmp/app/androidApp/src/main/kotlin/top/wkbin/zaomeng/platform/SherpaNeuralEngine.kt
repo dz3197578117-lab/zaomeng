@@ -5,6 +5,7 @@ import android.content.Context
 import android.util.Log
 import com.k2fsa.sherpa.onnx.OfflineTts
 import com.k2fsa.sherpa.onnx.OfflineTtsConfig
+import com.k2fsa.sherpa.onnx.OfflineTtsKokoroModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
 import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import java.io.File
@@ -52,18 +53,37 @@ internal object SherpaNeuralEngine {
         numThreads: Int = DEFAULT_NUM_THREADS,
     ): OfflineTtsConfig {
         val paths = model.pathsIn(modelDir.absolutePath)
-        val vits = OfflineTtsVitsModelConfig(
-            model = paths.model,
-            lexicon = paths.lexicon,
-            tokens = paths.tokens,
-            dataDir = "",
-            dictDir = "",
-        )
-        val modelConfig = OfflineTtsModelConfig(
-            vits = vits,
-            numThreads = max(1, numThreads),
-            debug = false,
-        )
+        val threads = max(1, numThreads)
+        val modelConfig = when (model.engine) {
+            NeuralEngineKind.VITS -> OfflineTtsModelConfig(
+                vits = OfflineTtsVitsModelConfig(
+                    model = paths.model,
+                    lexicon = paths.lexicon,
+                    tokens = paths.tokens,
+                    dataDir = "",
+                    dictDir = "",
+                ),
+                numThreads = threads,
+                debug = false,
+            )
+
+            // Kokoro 与 VITS 的字段完全不同：它要音色向量、espeak-ng 数据目录和 jieba 分词词典。
+            // lexicon 传的是**逗号分隔的多本词典**（中文 + 英文），由 paths 拼好。
+            NeuralEngineKind.KOKORO -> OfflineTtsModelConfig(
+                kokoro = OfflineTtsKokoroModelConfig(
+                    model = paths.model,
+                    voices = paths.voices,
+                    tokens = paths.tokens,
+                    dataDir = paths.dataDir,
+                    lexicon = paths.lexicon,
+                    // 留空：语言由 lexicon-zh / lexicon-us-en 自己决定，强制单语反而读不了英文。
+                    lang = "",
+                    dictDir = paths.dictDir,
+                ),
+                numThreads = threads,
+                debug = false,
+            )
+        }
         return OfflineTtsConfig(
             model = modelConfig,
             ruleFsts = paths.ruleFsts,

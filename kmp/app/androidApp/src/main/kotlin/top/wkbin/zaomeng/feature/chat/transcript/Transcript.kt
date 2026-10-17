@@ -192,6 +192,7 @@ internal fun Transcript(
             engine = if (displayPreferences.neuralSpeechEnabled) SpeechEngine.NEURAL else SpeechEngine.SYSTEM,
             neuralModelId = displayPreferences.ttsNeuralModelId,
             neuralModelDir = displayPreferences.ttsNeuralModelDir,
+            systemEnginePackage = displayPreferences.systemTtsEnginePackage,
         ),
     )
     // 把本次会话的参演角色告诉引擎，供神经引擎分配**互不相同**的音色（系统 TTS 忽略此项）。

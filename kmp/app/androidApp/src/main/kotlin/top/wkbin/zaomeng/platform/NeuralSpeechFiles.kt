@@ -10,12 +10,19 @@ package top.wkbin.zaomeng.platform
  */
 data class NeuralSpeechPaths(
     val modelDir: String,
-    /** VITS 主模型。 */
+    /** VITS / Kokoro 主模型。 */
     val model: String,
+    /** 词典，**可能多本**（Kokoro 中英混读要两本），引擎要求逗号分隔。 */
     val lexicon: String,
     val tokens: String,
     /** 文本正则化 FST，**逗号连接**（引擎要求 CSV 形式）。 */
     val ruleFsts: String,
+    /** Kokoro 音色向量；VITS 为空。 */
+    val voices: String = "",
+    /** espeak-ng 数据目录；仅 Kokoro 使用。 */
+    val dataDir: String = "",
+    /** jieba 分词词典目录；仅 Kokoro 使用。 */
+    val dictDir: String = "",
 )
 
 /**
@@ -30,9 +37,12 @@ fun NeuralVoiceModel.pathsIn(modelDirAbsolutePath: String): NeuralSpeechPaths {
     return NeuralSpeechPaths(
         modelDir = dir,
         model = file(modelFileName),
-        lexicon = file(lexiconFileName),
+        lexicon = allLexiconFileNames.joinToString(",") { file(it) },
         tokens = file(tokensFileName),
         ruleFsts = ruleFstFileNames.joinToString(",") { file(it) },
+        voices = voicesFileName?.let { file(it) }.orEmpty(),
+        dataDir = dataDirName?.let { file(it) }.orEmpty(),
+        dictDir = dictDirName?.let { file(it) }.orEmpty(),
     )
 }
 

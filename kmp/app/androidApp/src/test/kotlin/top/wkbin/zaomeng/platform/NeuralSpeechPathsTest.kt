@@ -100,8 +100,18 @@ class NeuralSpeechPathsTest {
     fun `every catalog model resolves all of its own files`() {
         for (candidate in NeuralVoiceCatalog.models) {
             val paths = candidate.pathsIn(dir)
-            val built = (listOf(paths.model, paths.lexicon, paths.tokens) + paths.ruleFsts.split(",")).toSet()
-            assertEquals(candidate.files.size, built.size, "${candidate.id} 的路径数与文件数不一致")
+            // lexicon 与 ruleFsts 都是逗号分隔的列表：Kokoro 要中英两本词典，不能整体当一个路径比。
+            val built = (
+                listOf(paths.model, paths.tokens) +
+                    paths.lexicon.split(",") +
+                    paths.ruleFsts.split(",")
+                ).filter { it.isNotBlank() }.toSet()
+            val expected = candidate.files.map { "$dir/${it.fileName}" }.toSet()
+            assertTrue(
+                expected.containsAll(built),
+                "${candidate.id} 拼出的路径里有不属于清单的文件：${built - expected}",
+            )
+            assertTrue(built.contains(paths.model), "${candidate.id} 的主模型路径没拼出来")
             assertTrue(candidate.isFullyDownloaded(candidate.files.map { it.fileName }))
         }
     }

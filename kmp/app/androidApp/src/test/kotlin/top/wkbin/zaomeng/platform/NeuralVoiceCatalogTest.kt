@@ -31,7 +31,7 @@ class NeuralVoiceCatalogTest {
     }
 
     @Test
-    fun `every catalog model is multi speaker and carries the three required files`() {
+    fun `every catalog model is multi speaker and carries the files its engine needs`() {
         for (model in NeuralVoiceCatalog.models) {
             assertTrue(
                 model.speakerCount > 1,
@@ -40,10 +40,55 @@ class NeuralVoiceCatalogTest {
             val onnx = model.files.filter { it.fileName.endsWith(".onnx") }
             assertEquals(1, onnx.size, "${model.id} 应恰好有一个 .onnx，实际 ${onnx.map { it.fileName }}")
             assertEquals(model.modelFileName, onnx.single().fileName)
-            assertTrue(model.lexiconFileName.endsWith("lexicon.txt"))
-            assertTrue(model.tokensFileName.endsWith("tokens.txt"))
+            // 词典、词表必须在文件清单里（Kokoro 的主词典叫 lexicon-zh.txt，不是 lexicon.txt）
+            assertTrue(
+                model.files.any { it.fileName == model.lexiconFileName },
+                "${model.id} 的清单里没有主词典 ${model.lexiconFileName}",
+            )
+            assertTrue(
+                model.files.any { it.fileName == model.tokensFileName },
+                "${model.id} 的清单里没有词表 ${model.tokensFileName}",
+            )
             assertTrue(model.ruleFstFileNames.isNotEmpty(), "${model.id} 缺文本正则化 FST（数字/日期读不对）")
+
+            when (model.engine) {
+                NeuralEngineKind.VITS -> Unit
+                NeuralEngineKind.KOKORO -> {
+                    // Kokoro 少了这三样就是「加载成功但不出声」，必须钉住
+                    val voices = requireNotNull(model.voicesFileName) { "${model.id} 缺 voices.bin" }
+                    assertTrue(model.files.any { it.fileName == voices }, "${model.id} 清单里没有 $voices")
+                    assertTrue(
+                        model.dataDirName != null &&
+                            model.files.any { it.fileName.startsWith("${model.dataDirName}/") },
+                        "${model.id} 缺 espeak-ng-data（英文与 OOV 音素化会失败）",
+                    )
+                    assertTrue(
+                        model.dictDirName != null &&
+                            model.files.any { it.fileName.startsWith("${model.dictDirName}/") },
+                        "${model.id} 缺 jieba 分词词典（中文分词会退化成逐字）",
+                    )
+                    assertTrue(
+                        model.extraLexiconFileNames.isNotEmpty(),
+                        "${model.id} 只有中文词典时读不了英文",
+                    )
+                }
+            }
         }
+    }
+
+    @Test
+    fun `kokoro only exposes its chinese voices`() {
+        val kokoro = NeuralVoiceCatalog.KOKORO
+        assertEquals(NeuralEngineKind.KOKORO, kokoro.engine)
+        val pool = requireNotNull(kokoro.selectableSpeakers) { "Kokoro 必须限制在中文音色上" }
+        assertEquals(8, pool.size, "Kokoro v1_1 的中文音色是 45..52 共 8 个")
+        assertTrue(pool.all { it in 45..52 })
+
+        // 8 人 cast 应拿到 8 个互不相同、且都在白名单里的编号
+        val cast = listOf("林黛玉", "贾宝玉", "薛宝钗", "王熙凤", "李慕白", "陆城", "苏晚", "顾青")
+        val assigned = assignNeuralSpeakers(cast, kokoro)
+        assertEquals(cast.size, assigned.values.toSet().size, "8 人应该能占满 8 个中文音色：$assigned")
+        assertTrue(assigned.values.all { it in pool }, "分配出了白名单外的音色：$assigned")
     }
 
     @Test
@@ -61,9 +106,15 @@ class NeuralVoiceCatalogTest {
     fun `total size equals the sum of files and stays inside the agreed budget`() {
         for (model in NeuralVoiceCatalog.models) {
             assertEquals(model.files.sumOf { it.sizeBytes }, model.totalBytes)
+            // 预算按引擎分档：VITS 是 100~200 MB；Kokoro 走音质路线，约 400 MB 是它的固有代价。
+            val (minMb, maxMb) = when (model.engine) {
+                NeuralEngineKind.VITS -> 100L to 200L
+                NeuralEngineKind.KOKORO -> 300L to 500L
+            }
             assertTrue(
-                model.totalBytes in 100L * 1024 * 1024..200L * 1024 * 1024,
-                "${model.id} 是 ${model.totalBytes / 1024 / 1024} MB，超出商定的 100~200 MB",
+                model.totalBytes in minMb * 1024 * 1024..maxMb * 1024 * 1024,
+                "${model.id} 是 ${model.totalBytes / 1024 / 1024} MB，" +
+                    "${model.engine} 的商定区间是 $minMb~$maxMb MB",
             )
         }
     }

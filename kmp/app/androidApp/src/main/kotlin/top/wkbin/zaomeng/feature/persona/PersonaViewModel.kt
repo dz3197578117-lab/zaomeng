@@ -135,6 +135,7 @@ class PersonaViewModel(
             engine = if (display.neuralSpeechEnabled) SpeechEngine.NEURAL else SpeechEngine.SYSTEM,
             neuralModelId = display.ttsNeuralModelId,
             neuralModelDir = display.ttsNeuralModelDir,
+            systemEnginePackage = display.systemTtsEnginePackage,
         )
     }
 

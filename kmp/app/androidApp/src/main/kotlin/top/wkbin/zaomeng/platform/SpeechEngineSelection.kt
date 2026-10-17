@@ -22,6 +22,13 @@ data class SpeechEngineSelection(
     val neuralModelId: String = "",
     /** 模型在本机的绝对目录（服务端回报，客户端不自己拼）。 */
     val neuralModelDir: String = "",
+    /**
+     * 系统 TTS 使用的引擎包名；空串表示跟随系统默认。
+     *
+     * 非空时用它绑定（`TextToSpeech(context, listener, packageName)`），
+     * 这样用户可以把朗读交给 NekoSpeak 这类第三方引擎，用它的音色做角色区分。
+     */
+    val systemEnginePackage: String = "",
 )
 
 /**

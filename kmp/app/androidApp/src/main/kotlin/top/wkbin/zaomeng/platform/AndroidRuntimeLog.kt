@@ -697,6 +697,9 @@ object AndroidRuntimeLog : RuntimeLogSource {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         if (previous is CrashForwardingHandler) return
         Thread.setDefaultUncaughtExceptionHandler(CrashForwardingHandler(previous))
+        // 早期兜底（Application.attachBaseContext 装的）让位：完整链已接管，
+        // 它会同步写堆栈 + 冲刷崩溃前上下文，不应再被重复记一份。
+        EarlyCrashRecorder.handOverToFullHandler()
     }
 
     private class CrashForwardingHandler(
@@ -728,8 +731,8 @@ object AndroidRuntimeLog : RuntimeLogSource {
             .getOrDefault(throwable.toString())
             .take(STACK_LIMIT_CHARS)
 
-        runCatching {
-            val dir = crashDir ?: return@runCatching
+        val writeError = runCatching {
+            val dir = crashDir ?: error("crashDir 尚未初始化")
             dir.mkdirs()
             val target = validatedChild(dir, "crash-${stampOf(occurredAt)}.log")
             target.writeText(
@@ -744,6 +747,16 @@ object AndroidRuntimeLog : RuntimeLogSource {
                 },
             )
             trimFiles(dir, "crash-", MAX_CRASH_FILES)
+        }.exceptionOrNull()
+        if (writeError != null) {
+            // 写盘失败本身就是要留证据的故障。
+            // 2.4.0 在真机连崩 3 次、导出里零堆栈，一部分原因就是这里被静默吞掉——
+            // 现在即使崩溃文件写不出来，运行日志里也一定有一行说明为什么。
+            appendLine(
+                "--- 崩溃记录写盘失败：${writeError::class.simpleName}: " +
+                    "${writeError.message?.take(200)} ---",
+                force = true,
+            )
         }
 
         // R2：先把「崩溃之前发生了什么」同步冲刷到独立文件，再写运行日志标记。

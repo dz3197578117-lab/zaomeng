@@ -41,7 +41,7 @@ fun leanSession(session: JsonObject): JsonObject = buildJsonObject {
 fun transcriptSize(session: JsonObject): Int {
     val transcript = session["transcript"] as? JsonArray
         ?: return session["transcript_count"]?.jsonPrimitive?.intOrNull ?: 0
-    val start = session["transcript_start"]?.jsonPrimitive?.intOrNull?.coerceAtLeast(0) ?: 0
+    val start = effectiveTranscriptStart(session)
     return start + transcript.size
 }
 
@@ -53,7 +53,7 @@ fun transcriptSize(session: JsonObject): Int {
  */
 fun reconcileTranscriptCount(session: JsonObject): JsonObject {
     val transcript = session["transcript"] as? JsonArray ?: return session
-    val start = session["transcript_start"]?.jsonPrimitive?.intOrNull?.coerceAtLeast(0) ?: 0
+    val start = effectiveTranscriptStart(session)
     val expected = start + transcript.size
     if (session["transcript_count"]?.jsonPrimitive?.intOrNull == expected) return session
     return buildJsonObject {
