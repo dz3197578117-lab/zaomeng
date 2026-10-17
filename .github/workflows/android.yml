@@ -37,7 +37,26 @@ jobs:
         shell: bash
         run: |
           ./gradlew testDebugUnitTest lintDebug assembleDebug --no-daemon --stacktrace --console=plain > /tmp/gradle-ci.log 2>&1 || {
+            # 失败时最要紧的是**哪个测试挂了**。原来只 grep 任务级 FAILED，
+            # 结果只看到「testDebugUnitTest FAILED」，拿不到具体测试名，等于白跑一趟。
+            # 这里补两条：JUnit 的逐条失败行，以及汇总行。
+            grep -E '^\S+ > .* (FAILED|SKIPPED)$|tests completed|There (were|was) failing' /tmp/gradle-ci.log \
+              | head -60 | sed 's/^/::error::test /' || true
             grep -E 'What went wrong|Caused by:|FAILURE:|Could not|> Task .* FAILED|error:|Exception|not found|Connection|timed? ?out|transfer|403|404|PKIX|SSL|proxy' /tmp/gradle-ci.log | head -60 | sed 's/^/::error::/' || true
             tail -100 /tmp/gradle-ci.log | sed 's/^/::error::tail /' || true
             exit 1
           }
+
+      # 报告进 artifact：日志里的断言消息是截断的，而 XML 报告里有完整的
+      # expected/actual 与堆栈，定位不需要再猜，也不必为了看一眼报告去重跑。
+      - name: Upload test and lint reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-ci-reports
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            kmp/app/androidApp/build/test-results/testDebugUnitTest/**
+            kmp/app/androidApp/build/reports/tests/**
+            kmp/app/androidApp/build/reports/lint-results-debug.*
