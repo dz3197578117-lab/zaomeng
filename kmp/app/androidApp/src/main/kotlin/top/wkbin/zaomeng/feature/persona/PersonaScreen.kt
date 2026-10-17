@@ -253,6 +253,7 @@ fun PersonaContent(
                 onApplyRepair = onApplyRepair,
                 onApplyAllRepairs = onApplyAllRepairs,
                 tts = tts,
+                speechSelection = speechSelection,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
@@ -295,6 +296,7 @@ private fun PersonaEditor(
     onApplyRepair: (PersonaRepairChangeDto) -> Unit,
     onApplyAllRepairs: () -> Unit,
     tts: PlatformTts,
+    speechSelection: SpeechEngineSelection,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -330,6 +332,15 @@ private fun PersonaEditor(
             }
             if (expandedGroups[group.key] == true) {
                 if (group.key == "voice") {
+                    item(key = "voice-library-card") {
+                        VoiceLibraryCard(
+                            character = state.character,
+                            fields = state.fields,
+                            enginePackage = speechSelection.systemEnginePackage,
+                            tts = tts,
+                            onFieldChange = onFieldChange,
+                        )
+                    }
                     item(key = "voice-preview-card") {
                         VoicePreviewCard(
                             character = state.character,
@@ -952,6 +963,100 @@ private fun severityColor(severity: String): Color = when (severity) {
     else -> MaterialTheme.colorScheme.primary
 }
 
+/**
+ * 「音色库」入口卡：显示当前指定音色，并提供挑选 / 清除。
+ *
+ * 与 [VoicePreviewCard] 的分工：这张卡解决「用哪个音色」（选），试听卡解决「听起来对不对」（听）。
+ * 分开是因为它们的触发频率不同——挑声音要反复进出列表，试听是选完之后确认一次。
+ */
+@Composable
+private fun VoiceLibraryCard(
+    character: String,
+    fields: Map<String, String>,
+    enginePackage: String,
+    tts: PlatformTts,
+    onFieldChange: (String, String) -> Unit,
+) {
+    var showLibrary by remember { mutableStateOf(false) }
+    val currentVoice = fields["voice_name"].orEmpty().trim()
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Column {
+                Text(
+                    text = "音色库",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = if (currentVoice.isBlank()) {
+                        "未指定音色：按角色名自动分配（神经引擎）或使用引擎默认声音。"
+                    } else {
+                        "当前音色：$currentVoice"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(
+                    onClick = { showLibrary = true },
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.VolumeUp,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text("挑选音色", modifier = Modifier.padding(start = 6.dp))
+                }
+                if (currentVoice.isNotBlank()) {
+                    TextButton(onClick = { onFieldChange("voice_name", "") }) {
+                        Text("清除")
+                    }
+                }
+            }
+        }
+    }
+
+    if (showLibrary) {
+        VoiceLibrarySheet(
+            character = character,
+            enginePackage = enginePackage,
+            sampleText = personaSampleLine(character, fields),
+            delivery = resolveVoiceProfile(character, fields.toAuthoredVoice()),
+            currentVoice = currentVoice,
+            tts = tts,
+            onPick = { voice ->
+                // 直接写回字段，用户不需要知道「音色名要手填」这件事。
+                onFieldChange("voice_name", voice.name)
+                showLibrary = false
+            },
+            onDismiss = { showLibrary = false },
+        )
+    }
+}
+
+/** 试听文案：优先用作者写的代表句，没有就造一句带角色名的短句。 */
+private fun personaSampleLine(character: String, fields: Map<String, String>): String =
+    fields["typical_lines"]?.split("；", ";")?.firstOrNull()?.takeIf(String::isNotBlank)
+        ?: "${character}在此。有何吩咐？"
+
 @Composable
 private fun VoicePreviewCard(
     character: String,
@@ -962,8 +1067,7 @@ private fun VoicePreviewCard(
     val speakingId by tts.currentSpeakingId.collectAsStateWithLifecycle()
     val isThisSpeaking = isSpeaking && speakingId == "persona-voice-preview"
 
-    val testText = fields["typical_lines"]?.split("；", ";")?.firstOrNull()?.takeIf(String::isNotBlank)
-        ?: "${character}在此。有何吩咐？"
+    val testText = personaSampleLine(character, fields)
 
     // 试听必须与聊天里实际听到的一致：走**同一套**解析与派生（作者填了用填的，没填按角色名派生）。
     // 否则会出现「试听满意、进聊天却是另一个声音」——那正是这次要消灭的困惑。

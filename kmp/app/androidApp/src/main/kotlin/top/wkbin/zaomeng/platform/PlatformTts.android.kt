@@ -154,9 +154,18 @@ internal class AndroidPlatformTts(
                 engine.setPitch(pitch.coerceIn(0.5f, 2.0f))
                 engine.setSpeechRate(speed.coerceIn(0.5f, 2.0f))
                 if (voiceName.isNotBlank()) {
-                    val targetVoice = engine.voices?.firstOrNull { it.name.contains(voiceName, ignoreCase = true) }
+                    // 优先精确匹配：音色名可能是短名的前缀（`zh-CN-xiaobei` / `zh-CN-xiaobei-v2`），
+                    // 只做 contains 会挑到另一个音色，表现为「选 A 听起来像 B」。
+                    val allVoices = engine.voices
+                    val targetVoice = allVoices?.firstOrNull { it.name == voiceName }
+                        ?: allVoices?.firstOrNull { it.name.equals(voiceName, ignoreCase = true) }
+                        ?: allVoices?.firstOrNull { it.name.contains(voiceName, ignoreCase = true) }
                     if (targetVoice != null) {
                         engine.voice = targetVoice
+                    } else {
+                        // 不静默：音色名对不上（换引擎、音色被删）时，用户听到的是默认声音，
+                        // 日志里必须留下「为什么没切过去」。
+                        Log.w(TAG, "朗读音色未匹配：voice=$voiceName，引擎共 ${allVoices?.size ?: 0} 个音色")
                     }
                 }
                 val params = Bundle()

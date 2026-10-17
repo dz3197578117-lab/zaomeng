@@ -128,7 +128,8 @@ private fun SystemTtsEngineSection(
             )
             Text(
                 "关闭「离线神经语音」时使用。安装 NekoSpeak 等第三方引擎后可在这里选中它，" +
-                    "让角色分配用上它的克隆音色与名人音色。",
+                    "再到人物页的「对白声音 → 音色库」为每个角色挑不同音色——" +
+                    "克隆音色、名人音色与社区音色都会出现在列表里。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
