@@ -66,6 +66,24 @@ class NeuralSpeechPathsTest {
     }
 
     @Test
+    fun `a missing FST is incomplete even when the three engine files are present`() {
+        val allExceptOneFst = model.files.map { it.fileName } - model.ruleFstFileNames.first()
+        val missing = model.missingFileNames(allExceptOneFst)
+
+        assertEquals(listOf(model.ruleFstFileNames.first()), missing)
+        assertTrue(!model.isFullyDownloaded(allExceptOneFst), "缺文本正则化规则时不能标记模型完整")
+    }
+
+    @Test
+    fun `file size mismatch identifies a truncated vocabulary or rule file`() {
+        val actualSizes = model.files.associate { it.fileName to it.sizeBytes }.toMutableMap()
+        actualSizes[model.lexiconFileName] = model.files.first { it.fileName == model.lexiconFileName }.sizeBytes - 1
+
+        assertEquals(listOf(model.lexiconFileName), model.mismatchedFileNames(actualSizes))
+        assertEquals(emptyList(), model.mismatchedFileNames(emptyMap()), "未知大小不能误报为不匹配")
+    }
+
+    @Test
     fun `a fully downloaded model reports complete`() {
         val all = model.files.map { it.fileName }
         assertEquals(emptyList(), model.missingFileNames(all))

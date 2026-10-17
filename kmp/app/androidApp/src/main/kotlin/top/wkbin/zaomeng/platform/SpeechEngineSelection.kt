@@ -36,6 +36,35 @@ data class SpeechEngineDecision(
     val fallbackReason: String? = null,
 ) {
     val isFallback: Boolean get() = fallbackReason != null
+
+    companion object {
+        /**
+         * 缺文件时的可读原因：**区分**「必需文件」与「文本正则化 FST」。
+         *
+         * 两者症状完全不同，混成一句「缺 N 个」会让用户照着错的方向查：
+         * - 缺必需文件（onnx/lexicon/tokens）→ 引擎**根本加载不了**，完全没声音；
+         * - 缺 FST → 引擎能加载、也能出声，但**数字、日期、多音字读错**，
+         *   听感就是「读音含糊」。这正是最难自查的一类——听起来像质量差，其实是缺文件。
+         *
+         * 所以这里点名缺的是哪一类，而不是只报个数。
+         */
+        fun describeMissing(model: NeuralVoiceModel, missing: List<String>): String {
+            val fstNames = model.ruleFstFileNames.toSet()
+            val missingFsts = missing.filter { it in fstNames }
+            val missingRequired = missing.filterNot { it in fstNames }
+            val detail = buildString {
+                if (missingRequired.isNotEmpty()) {
+                    append("缺少必需文件 ").append(missingRequired.joinToString("、"))
+                }
+                if (missingFsts.isNotEmpty()) {
+                    if (isNotEmpty()) append("；")
+                    append("缺少文本正则化规则 ").append(missingFsts.joinToString("、"))
+                    append("（会导致数字、日期与多音字读错）")
+                }
+            }
+            return "「${model.displayName}」的文件不完整：$detail。已改用系统朗读；重新下载即可恢复。"
+        }
+    }
 }
 
 /**
@@ -72,8 +101,7 @@ fun resolveSpeechEngine(
     if (missing.isNotEmpty()) {
         return SpeechEngineDecision(
             SpeechEngine.SYSTEM,
-            fallbackReason = "「${catalogModel.displayName}」的文件不完整（缺 ${missing.size} 个），" +
-                "已改用系统朗读；重新下载即可恢复。",
+            fallbackReason = SpeechEngineDecision.describeMissing(catalogModel, missing),
         )
     }
     return SpeechEngineDecision(SpeechEngine.NEURAL)

@@ -128,15 +128,24 @@ internal class SherpaNeuralTts(
                 _currentSpeakingId.value = id
                 try {
                     val tts = ensureEngine() ?: return@launch
-                    val sid = speakerIdFor(speaker, tts.numSpeakers())
+                    val explicit = explicitSpeakerId(voiceName, tts.numSpeakers())
+                    val sid = explicit ?: speakerIdFor(speaker, tts.numSpeakers())
                     // 每次合成都留一行**决定性**日志：说话人 → 音色编号、总音色数、语速。
                     // 「所有人一个声音」这种反馈必须能靠一行日志区分三种原因：
                     // ① 根本没走神经引擎（则这里不会有这行）；② 走了但音色编号相同；
                     // ③ 编号不同但模型本身音色相近（模型能力边界）。不打印就只能靠猜。
+                    // 另外打印音色来源：explicit=人物包 voice_name 锁定了编号；cast=同场分配；
+                    // auto=按名字派生（可能恰好落在含糊的音色上，那正是「换不了音色」的根源）。
+                    val source = when {
+                        explicit != null -> "explicit(voice_name=$voiceName)"
+                        cast.isNotEmpty() -> "cast"
+                        else -> "auto"
+                    }
                     Log.i(
                         TAG,
                         "朗读：说话人=「$speaker」音色#$sid/${tts.numSpeakers()} " +
-                            "语速=${"%.2f".format(speed)} 字符数=${clean.length} 候选角色=${cast.size}",
+                            "语速=${"%.2f".format(speed)} 字符数=${clean.length} " +
+                            "候选角色=${cast.size} 音色来源=$source",
                     )
                     val audio = tts.generate(clean, sid, speed.coerceIn(MIN_SPEED, MAX_SPEED))
                     if (audio.samples.isEmpty()) {
@@ -220,8 +229,11 @@ internal class SherpaNeuralTts(
     /**
      * 说话人编号。整份名单已经由 [setCast] 给到，这里只是查表。
      *
-     * 名单为空（例如还没进过会话）时只按名字派生——那会有撞车概率，但好过不出声；
-     * 会话一建立就会调用 [setCast] 修正。
+     * 名单为空（例如还没进过会话、或从人物页试听）时只按名字派生——那会有撞车概率，
+     * 但好过不出声；会话一建立就会调用 [setCast] 修正。
+     *
+     * 作者用 `voice_name` 显式指定编号的优先级更高，在调用处先判（见 [explicitSpeakerId]），
+     * 不在这里处理：那样「显式指定」不会被名单分配覆盖掉。
      */
     private fun speakerIdFor(speaker: String, speakerCount: Int): Int {
         if (speakerCount <= 0) return 0

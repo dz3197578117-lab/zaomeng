@@ -52,6 +52,28 @@ fun NeuralVoiceModel.isFullyDownloaded(existingFileNames: Collection<String>): B
     missingFileNames(existingFileNames).isEmpty()
 
 /**
+ * 文件在、但**字节数与目录清单不一致**的文件名（顺序与目录清单一致）。
+ *
+ * 为什么不只看「文件在不在」：下载被中断、存储写满、或上游重发了文件，
+ * 都会留下一个**名字正确但内容截断**的文件。`missingFileNames` 认为它齐了，
+ * 引擎照样能加载，但 `lexicon.txt`（词典）或 `.fst`（多音字规则）被截断时，
+ * 表现是**读音含糊、多音字读错**——听起来像音质差，实际是文件坏了。
+ *
+ * 这类问题必须在界面上说出来，不能只写日志：用户无从判断「含糊」是模型本来的水平还是下载坏了。
+ *
+ * [actualSizes] 传「相对文件名 → 实际字节数」。清单里 [NeuralVoiceFile.sizeBytes] <= 0 时不校验
+ * （未知大小不该被当成不匹配）。
+ */
+fun NeuralVoiceModel.mismatchedFileNames(actualSizes: Map<String, Long>): List<String> =
+    files
+        .filter { it.sizeBytes > 0 }
+        .filter { file ->
+            val actual = actualSizes[file.fileName]?.takeIf { it >= 0 } ?: return@filter false
+            actual != file.sizeBytes
+        }
+        .map { it.fileName }
+
+/**
  * 模型在本机保存时用的**相对目录**（按模型 id 分目录）。
  *
  * 为什么每个模型一个子目录：不同模型的清单里可能有同名文件（三个模型都有 `lexicon.txt`、

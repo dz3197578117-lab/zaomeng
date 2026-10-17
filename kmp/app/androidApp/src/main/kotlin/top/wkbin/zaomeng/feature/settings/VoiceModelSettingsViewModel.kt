@@ -19,7 +19,8 @@ import top.wkbin.zaomeng.data.preferences.AppPreferencesRepository
 import top.wkbin.zaomeng.platform.NeuralVoiceCatalog
 import top.wkbin.zaomeng.platform.NeuralVoiceModel
 import top.wkbin.zaomeng.platform.downloadPlans
-import top.wkbin.zaomeng.platform.isFullyDownloaded
+import top.wkbin.zaomeng.platform.mismatchedFileNames
+import top.wkbin.zaomeng.platform.missingFileNames
 
 /**
  * 语音模型的下载源**尝试顺序**：镜像优先，官方兜底。
@@ -47,6 +48,10 @@ data class VoiceModelUiState(
     val enabled: Boolean = false,
     /** 文件已齐全的模型。 */
     val readyModelIds: Set<String> = emptySet(),
+    /** 模型 id → 缺失的必需文件名（包括 4 个文本正则化 FST）。 */
+    val missingFilesByModel: Map<String, List<String>> = emptyMap(),
+    /** 模型 id → 与清单期望字节数不符的已存在文件名；不是硬故障，但需要提示用户。 */
+    val mismatchedFilesByModel: Map<String, List<String>> = emptyMap(),
     /** 模型 id → 服务端回报的绝对目录（配置引擎时要用）。 */
     val modelDirectories: Map<String, String> = emptyMap(),
     val download: VoiceModelDownloadDto = VoiceModelDownloadDto(),
@@ -57,6 +62,32 @@ data class VoiceModelUiState(
     val selectedModel: NeuralVoiceModel get() = NeuralVoiceCatalog.resolveOrDefault(selectedModelId)
     val isDownloading: Boolean get() = download.active
     val selectedReady: Boolean get() = selectedModelId in readyModelIds
+    val selectedMissingFiles: List<String> get() = missingFilesByModel[selectedModelId].orEmpty()
+    val selectedMissingFileWarning: String?
+        get() = selectedMissingFiles.takeIf { it.isNotEmpty() }?.let { missing ->
+            val fst = selectedModel.ruleFstFileNames.toSet()
+            val missingFsts = missing.filter { it in fst }
+            val required = missing.filterNot { it in fst }
+            buildString {
+                if (required.isNotEmpty()) {
+                    append("缺少模型必需文件：").append(required.joinToString("、")).append("。")
+                }
+                if (missingFsts.isNotEmpty()) {
+                    if (isNotEmpty()) append(' ')
+                    append("缺少文本正则化规则：").append(missingFsts.joinToString("、"))
+                        .append("；数字、日期和多音字可能读错。")
+                }
+                append("目前会退回系统朗读；请重新下载模型。")
+            }
+        }
+
+    /** 已有文件的实际大小与清单不符：提示可能下载不完整或上游更新，建议重新下载。 */
+    val selectedMismatchedFiles: List<String> get() = mismatchedFilesByModel[selectedModelId].orEmpty()
+    val selectedFileSizeWarning: String?
+        get() = selectedMismatchedFiles.takeIf { it.isNotEmpty() }?.let { files ->
+            "模型文件大小与预期不一致：${files.joinToString("、")}。" +
+                "文件可能下载不完整或已被上游更新，建议点“重新下载”后再试听。"
+        }
 
     /** 当前下载源。`OnDeviceDownloadEndpoint` 是 internal，所以这里也收成 internal（仅本模块用）。 */
     internal val endpoint: OnDeviceDownloadEndpoint
@@ -121,18 +152,31 @@ class VoiceModelSettingsViewModel(
     fun refresh() {
         viewModelScope.launch {
             val ready = mutableState.value.readyModelIds.toMutableSet()
+            val missing = mutableState.value.missingFilesByModel.toMutableMap()
+            val mismatches = mutableState.value.mismatchedFilesByModel.toMutableMap()
             val directories = mutableState.value.modelDirectories.toMutableMap()
             var latest: VoiceModelDownloadDto? = null
             for (model in NeuralVoiceCatalog.models) {
                 val status = runCatching { modelSettings.voiceModelStatus(model.id) }.getOrNull()
                     ?: continue
-                if (model.isFullyDownloaded(status.presentFiles)) ready += model.id else ready -= model.id
+                val missingNames = model.missingFileNames(status.presentFiles)
+                if (missingNames.isEmpty()) {
+                    ready += model.id
+                    missing -= model.id
+                } else {
+                    ready -= model.id
+                    missing[model.id] = missingNames
+                }
+                val sizeMismatches = model.mismatchedFileNames(status.presentFileSizes)
+                if (sizeMismatches.isEmpty()) mismatches -= model.id else mismatches[model.id] = sizeMismatches
                 if (status.directory.isNotBlank()) directories[model.id] = status.directory
                 if (status.download.active) latest = status.download
             }
             mutableState.update {
                 it.copy(
                     readyModelIds = ready,
+                    missingFilesByModel = missing,
+                    mismatchedFilesByModel = mismatches,
                     modelDirectories = directories,
                     download = latest ?: it.download,
                 )
@@ -206,6 +250,8 @@ class VoiceModelSettingsViewModel(
                     mutableState.update {
                         it.copy(
                             readyModelIds = it.readyModelIds - modelId,
+                            missingFilesByModel = it.missingFilesByModel - modelId,
+                            mismatchedFilesByModel = it.mismatchedFilesByModel - modelId,
                             download = it.download.copy(active = false),
                             message = "已删除「${it.selectedModel.displayName}」的本地文件。",
                         )
@@ -241,10 +287,22 @@ class VoiceModelSettingsViewModel(
 
     private suspend fun finishDownload(modelId: String, status: VoiceModelStatusDto) {
         val model = NeuralVoiceCatalog.byId(modelId)
-        val ready = model != null && model.isFullyDownloaded(status.presentFiles)
+        val missingFiles = model?.missingFileNames(status.presentFiles).orEmpty()
+        val ready = model != null && missingFiles.isEmpty()
+        val sizeMismatches = model?.mismatchedFileNames(status.presentFileSizes).orEmpty()
         mutableState.update { current ->
             current.copy(
                 readyModelIds = if (ready) current.readyModelIds + modelId else current.readyModelIds - modelId,
+                missingFilesByModel = if (missingFiles.isEmpty()) {
+                    current.missingFilesByModel - modelId
+                } else {
+                    current.missingFilesByModel + (modelId to missingFiles)
+                },
+                mismatchedFilesByModel = if (sizeMismatches.isEmpty()) {
+                    current.mismatchedFilesByModel - modelId
+                } else {
+                    current.mismatchedFilesByModel + (modelId to sizeMismatches)
+                },
                 modelDirectories = if (status.directory.isNotBlank()) {
                     current.modelDirectories + (modelId to status.directory)
                 } else {

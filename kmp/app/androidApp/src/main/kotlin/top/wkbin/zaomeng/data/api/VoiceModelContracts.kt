@@ -53,6 +53,8 @@ data class VoiceModelStatusDto(
     @SerialName("directory") val directory: String = "",
     /** 目录内已存在的文件名（升序）。 */
     @SerialName("present_files") val presentFiles: List<String> = emptyList(),
+    /** 文件名 → 实际字节数。用于发现“名字在但文件被截断”的下载异常。 */
+    @SerialName("present_file_sizes") val presentFileSizes: Map<String, Long> = emptyMap(),
     /** 目录内文件的总字节数。 */
     @SerialName("present_bytes") val presentBytes: Long = 0,
     @SerialName("download") val download: VoiceModelDownloadDto = VoiceModelDownloadDto(),

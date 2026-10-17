@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -205,5 +206,28 @@ class NeuralVoiceCatalogTest {
         val assigned = assignNeuralSpeakers(cast, fallback.speakerCount)
         assertEquals(cast.size, assigned.values.toSet().size)
         assertNotEquals(0, assigned.values.sum(), "不该全部落到 0 号音色")
+    }
+
+    // ------------------------------------------------------------------
+    // voice_name 显式指定音色（用户唯一的手动逃生口）
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `explicit speaker id accepts bare and spaced numbers inside range`() {
+        assertEquals(0, explicitSpeakerId("0", 804))
+        assertEquals(12, explicitSpeakerId("12", 804))
+        assertEquals(12, explicitSpeakerId(" 12 ", 804))
+        assertEquals(803, explicitSpeakerId("803", 804))
+    }
+
+    @Test
+    fun `explicit speaker id rejects descriptions out of range and junk`() {
+        // 「低沉沙哑」「12 号偏快」这类描述属于系统 TTS，绝不能猜成数字
+        for (bad in listOf("", "  ", "低沉沙哑", "12 号偏快", "-1", "804", "9999", "1.2")) {
+            assertNull(explicitSpeakerId(bad, 804), "不该把「$bad」当成音色编号")
+        }
+        // 没有音色可选的引擎（speakerCount<=0）一律回落
+        assertNull(explicitSpeakerId("12", 0))
+        assertNull(explicitSpeakerId("12", -5))
     }
 }

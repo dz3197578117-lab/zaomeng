@@ -6,6 +6,77 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.3.2] - 2026-10-17
+
+### 修复：试听与对话音色不一致、「所有角色一个声音」的两个真 bug，以及「读音含糊」的成因可见化
+
+现象：用户反馈**所有角色听起来是同一个声音**、并且**读音含糊不清**。
+
+先纠正一个容易误判的方向：从用户导出的诊断日志可以确认，神经引擎当时**正在工作**——
+
+```
+PlatformTts: 使用离线神经语音引擎：vits-zh-hf-eula
+SherpaNeuralTts: 神经语音引擎已加载：vits-zh-hf-eula，音色 804 个，采样率 22050 Hz
+SherpaNeuralTts: 朗读：说话人=「陈香兰」音色#624/804 语速=1.13 字符数=20 候选角色=0
+```
+
+引擎加载正常、7 个模型文件齐全（否则会降级到系统朗读），音频参数也正确
+（22050 Hz / 单声道 / 16-bit）。所以既不是「开关没开」，也不是「FST 缺失」。
+关键线索是 `候选角色=0`。
+
+**根因一：人设页试听从来没有把同场角色名单交给引擎。**
+`setCast` 在全仓库只有一个调用点（聊天页 `Transcript.kt`），人设页
+`PersonaScreen` 复用 `rememberPlatformTts` 却**从未调用它**。于是试听走的是
+`cast.ifEmpty { listOf(speaker) }` 的兜底分支：只按单个名字算一个编号——
+既失去「同场不撞车」的保证，算出的编号还可能和聊天页里该角色的**不是同一个**
+（聊天页用 `session.characterAvatars` 的全量名单），表现为「试听一个声、进对话又变一个」。
+现在人设页新增 `refreshCast()` 取全卷名单（`getPersonaQualityOverview`）并
+`setCast`，与聊天页同源；名单取不到时**不报错**（只影响「是否撞车」，
+仍应出声），且当前角色始终入选。
+
+**根因二：人物包的 `voice_name` 在神经引擎上是死参数。**
+`SherpaNeuralTts.speak()` 声明了 `voiceName` 却从未读取——作者/用户为此去改
+「声线音色」时**改了没用**，而这正是唯一能手动换音色的入口。
+新增 `explicitSpeakerId(voiceName, speakerCount)`：填数字即锁定该音色（`0`–`803`），
+优先级高于名单分配。解析刻意保守——`低沉沙哑`、`12 号偏快`、`1.2`、越界值一律不猜、
+回落自动值，避免把系统 TTS 的自定义音色名误当编号。
+
+### 「读音含糊」：说明成因，并让下载截断可见
+
+804 音色的多说话人模型里音色质量并不均匀；按名字派生的编号稳定，但**稳定地落在哪一个纯属运气**，
+而此前没有任何手段能换——这才是「含糊」时用户无从自救的原因。现在可用 `voice_name` 换。
+
+另一类真实成因是**文件名对、内容被截断**（下载中断 / 存储写满 / 上游重发）：
+以前只看「文件在不在」，照样当成就绪。现在服务端回报每个文件的实际字节数：
+
+- `VoiceModelStatusDto` 新增 `present_file_sizes`（服务端如实上报，判定仍在客户端，
+  与既有「服务端不判 ready」的约定一致）；
+- 新增纯函数 `NeuralVoiceModel.mismatchedFileNames(actualSizes)`：清单 `sizeBytes <= 0`
+  或实际大小未知（`-1`）时**不判为不匹配**，避免误报；
+- 设置页对所选模型显示「文件大小与预期不一致：… 建议点『重新下载』后再试听」。
+  重新下载天然生效：服务端只在「已存在且大小一致」时跳过，大小不符会被重下。
+
+缺文件的原因也不再只说「缺 N 个」，而是点名哪一类：缺必需文件
+（`.onnx` / `lexicon.txt` / `tokens.txt`，引擎根本起不来、完全没声音）与
+缺文本正则化规则（`.fst`，能出声但**数字、日期与多音字读错**）。
+同一段文案同时用于设置页提示与引擎加载失败信息，避免两处措辞漂移。
+
+### 可诊断性
+
+每次朗读的日志新增 `音色来源=`：`explicit(voice_name=N)` / `cast` / `auto`。
+「是不是同一个声音」不必再猜——对比两行的 `音色#N` 即可定位是名单缺失、
+编号撞车，还是模型音色本身相近。
+
+### 回归守卫
+
+- `NeuralVoiceCatalogTest`：`explicitSpeakerId` 的 11 个边界（含描述文本、越界、负数、小数）。
+- `NeuralSpeechPathsTest`：缺单个 FST 必须判为不完整；截断的 `lexicon.txt` 必须被识别；
+  未知大小不得误报。
+- `SpeechEngineSelectionTest`：缺必需文件与缺 FST 的降级原因分别断言（点名文件、含「多音字」）。
+- `VoiceModelDownloadServiceTest`：`present_file_sizes` 如实回报。
+- `VoiceModelUiStateTest`：截断告警文案可操作（含文件名与「重新下载」）。
+- `PersonaVoiceCastTest`：名单归一化 + 当前角色兜底入选。
+
 ## [2.3.1] - 2026-10-17
 
 ### 修复：点朗读 / 点试听**立刻闪退**——2.1.19 起的根因，这次找到并修掉了

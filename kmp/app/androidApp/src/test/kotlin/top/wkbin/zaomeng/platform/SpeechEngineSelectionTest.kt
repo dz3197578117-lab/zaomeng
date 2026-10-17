@@ -67,8 +67,8 @@ class SpeechEngineSelectionTest {
     }
 
     @Test
-    fun `incomplete model files fall back and report how many are missing`() {
-        val existing = allFiles.take(1)
+    fun `missing required model files fall back and identify the missing files`() {
+        val existing = allFiles - listOf(model.modelFileName, model.lexiconFileName)
         val decision = resolveSpeechEngine(
             SpeechEngineSelection(SpeechEngine.NEURAL, model.id, dir),
             catalogModel = model,
@@ -77,7 +77,26 @@ class SpeechEngineSelectionTest {
         assertEquals(SpeechEngine.SYSTEM, decision.engine)
         val reason = decision.fallbackReason!!
         assertTrue(reason.contains("不完整"), reason)
-        assertTrue(reason.contains("缺 ${allFiles.size - 1} 个"), reason)
+        assertTrue(reason.contains(model.modelFileName), reason)
+        assertTrue(reason.contains(model.lexiconFileName), reason)
+        assertTrue(reason.contains("重新下载"), reason)
+    }
+
+    @Test
+    fun `missing FST falls back and explains pronunciation risk`() {
+        val missingFst = model.ruleFstFileNames.first()
+        val decision = resolveSpeechEngine(
+            SpeechEngineSelection(SpeechEngine.NEURAL, model.id, dir),
+            catalogModel = model,
+            existingFileNames = allFiles - missingFst,
+        )
+
+        assertEquals(SpeechEngine.SYSTEM, decision.engine)
+        val reason = decision.fallbackReason!!
+        assertTrue(reason.contains(missingFst), reason)
+        assertTrue(reason.contains("文本正则化规则"), reason)
+        assertTrue(reason.contains("多音字"), reason)
+        assertTrue(reason.contains("重新下载"), reason)
     }
 
     @Test

@@ -114,11 +114,13 @@ class VoiceModelDownloadService internal constructor(
         val id = VoiceModelRequestValidator.requireModelId(modelId)
         val dir = modelDir(id)
         val present = presentFileNames(dir)
-        val bytes = present.sumOf { name -> fileSize(dir / name).coerceAtLeast(0L) }
+        val sizes = present.associateWith { name -> fileSize(dir / name) }
+        val bytes = sizes.values.sumOf { it.coerceAtLeast(0L) }
         return VoiceModelStatusDto(
             modelId = id,
             directory = dir.toString(),
             presentFiles = present,
+            presentFileSizes = sizes,
             presentBytes = bytes,
             download = stateFlow.value,
         )

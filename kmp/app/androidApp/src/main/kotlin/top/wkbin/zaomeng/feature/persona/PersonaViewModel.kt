@@ -63,6 +63,17 @@ data class PersonaUiState(
     val repairError: String = "",
     val appliedRepairFields: Set<String> = emptySet(),
     val fieldFeedback: Map<String, PersonaFieldFeedback> = emptyMap(),
+    /**
+     * 本卷全部角色名（用于神经语音试听的音色分配）。
+     *
+     * 为什么需要**全卷名单**而不是只给当前角色：`assignNeuralSpeakers` 要同时满足
+     * 「同一角色永远同一音色」与「同场角色不撞车」，只有拿到整份名单才能一次算完。
+     * 只传当前角色时，试听听到的音色编号与聊天页里该角色的编号可能不同
+     * （聊天页用 `session.characterAvatars` 的全量名单），表现为「试听和聊天里不是同一个声音」。
+     *
+     * 取不到时留空：引擎会回落到按名字派生，仍然出声，只是失去「同场不撞车」的保证。
+     */
+    val castNames: List<String> = emptyList(),
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val isDeleting: Boolean = false,
@@ -83,6 +94,14 @@ data class PersonaUiState(
     fun issueFor(field: String): PersonaIssueDto? = quality?.issues
         ?.firstOrNull { field in it.fields }
 }
+
+/** Normalize the roster supplied to TTS while guaranteeing the currently edited character is present. */
+internal fun normalizeVoiceCastNames(names: Collection<String>, currentCharacter: String): List<String> =
+    (names + currentCharacter)
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .distinct()
+        .sorted()
 
 class PersonaViewModel(
     private val repository: PersonaRepository,
@@ -161,6 +180,7 @@ class PersonaViewModel(
                 }
                 refreshQuality(normalizedRunId, normalizedCharacter, announceFailure = false)
                 refreshRepairProposal(normalizedRunId, normalizedCharacter)
+                refreshCast(normalizedRunId, normalizedCharacter)
             } catch (error: Throwable) {
                 _uiState.update { current ->
                     if (!current.matches(normalizedRunId, normalizedCharacter)) return@update current
@@ -441,6 +461,27 @@ class PersonaViewModel(
                     notice = if (announceFailure) notice("资料已保存，但$message") else current.notice,
                 )
             }
+        }
+    }
+
+    /**
+     * 取全书卷角色名单，供神经语音试听做音色分配。
+     *
+     * 失败**不报错**：名单只影响试听时「同场是否撞车」，取不到就回落到按名字派生，
+     * 仍然能出声。为一个辅助信息弹错误提示，反而盖住真正重要的失败。
+     *
+     * 当前角色始终入选：即使总览请求失败或该角色尚未出现在总览里，
+     * 试听也必须能算出一个属于它的编号。
+     */
+    private suspend fun refreshCast(runId: String, character: String) {
+        val names = try {
+            repository.getPersonaQualityOverview(runId).items.map { it.character }
+        } catch (_: Throwable) {
+            emptyList()
+        }
+        _uiState.update { current ->
+            if (!current.matches(runId, character)) return@update current
+            current.copy(castNames = normalizeVoiceCastNames(names, character))
         }
     }
 

@@ -155,6 +155,15 @@ fun PersonaContent(
     }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     val tts = rememberPlatformTts(speechSelection)
+    // 把全卷角色名单交给引擎，让试听的音色编号与聊天页一致。
+    //
+    // 这不只是「更好看」：聊天页用 `session.characterAvatars` 的全量名单分配（`Transcript.kt`），
+    // 若这里只传当前角色，`assignNeuralSpeakers` 会为一整个单人名单独算一次，
+    // 得到的编号与聊天里那份**可能不同**——表现为「试听好听，进对话换了个声音」。
+    // key 带上 tts：切换引擎会换实例，新实例必须重新收到名单（同 Transcript 的做法）。
+    LaunchedEffect(tts, state.castNames) {
+        tts.setCast(state.castNames)
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),

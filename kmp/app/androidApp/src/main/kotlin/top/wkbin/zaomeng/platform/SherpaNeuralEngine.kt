@@ -86,9 +86,10 @@ internal object SherpaNeuralEngine {
         val existing = modelDir.list()?.toList().orEmpty()
         val missing = model.missingFileNames(existing)
         check(missing.isEmpty()) {
-            "语音模型文件不完整，缺少：${missing.joinToString("、")}（在 ${modelDir.absolutePath}）"
+            "语音模型文件不完整：${SpeechEngineDecision.describeMissing(model, missing)}" +
+                "（目录 ${modelDir.absolutePath}）"
         }
-        warnOnSizeMismatch(model, modelDir, existing)
+        warnOnSizeMismatch(model, modelDir)
         // 内存门槛：VITS fp32 模型加载后常驻数百 MB。ONNX Runtime 分配失败时抛的是 C++ 异常，
         // 经 `newFromFile` 的 SafeJNI 会被转成「返回 0」，不会崩；但用户看到的仍是「没声音」，
         // 所以宁可在加载前就拒绝，并给出可读原因。
@@ -130,26 +131,27 @@ internal object SherpaNeuralEngine {
      * 那时硬校验会让所有用户突然「降级到系统朗读」——用一个静默的功能失效去换一个极罕见的坏文件，
      * 不划算。而真正需要拦的「截断 / 0 字节」现在也不会再崩（`newFromFile` 的 SafeJNI 兜住了），
      * 所以这里只负责把线索留在日志里。
+     *
+     * 注意：**界面上的可见提示不在这里**。用户看到的提示来自
+     * [NeuralVoiceModel.mismatchedFileNames]（设置页用它算出「文件可能不完整」），
+     * 因为引擎加载发生在朗读那一刻，那时用户已经不在设置页了，日志里的线索他看不到。
      */
     private fun warnOnSizeMismatch(
         model: NeuralVoiceModel,
         modelDir: File,
-        existingFileNames: List<String>,
-    ) {
-        val present = existingFileNames.toSet()
-        val mismatched = model.files
-            .filter { it.fileName in present }
-            .mapNotNull { file ->
-                val actual = File(modelDir, file.fileName).length()
-                if (file.sizeBytes > 0 && actual != file.sizeBytes) {
-                    "${file.fileName}（期望 ${file.sizeBytes}，实际 $actual）"
-                } else {
-                    null
-                }
-            }
+    ): List<String> {
+        val sizes = model.files
+            .associate { it.fileName to File(modelDir, it.fileName).length() }
+            .filterKeys { path -> File(modelDir, path).isFile }
+        val mismatched = model.mismatchedFileNames(sizes)
         if (mismatched.isNotEmpty()) {
-            Log.w(TAG, "语音模型文件大小与清单不一致：${mismatched.joinToString("、")}")
+            val detail = mismatched.joinToString("、") { name ->
+                val expected = model.files.first { it.fileName == name }.sizeBytes
+                "$name（期望 $expected，实际 ${sizes[name]}）"
+            }
+            Log.w(TAG, "语音模型文件大小与清单不一致：$detail")
         }
+        return mismatched
     }
 
     /** 当前可用内存（字节）；拿不到时返回 [Long.MAX_VALUE]，即不拦——宁可试，也不要因为读不到数字就禁用功能。 */

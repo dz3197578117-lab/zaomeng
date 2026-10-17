@@ -151,6 +151,29 @@ fun neuralSpeakerId(characterName: String, speakerCount: Int): Int {
 }
 
 /**
+ * 作者在人物包里显式指定的音色编号 → `sid`。
+ *
+ * 为什么需要这条：804 音色的多说话人模型里，**音色质量并不均匀**——有清晰好听的，
+ * 也有发闷、含糊、带噪声的。按角色名派生出来的 `sid` 虽然是稳定的，但稳定地落在哪一个
+ * 纯属运气：一旦落到一个含糊的音色上，用户听到的就是「读音不清」，而且**无从更换**。
+ *
+ * `voice_name` 正是留给作者/用户的逃生口：填数字就锁定那个音色。
+ * 解析**保守**——不是纯数字就返回 `null`（回落到派生），越界也返回 `null`；
+ * 人物包里的 `voice_name` 也可能是自定义音色名，那属于系统 TTS，不该在这里被当成编号。
+ */
+fun explicitSpeakerId(voiceName: String, speakerCount: Int): Int? {
+    if (speakerCount <= 0) return null
+    val raw = voiceName.trim()
+    if (raw.isEmpty()) return null
+    // 允许「第 12 号」「12」这类写法里夹带空白，但绝不猜「低沉」「稍微」这类描述。
+    val digits = raw.filterNot { it.isWhitespace() }
+    if (digits.isEmpty() || digits.any { it !in '0'..'9' }) return null
+    val value = digits.toLongOrNull() ?: return null
+    if (value < 0 || value >= speakerCount) return null
+    return value.toInt()
+}
+
+/**
  * 为一组角色分配**互不相同**的说话人编号。
  *
  * 三步：① 对名字排序（让结果与出场顺序无关）；② 每个角色先取名字派生的首选编号；

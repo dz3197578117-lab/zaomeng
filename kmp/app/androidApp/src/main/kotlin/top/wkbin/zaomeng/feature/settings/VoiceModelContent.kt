@@ -85,6 +85,20 @@ internal fun VoiceModelContent(
                     MaterialTheme.colorScheme.error
                 },
             )
+            state.selectedMissingFileWarning?.let { warning ->
+                Text(
+                    text = warning,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            state.selectedFileSizeWarning?.let { warning ->
+                Text(
+                    text = warning,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),

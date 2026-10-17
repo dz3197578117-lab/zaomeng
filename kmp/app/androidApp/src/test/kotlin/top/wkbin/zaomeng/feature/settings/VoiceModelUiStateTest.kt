@@ -38,6 +38,19 @@ class VoiceModelUiStateTest {
     }
 
     @Test
+    fun `selected file size mismatch produces a visible actionable warning`() {
+        val state = VoiceModelUiState(
+            selectedModelId = NeuralVoiceCatalog.THERESA.id,
+            mismatchedFilesByModel = mapOf(NeuralVoiceCatalog.THERESA.id to listOf("lexicon.txt", "date.fst")),
+        )
+
+        val warning = state.selectedFileSizeWarning
+        assertTrue(warning.orEmpty().contains("lexicon.txt"), warning.orEmpty())
+        assertTrue(warning.orEmpty().contains("date.fst"), warning.orEmpty())
+        assertTrue(warning.orEmpty().contains("重新下载"), warning.orEmpty())
+    }
+
+    @Test
     fun `download activity is read from the download dto`() {
         assertFalse(VoiceModelUiState().isDownloading)
         assertTrue(VoiceModelUiState(download = VoiceModelDownloadDto(active = true)).isDownloading)

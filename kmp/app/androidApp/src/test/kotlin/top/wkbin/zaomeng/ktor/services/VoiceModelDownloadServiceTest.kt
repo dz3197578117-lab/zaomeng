@@ -106,6 +106,7 @@ class VoiceModelDownloadServiceTest {
         val status = fixture.service.status("vits-zh-hf-theresa")
         assertEquals("vits-zh-hf-theresa", status.modelId)
         assertEquals(emptyList(), status.presentFiles)
+        assertEquals(emptyMap<String, Long>(), status.presentFileSizes)
         assertEquals(0, status.presentBytes)
         assertEquals(false, status.download.active)
     }
@@ -120,6 +121,7 @@ class VoiceModelDownloadServiceTest {
 
         val status = fixture.service.status("vits-zh-hf-theresa")
         assertEquals(listOf("lexicon.txt", "tokens.txt"), status.presentFiles)
+        assertEquals(mapOf("lexicon.txt" to 20L, "tokens.txt" to 10L), status.presentFileSizes)
         assertEquals(30, status.presentBytes)
     }
 
