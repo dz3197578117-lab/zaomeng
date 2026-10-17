@@ -48,10 +48,18 @@ import kotlin.math.min
  * 回落到按名字派生的编号。
  */
 internal class SherpaNeuralTts(
-    private val context: Context,
+    context: Context,
     private val model: NeuralVoiceModel,
     private val modelDir: File,
 ) : PlatformTts {
+
+    /**
+     * 只持有 application context。
+     *
+     * 这个实例会常驻一个几百 MB 的原生引擎，而它又挂在 Compose 的组合上；
+     * 若拿着 Activity context，就等于把整个 Activity 一起钉在内存里（旋转屏幕 / 退出页面都回收不掉）。
+     */
+    private val appContext = context.applicationContext
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -59,6 +67,15 @@ internal class SherpaNeuralTts(
     private val engineLock = Mutex()
     private var engine: OfflineTts? = null
     private var loadFailure: String? = null
+
+    /**
+     * 页面已销毁。
+     *
+     * 引擎加载要几秒（几百 MB 模型），而用户可以在这期间就返回上一页——
+     * 那时不能再把新加载出来的引擎留在内存里，也不能再发起新的加载。
+     */
+    @Volatile
+    private var isShutdown = false
 
     /**
      * 合成与播放的**串行锁**。
@@ -99,6 +116,8 @@ internal class SherpaNeuralTts(
     ) {
         val clean = cleanSpokenText(text)
         if (clean.isBlank()) return
+        // 页面已销毁就不再发起朗读：引擎正在被释放，这里排进去也只会白等一次几百 MB 的加载。
+        if (isShutdown) return
 
         stop()
         playbackJob = scope.launch {
@@ -150,9 +169,22 @@ internal class SherpaNeuralTts(
 
     override fun shutdown() {
         stop()
-        scope.cancel()
-        runCatching { engine?.release() }
-        engine = null
+        isShutdown = true
+        // 释放必须**排在正在进行的合成之后**：sherpa-onnx 的 `OfflineTts` 不是线程安全的，
+        // 而 `stop()` 只能取消协程、**打断不了已经进入 JNI 的那次 `generate()`**。
+        // 原来这里直接 `engine?.release()`，就是在与那次原生调用并发访问同一个对象
+        // ——轻则读到已释放内存，重则原生崩溃（Java 侧兜不住，表现为闪退）。
+        //
+        // 现在拿**同一把** playbackLock 排队，并放到进程级的 IO scope 上等锁：
+        // 不能用实例自己的 scope（它马上要 cancel，排队的释放就再也不会执行），
+        // 也不能在这里阻塞等待（shutdown 是从 Compose 的 onDispose 调用的，在主线程上）。
+        releaseScope.launch {
+            playbackLock.withLock {
+                runCatching { engine?.release() }
+                engine = null
+            }
+            scope.cancel()
+        }
     }
 
     // ------------------------------------------------------------------
@@ -161,12 +193,16 @@ internal class SherpaNeuralTts(
 
     private suspend fun ensureEngine(): OfflineTts? {
         engine?.let { return it }
+        // 页面已销毁就不要再加载：否则会白白加载几百 MB，然后立刻被释放。
+        // 这个判断放在锁外只是快速路径，锁内还要再判一次（加载期间页面可能刚被销毁）。
+        if (isShutdown) return null
         return engineLock.withLock {
             engine?.let { return@withLock it }
             if (loadFailure != null) return@withLock null
+            if (isShutdown) return@withLock null
             // 模型加载要读上百 MB 文件，放到 IO 调度器，别占着合成用的线程。
             withContext(Dispatchers.IO) {
-                SherpaNeuralEngine.load(context, model, modelDir).fold(
+                SherpaNeuralEngine.load(appContext, model, modelDir).fold(
                     onSuccess = { loaded ->
                         engine = loaded
                         loaded
@@ -271,6 +307,16 @@ internal class SherpaNeuralTts(
 
     private companion object {
         const val TAG = "SherpaNeuralTts"
+
+        /**
+         * 释放原生引擎专用的**进程级** scope。
+         *
+         * 刻意不复用实例自己的 scope：那个在 [shutdown] 里马上要被 cancel，
+         * 而取消之后还排在队里的 `release()` 就再也不会执行——几百 MB 的原生内存会一直留着。
+         * 这个 scope 不随实例销毁，只用来做「等锁 → 释放」这一件事。
+         */
+        val releaseScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
         const val MIN_SAMPLE_RATE = 8_000
         const val BYTES_PER_SAMPLE = 2
         const val PCM_SHORT_MAX = 32_767f

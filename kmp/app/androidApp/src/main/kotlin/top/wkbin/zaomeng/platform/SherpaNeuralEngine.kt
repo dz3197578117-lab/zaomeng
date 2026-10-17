@@ -74,8 +74,8 @@ internal object SherpaNeuralEngine {
      * 加载引擎。**失败一律返回失败结果，不抛异常**：语音是可选能力，
      * 缺模型 / 不支持的机型都不该让调用方（进而让聊天）崩掉。
      *
-     * 返回里带上引擎自报的 [OfflineTts.numSpeakers]——目录里写的音色数是**展示用**的，
-     * 说话人分配必须以引擎实际值为准（上游换模型文件时两者可能不一致）。
+     * 返回的引擎由调用方自己取 [OfflineTts.numSpeakers] / [OfflineTts.sampleRate]——
+     * 目录里写的音色数是**展示用**的，说话人分配必须以引擎实际值为准（上游换模型文件时两者可能不一致）。
      */
     fun load(
         context: Context,
@@ -88,15 +88,30 @@ internal object SherpaNeuralEngine {
         check(missing.isEmpty()) {
             "语音模型文件不完整，缺少：${missing.joinToString("、")}（在 ${modelDir.absolutePath}）"
         }
-        // 内存门槛：VITS fp32 模型加载后常驻数百 MB，而 ONNX Runtime 在分配失败时可能**直接 abort 整个进程**
-        // ——那是原生崩溃，下面的 runCatching 兜不住。所以宁可在加载前就拒绝，并给出可读原因。
+        warnOnSizeMismatch(model, modelDir, existing)
+        // 内存门槛：VITS fp32 模型加载后常驻数百 MB。ONNX Runtime 分配失败时抛的是 C++ 异常，
+        // 经 `newFromFile` 的 SafeJNI 会被转成「返回 0」，不会崩；但用户看到的仍是「没声音」，
+        // 所以宁可在加载前就拒绝，并给出可读原因。
         val available = availableMemoryBytes(context)
         check(available >= MIN_AVAILABLE_BYTES) {
             "可用内存不足（仅 ${available / 1024 / 1024} MB，需要约 ${MIN_AVAILABLE_BYTES / 1024 / 1024} MB）" +
                 "，无法加载语音模型；如果端侧推理（llama.cpp）正在运行，先停止它再试。"
         }
         val config = buildConfig(model, modelDir, numThreads)
-        val engine = OfflineTts(assetManager = context.assets, config = config)
+
+        // ⚠️ assetManager 必须为 null（这里刻意用命名参数、不传它）。改错这一处就是「点朗读立刻闪退」。
+        //
+        // 模型是**按需下载到文件系统**的（`runtimeDir/tts/<id>/`），不在 APK 的 assets 里。
+        // 若把 `context.assets` 传进去，sherpa-onnx 会走 `newFromAsset`
+        // → `ReadFile(AAssetManager*, path)`，而它对**绝对路径**的 `AAssetManager_open` 必然失败，
+        // 随后执行 `SHERPA_ONNX_EXIT(-1)` —— 那是**进程级退出**，Java 侧的 `runCatching` 连异常都收不到，
+        // 现象就是「点朗读 / 试听立刻闪退」。sherpa-onnx 自己也会打印
+        // "You are using an absolute path ... but assetManager is NOT set to null" 并指向
+        // k2-fsa/sherpa-onnx#2562 —— 这正是 2.1.19 引入、2.1.20 未修中、2.1.21 只好整体回退的那个 bug。
+        //
+        // 传 null 才走 `newFromFile`：它用 std::ifstream 读绝对路径，且外层包了 SafeJNI 捕获 C++ 异常，
+        // 加载失败只返回 0（Kotlin 侧抛 IllegalArgumentException），被本函数的 runCatching 收住 → 优雅降级。
+        val engine = OfflineTts(config = config)
         Log.i(
             TAG,
             "神经语音引擎已加载：${model.id}，音色 ${engine.numSpeakers()} 个，" +
@@ -106,6 +121,35 @@ internal object SherpaNeuralEngine {
     }.onFailure { error ->
         // 失败必须留痕：这条链路的失败表现是「没声音」，只有日志能区分是哪一步坏了。
         Log.e(TAG, "神经语音引擎加载失败：${error.message}", error)
+    }
+
+    /**
+     * 文件在、但大小与目录清单不符时**只记日志**，不阻止加载。
+     *
+     * 为什么不做成硬校验：清单里的字节数是实测快照，上游重发文件时会对不上，
+     * 那时硬校验会让所有用户突然「降级到系统朗读」——用一个静默的功能失效去换一个极罕见的坏文件，
+     * 不划算。而真正需要拦的「截断 / 0 字节」现在也不会再崩（`newFromFile` 的 SafeJNI 兜住了），
+     * 所以这里只负责把线索留在日志里。
+     */
+    private fun warnOnSizeMismatch(
+        model: NeuralVoiceModel,
+        modelDir: File,
+        existingFileNames: List<String>,
+    ) {
+        val present = existingFileNames.toSet()
+        val mismatched = model.files
+            .filter { it.fileName in present }
+            .mapNotNull { file ->
+                val actual = File(modelDir, file.fileName).length()
+                if (file.sizeBytes > 0 && actual != file.sizeBytes) {
+                    "${file.fileName}（期望 ${file.sizeBytes}，实际 $actual）"
+                } else {
+                    null
+                }
+            }
+        if (mismatched.isNotEmpty()) {
+            Log.w(TAG, "语音模型文件大小与清单不一致：${mismatched.joinToString("、")}")
+        }
     }
 
     /** 当前可用内存（字节）；拿不到时返回 [Long.MAX_VALUE]，即不拦——宁可试，也不要因为读不到数字就禁用功能。 */

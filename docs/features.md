@@ -128,6 +128,7 @@
 | 对话失败时把「内容被提供方拒绝」报成应用故障 | 审核判据只认文案，漏了上游机器可读的 `code`（商汤 `data_inspection_failed`） | **2.1.15** |
 | 设置聊天背景后闪退 | 大图解码**没有下采样**：9216×6144 的照片按 ARGB_8888 是 216 MB，超过 Android `Canvas` 的 100 MB 硬上限；而它抛在**绘制期**，所以加 `try` 兜不住。现按目标长边与字节上限算 `inSampleSize` 两趟解码（216 MB → 3.4 MB） | **2.1.17** |
 | **朗读完全没声音（Android 11+）** | AndroidManifest 缺 `<queries>` 里的 `android.intent.action.TTS_SERVICE`：targetSdk 30+ 时包可见性限制会让 App **枚举不到任何 TTS 引擎**，`TextToSpeech` 初始化直接回调 ERROR，表现为「点朗读没声音也没有任何报错」。回退语音特性时这条声明被一起删掉了，**2.3.0 补回** | **2.3.0** |
+| **点朗读 / 点试听立刻闪退** | 模型按需下载在**文件系统**，而构造 sherpa-onnx 引擎时传了 `assetManager = context.assets`：引擎走 `newFromAsset` → `ReadFile(AAssetManager*, path)`，它对**绝对路径**的 `AAssetManager_open` 必然失败 → 内部 `SHERPA_ONNX_EXIT(-1)`。那是 native 层 `exit()`，Java 侧**连异常都收不到**，所以 `runCatching` 无效、只能闪退。改成 `assetManager = null`（走 `newFromFile`，外层有 `SafeJNI` 捕获 C++ 异常）后，失败只降级不闪退。**2.1.19 引入、2.1.20 未修中、2.1.21 整体回退的根因就是这一行** | **2.3.1** |
 | **端侧推理整个起不来（2.1.16 引入的回归）** | 随包二进制多了非系统依赖 `libOpenCL.so`，而 App 起子进程时没设 `LD_LIBRARY_PATH`，Android 的 linker 又不搜索可执行文件同目录 → `CANNOT LINK EXECUTABLE ... library "libOpenCL.so" not found`。修复：二进制退回**自包含**（NEEDED 只剩系统库），并在 spawn 时显式设置 `LD_LIBRARY_PATH` | **2.1.18** |
 | 蒸馏 60 秒超时失败 | 默认超时不足以跑完一次内容提取 | 2.1.5 |
 | 应用内显示旧版本号 | 版本号手写在源码里 | 2.1.5 |

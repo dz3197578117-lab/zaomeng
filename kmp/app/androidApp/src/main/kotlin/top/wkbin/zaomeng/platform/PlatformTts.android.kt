@@ -129,34 +129,42 @@ internal class AndroidPlatformTts(context: Context) : PlatformTts {
         if (clean.isBlank()) return
         val engine = ensureEngine() ?: return
 
+        // 整段包在 runCatching 里：这个 lambda 可能从**两个**地方被调用——本方法（主线程），
+        // 以及 `OnInitListener` 回调（同样是主线程）。主线程上抛出的未捕获异常会直接闪退，
+        // 而这里确实有会抛的语句（`engine.voice = targetVoice` 在音色不属于当前引擎时抛
+        // IllegalArgumentException）。朗读是可降级能力，不该让整个 App 陪葬。
         val action: () -> Unit = {
-            engine.stop()
-            engine.setPitch(pitch.coerceIn(0.5f, 2.0f))
-            engine.setSpeechRate(speed.coerceIn(0.5f, 2.0f))
-            if (voiceName.isNotBlank()) {
-                val targetVoice = engine.voices?.firstOrNull { it.name.contains(voiceName, ignoreCase = true) }
-                if (targetVoice != null) {
-                    engine.voice = targetVoice
+            runCatching {
+                engine.stop()
+                engine.setPitch(pitch.coerceIn(0.5f, 2.0f))
+                engine.setSpeechRate(speed.coerceIn(0.5f, 2.0f))
+                if (voiceName.isNotBlank()) {
+                    val targetVoice = engine.voices?.firstOrNull { it.name.contains(voiceName, ignoreCase = true) }
+                    if (targetVoice != null) {
+                        engine.voice = targetVoice
+                    }
                 }
+                val params = Bundle()
+                // 音量必须走引擎参数：它是「放轻/耳语」这类情绪的唯一表达手段，
+                // 用系统音量或干脆不传都做不到单句控制。
+                params.putFloat(
+                    TextToSpeech.Engine.KEY_PARAM_VOLUME,
+                    volume.coerceIn(0f, 1f),
+                )
+                // 与神经引擎对称地留一行日志：这样「用的是哪条引擎」在诊断里一眼可辨，
+                // 不必去猜「为什么所有人一个声音」。
+                Log.i(
+                    TAG,
+                    "朗读（系统 TTS）：说话人=「$speaker」pitch=${"%.2f".format(pitch)} " +
+                        "speed=${"%.2f".format(speed)} volume=${"%.2f".format(volume)} " +
+                        "voice=${voiceName.ifBlank { "默认" }}",
+                )
+                engine.speak(clean, TextToSpeech.QUEUE_FLUSH, params, id)
+                _isSpeaking.value = true
+                _currentSpeakingId.value = id
+            }.onFailure { error ->
+                Log.e(TAG, "系统朗读失败：${error.message}", error)
             }
-            val params = Bundle()
-            // 音量必须走引擎参数：它是「放轻/耳语」这类情绪的唯一表达手段，
-            // 用系统音量或干脆不传都做不到单句控制。
-            params.putFloat(
-                TextToSpeech.Engine.KEY_PARAM_VOLUME,
-                volume.coerceIn(0f, 1f),
-            )
-            // 与神经引擎对称地留一行日志：这样「用的是哪条引擎」在诊断里一眼可辨，
-            // 不必去猜「为什么所有人一个声音」。
-            Log.i(
-                TAG,
-                "朗读（系统 TTS）：说话人=「$speaker」pitch=${"%.2f".format(pitch)} " +
-                    "speed=${"%.2f".format(speed)} volume=${"%.2f".format(volume)} " +
-                    "voice=${voiceName.ifBlank { "默认" }}",
-            )
-            engine.speak(clean, TextToSpeech.QUEUE_FLUSH, params, id)
-            _isSpeaking.value = true
-            _currentSpeakingId.value = id
         }
 
         when {

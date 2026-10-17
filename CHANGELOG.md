@@ -6,6 +6,48 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.3.1] - 2026-10-17
+
+### 修复：点朗读 / 点试听**立刻闪退**——2.1.19 起的根因，这次找到并修掉了
+
+现象：下载好语音模型、打开「离线神经朗读」后，点人设页的「声线实时试听」（或聊天里的朗读）
+**瞬间闪退**。
+
+根因不在朗读逻辑，而在**一行构造参数**。模型是按需下载到**文件系统**的
+（`runtimeDir/tts/<id>/`），而构造 sherpa-onnx 的 `OfflineTts` 时传了
+`assetManager = context.assets`。于是引擎走 `newFromAsset` → `ReadFile(AAssetManager*, path)`，
+而它对**绝对路径**的 `AAssetManager_open` 必然失败，紧接着执行 `SHERPA_ONNX_EXIT(-1)`
+——那是 native 层的 `exit()`，**Java 侧连异常都收不到**，`runCatching` 一律无效，
+所以只能表现为闪退。sherpa-onnx 自己也会打印
+`You are using an absolute path ... but assetManager is NOT set to null`，
+并指向 [k2-fsa/sherpa-onnx#2562](https://github.com/k2-fsa/sherpa-onnx/issues/2562)。
+
+传 `null` 才走 `newFromFile`：它用 `std::ifstream` 读绝对路径，外层还有 `SafeJNI` 捕获 C++ 异常，
+加载失败只返回 0 → Kotlin 抛异常 → 被现有 `runCatching` 收住 → **优雅降级到系统朗读**，而不是闪退。
+
+这条因果链解释了整段历史：2.1.19 引入时就是这个写法 → 一直闪退 → 2.1.20 去修了合成串行化与
+`AudioTrack` 释放（都是真问题，但**不对症**）→ 2.1.21 只好整体回退 → 2.3.0 移植时又被原样搬了回来。
+
+### 顺带加固（其余几处同类原生崩溃入口）
+
+- **释放原生引擎不再与正在进行的合成并发**：`shutdown()` 原来直接 `engine.release()`，
+  而 `stop()` 取消不了已进入 JNI 的 `generate()`；现在释放排在**同一把播放锁**之后，
+  并放在进程级 IO 作用域上等锁（不能阻塞 `onDispose` 所在的主线程）。
+- **页面销毁后不再加载引擎**：加载要几秒，用户可能中途返回；现在加载前后各判一次，
+  已销毁就不加载，也不留下刚加载出来的几百 MB 原生内存。
+- **系统 TTS 路径也加了兜底**：`engine.voice = targetVoice` 在音色不属于当前引擎时抛
+  `IllegalArgumentException`，而它可能发生在 `OnInitListener` 回调里——主线程未捕获异常同样闪退。
+- **只持有 application context**：这个实例常驻几百 MB 原生引擎，拿 Activity context 会把 Activity 一起钉住。
+- **文件大小与清单不符时只记日志**：上游重发文件时硬校验会让所有用户静默降级，
+  而真正的坏文件现在也不会再崩（`newFromFile` 的 `SafeJNI` 兜住了），所以留给日志更有用。
+
+### 回归守卫
+
+新增 `SherpaNeuralEngineLoadingTest`：读源码断言构造引擎时**没有** `assetManager`
+（先剥离注释再断言，避免把解释性注释当成违规）。刻意做成源码级——构造是 native 调用，
+JVM 单测跑不到，而写错一次的代价是「再闪退一次、再回退一版」。已双向验证：
+对该错误写法会失败，对正确写法通过。
+
 ## [2.3.0] - 2026-10-17
 
 ### 新增：多角色语音（重新移植 2.1.19 / 2.1.20 的语音特性）
