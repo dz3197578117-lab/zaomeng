@@ -126,6 +126,29 @@ class VoiceModelDownloadServiceTest {
     }
 
     @Test
+    fun `startDownload always reports the download as started`() = runBlocking {
+        // 这条曾经在 CI 上偶发失败（expected:<true> but was:<false>）：
+        // 假下载器写 16 字节是瞬时的，工作协程可能在 startDownload 返回前就跑完，
+        // 于是重新读 stateFlow 会读到 active=false。契约是「立刻返回且 active=true」，
+        // 所以返回的是**起始快照**，与下载多快无关。重复 5 轮把这条钉死。
+        repeat(5) { round ->
+            val fixture = Fixture()
+            val status = fixture.service.startDownload(
+                DownloadVoiceModelRequest(
+                    modelId = MODEL_ID,
+                    files = listOf(VoiceModelFileDto("theresa.onnx", URL_T, 16)),
+                ),
+            )
+            assertEquals(true, status.download.active, "第 ${round + 1} 轮：返回时必须标记为已开始")
+            assertEquals(MODEL_ID, status.download.modelId)
+            assertEquals(1, status.download.fileCount)
+            fixture.awaitIdle()
+            // 轮询之后必须能如实看到「已结束」——起始快照不能被当成真实进度。
+            assertEquals(false, fixture.service.status(MODEL_ID).download.active)
+        }
+    }
+
+    @Test
     fun `download writes every file and reports completion`() = runBlocking {
         val fixture = Fixture()
         val status = fixture.service.startDownload(

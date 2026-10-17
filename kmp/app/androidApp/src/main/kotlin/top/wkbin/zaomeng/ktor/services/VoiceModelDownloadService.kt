@@ -149,13 +149,14 @@ class VoiceModelDownloadService internal constructor(
 
         cancelFlag.value = false
         val totalBytes = files.sumOf { it.sizeBytes }
-        stateFlow.value = VoiceModelDownloadDto(
+        val started = VoiceModelDownloadDto(
             active = true,
             modelId = modelId,
             fileCount = files.size,
             totalBytes = totalBytes,
             message = "正在连接…",
         )
+        stateFlow.value = started
 
         downloadJob = scope.launch {
             val skipped = mutableListOf<String>()
@@ -242,7 +243,14 @@ class VoiceModelDownloadService internal constructor(
                 }
             }
         }
-        return status(modelId)
+        // 返回**「已开始」那一刻**的快照，而不是重新读 stateFlow。
+        //
+        // 重新读会撒谎：下载跑在另一个调度器上，小文件（测试里的 16 字节、或很快的本地网络）
+        // 可能在 `scope.launch` 与这里之间就**已经跑完**，`stateFlow` 也被改成 active=false，
+        // 于是「立刻返回 active=true」这条契约在快机器上不成立——CI 上真实偶发过
+        // （expected:<true> but was:<false>），而慢一些的机器永远看不到。
+        // 调用方（设置页）本来就会轮询 [status] 拿真实进度，所以这里给起始快照是对的。
+        return status(modelId).copy(download = started)
     }
 
     fun cancelDownload(): VoiceModelStatusDto {

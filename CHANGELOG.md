@@ -6,6 +6,32 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.3.3] - 2026-10-17
+
+### 修复：「开始下载」返回的状态会撒谎（竞态），CI 上真实偶发
+
+`startDownload` 的契约是「立刻返回，且返回体的 `download.active=true`」，进度靠轮询 `status()`。
+但它原来在返回前**重新读了一次 `stateFlow`**：下载跑在另一调度器上，小文件（测试里的 16 字节、
+或很快的本地网络）可能在 `scope.launch` 与 `return` 之间就**已经跑完**，`stateFlow` 被改成
+`active=false`，于是返回体自称「没开始」。
+
+2.3.2 的 CI 正是挂在这里：`VoiceModelDownloadServiceTest > download writes every file and reports
+completion`，`expected:<true> but was:<false>`；同一份代码在较慢的机器上永远看不到——
+是**固有竞态**，不是随机抖动。
+
+现在返回**「已开始」那一刻的快照**（`status(modelId).copy(download = started)`），
+与下载多快无关；真实进度仍由轮询 `status()` 提供（设置页本来就无条件开始轮询，
+所以用户可见行为不变，只是不再出现自相矛盾的返回体）。
+新增回归用例 `startDownload always reports the download as started`，重复 5 轮钉住这条契约，
+并同时断言轮询后必须如实看到「已结束」——起始快照不能被当成真实进度。
+
+### CI：失败时要能看到是哪个测试挂了
+
+`android.yml` 原来失败只 grep 到任务级 `testDebugUnitTest FAILED`，拿不到具体测试名，
+只能重跑或靠猜（2.3.2 的这次失败就卡在这里）。现在额外打印 JUnit 逐条 `FAILED` 行与
+`tests completed` 汇总行，并把 `test-results` / `tests` 报告与 lint 报告作为 artifact 保留
+（`if: failure()`），定位不必再猜。
+
 ## [2.3.2] - 2026-10-17
 
 ### 修复：试听与对话音色不一致、「所有角色一个声音」的两个真 bug，以及「读音含糊」的成因可见化
