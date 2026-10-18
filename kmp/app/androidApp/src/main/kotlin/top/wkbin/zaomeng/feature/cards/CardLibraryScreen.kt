@@ -1,5 +1,6 @@
 package top.wkbin.zaomeng.feature.cards
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,9 +10,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -24,6 +27,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Style
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -52,12 +56,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import top.wkbin.zaomeng.data.ReusableCardKind
 import top.wkbin.zaomeng.data.api.ReusableCardDto
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppCardVariant
+import top.wkbin.zaomeng.ui.components.AppEmptyState
+import top.wkbin.zaomeng.ui.theme.AppSpacing
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -105,7 +114,20 @@ fun CardLibraryScreen(
         topBar = {
             Column {
                 TopAppBar(
-                    title = { Text("创作资料库") },
+                    title = {
+                        Column {
+                            Text("创作资料库", style = MaterialTheme.typography.titleLarge)
+                            Text(
+                                text = if (state.loading) {
+                                    state.kind.displayName
+                                } else {
+                                    "${state.kind.displayName} · ${state.cards.size} 张"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    },
                     navigationIcon = {
                         if (showBackButton) {
                             IconButton(onClick = onBack) {
@@ -148,23 +170,27 @@ fun CardLibraryScreen(
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 380.dp),
             modifier = Modifier.fillMaxSize().padding(innerPadding),
-            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(
+                start = AppSpacing.lg,
+                top = AppSpacing.lg,
+                end = AppSpacing.lg,
+                bottom = 96.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.md),
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
         ) {
             if (state.error.isNotBlank() || state.message.isNotBlank()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (state.error.isNotBlank()) {
-                                MaterialTheme.colorScheme.errorContainer
-                            } else {
-                                MaterialTheme.colorScheme.secondaryContainer
-                            },
-                        ),
+                    AppCard(
+                        containerColor = if (state.error.isNotBlank()) {
+                            MaterialTheme.colorScheme.errorContainer
+                        } else {
+                            MaterialTheme.colorScheme.secondaryContainer
+                        },
+                        contentPadding = PaddingValues(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
                     ) {
                         Row(
-                            Modifier.fillMaxWidth().padding(12.dp),
+                            Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(state.error.ifBlank { state.message }, Modifier.weight(1f))
@@ -181,17 +207,22 @@ fun CardLibraryScreen(
                 }
             } else if (state.cards.isEmpty()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Column(Modifier.fillMaxWidth().padding(vertical = 36.dp)) {
-                        Text("还没有${state.kind.displayName}", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            if (state.kind == ReusableCardKind.Opening) {
-                                "新建一个预设，把会话模式、人物与卡片组合保存下来。"
-                            } else {
-                                "可以手动新建，也可以用右上角的生成按钮起草一张。"
-                            },
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    AppEmptyState(
+                        title = "还没有${state.kind.displayName}",
+                        description = if (state.kind == ReusableCardKind.Opening) {
+                            "新建一个预设，把会话模式、人物与卡片组合保存下来。"
+                        } else {
+                            "可以手动新建，也可以用右上角的生成按钮起草一张。"
+                        },
+                        icon = Icons.Outlined.Style,
+                        action = {
+                            Button(onClick = viewModel::createCard) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.size(6.dp))
+                                Text("新建一张")
+                            }
+                        },
+                    )
                 }
             } else {
                 items(state.cards, key = ReusableCardDto::cardId) { card ->
@@ -233,15 +264,26 @@ private fun ReusableCardRow(
             ?: card.fields[key]?.jsonPrimitive?.contentOrNull
     }.filter(String::isNotBlank).joinToString(" · ")
 
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable(enabled = !deleting, onClick = onEdit),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    AppCard(
+        modifier = Modifier.fillMaxWidth(),
+        variant = AppCardVariant.Outlined,
+        onClick = if (deleting) null else onEdit,
+        contentPadding = PaddingValues(horizontal = AppSpacing.lg, vertical = AppSpacing.md),
     ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // 类型色条：同一页里三类卡片的底色相同，靠这条竖线才能一眼区分。
+            Box(
+                Modifier
+                    .width(4.dp)
+                    .height(36.dp)
+                    .background(kind.accentColor(), MaterialTheme.shapes.small),
+            )
+            Spacer(Modifier.width(AppSpacing.md))
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(
                     details.ifBlank { "点按查看和编辑" },
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -257,6 +299,13 @@ private fun ReusableCardRow(
             }
         }
     }
+}
+
+@Composable
+private fun ReusableCardKind.accentColor(): Color = when (this) {
+    ReusableCardKind.Scene -> MaterialTheme.colorScheme.primary
+    ReusableCardKind.Self -> MaterialTheme.colorScheme.tertiary
+    ReusableCardKind.Opening -> MaterialTheme.colorScheme.secondary
 }
 
 @Composable

@@ -1,11 +1,14 @@
 package top.wkbin.zaomeng.feature.chapters
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,11 +24,10 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -54,6 +56,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import top.wkbin.zaomeng.data.api.ChapterDto
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppCardVariant
+import top.wkbin.zaomeng.ui.components.AppEmptyState
+import top.wkbin.zaomeng.ui.theme.AppSpacing
 import top.wkbin.zaomeng.platform.rememberFileExporter
 import top.wkbin.zaomeng.platform.rememberNotificationPermissionRequester
 import kotlinx.coroutines.launch
@@ -115,7 +121,20 @@ fun ChaptersScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("章节工作台") },
+                title = {
+                    Column {
+                        Text("章节工作台", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = if (state.chapters.isEmpty()) {
+                                "把会话沉淀为草稿"
+                            } else {
+                                "${state.chapters.size} 章 · 约 ${state.chapters.sumOf { it.content.length }} 字"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
                 actions = {
                     IconButton(onClick = { showArchive = true }, enabled = state.sessions.isNotEmpty() && !state.saving) {
@@ -136,15 +155,17 @@ fun ChaptersScreen(
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(
+                start = AppSpacing.lg,
+                top = AppSpacing.lg,
+                end = AppSpacing.lg,
+                bottom = AppSpacing.xxl,
+            ),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.md),
         ) {
             item {
-                Card {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
+                AppCard(contentPadding = PaddingValues(AppSpacing.lg)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                     Text("把会话沉淀成章节草稿，再统一导出全书。", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -182,8 +203,8 @@ fun ChaptersScreen(
                 }
             }
             item {
-                Card {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                AppCard(contentPadding = PaddingValues(AppSpacing.lg)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                         Text("问书卷", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                         OutlinedTextField(
                             value = state.bookQuestion,
@@ -206,8 +227,8 @@ fun ChaptersScreen(
             }
             state.bookAnswer?.let { answer ->
                 item {
-                    Card {
-                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AppCard(contentPadding = PaddingValues(AppSpacing.lg)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                             Text("回答", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                             Text(answer.answer)
                             if (answer.evidence.isNotEmpty()) {
@@ -232,7 +253,10 @@ fun ChaptersScreen(
                 }
             }
             if (state.error.isNotBlank()) item {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                AppCard(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentPadding = PaddingValues(AppSpacing.lg),
+                ) {
                     Text(
                         state.error,
                         modifier = Modifier.padding(14.dp),
@@ -241,7 +265,10 @@ fun ChaptersScreen(
                 }
             }
             if (state.message.isNotBlank()) item {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                AppCard(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentPadding = PaddingValues(AppSpacing.lg),
+                ) {
                     Text(
                         state.message,
                         modifier = Modifier.padding(14.dp),
@@ -259,7 +286,10 @@ fun ChaptersScreen(
                     )
                 }
                 items(state.searchResults, key = { "${it.kind}:${it.chapterId}:${it.sessionId}:${it.character}" }) { result ->
-                    Card { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    AppCard(
+                        variant = AppCardVariant.Outlined,
+                        contentPadding = PaddingValues(AppSpacing.md),
+                    ) { Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(searchResultKindLabel(result.kind), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                         Text(if (result.kind == "session") "会话 · ${result.title}" else result.title, fontWeight = FontWeight.SemiBold)
                         Text(result.preview, maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -277,14 +307,20 @@ fun ChaptersScreen(
             }
             if (state.loading) item { CircularProgressIndicator() }
             if (!state.loading && state.chapters.isEmpty()) item {
-                Card { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("还没有章节", fontWeight = FontWeight.SemiBold)
-                    Text("新建一个空白章节，或把现有聊天会话转为小说草稿。")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { showCreate = true }) { Text("新建章节") }
-                        OutlinedButton(onClick = { showArchive = true }, enabled = state.sessions.isNotEmpty()) { Text("转为小说") }
-                    }
-                } }
+                AppEmptyState(
+                    title = "还没有章节",
+                    description = "新建一个空白章节，或把现有聊天会话转为小说草稿。",
+                    icon = Icons.Outlined.MenuBook,
+                    action = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                            Button(onClick = { showCreate = true }) { Text("新建章节") }
+                            OutlinedButton(
+                                onClick = { showArchive = true },
+                                enabled = state.sessions.isNotEmpty(),
+                            ) { Text("转为小说") }
+                        }
+                    },
+                )
             }
             items(state.chapters, key = ChapterDto::chapterId) { chapter ->
                 ChapterCard(
@@ -352,25 +388,72 @@ private fun ChapterCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Card { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("第 ${chapter.order} 章 · ${chapter.title}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        if (chapter.goal.isNotBlank()) Text("目标：${chapter.goal}", style = MaterialTheme.typography.bodySmall)
-        if (chapter.participants.isNotEmpty()) Text(chapter.participants.joinToString("、"), style = MaterialTheme.typography.labelSmall)
-        Text(chapter.content.ifBlank { "空白草稿" }, maxLines = 5, overflow = TextOverflow.Ellipsis)
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Button(onClick = onContinue, enabled = !opening) { Text(if (opening) "正在入场…" else "继续写作") }
-            if (chapter.lastSessionId.isNotBlank()) {
-                OutlinedButton(onClick = onSync, enabled = !syncing) { Text(if (syncing) "正在收录…" else "收录会话") }
+    AppCard(
+        variant = AppCardVariant.Outlined,
+        contentPadding = PaddingValues(AppSpacing.lg),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+            Row(verticalAlignment = Alignment.Top) {
+                // 章号做成小牌：顺序是这类稿件的核心结构，标题前一行文字反而会被略过。
+                Box(
+                    Modifier
+                        .background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.small)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    Text(
+                        text = chapter.order.toString().padStart(2, '0'),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                }
+                Column(Modifier.weight(1f).padding(start = AppSpacing.md)) {
+                    Text(
+                        text = chapter.title.ifBlank { "无题" },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (chapter.goal.isNotBlank()) {
+                        Text(
+                            text = "目标：${chapter.goal}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
-            TextButton(onClick = onMoveUp, enabled = canMoveUp) { Text("上移") }
-            TextButton(onClick = onMoveDown, enabled = canMoveDown) { Text("下移") }
-            OutlinedButton(onClick = onEdit) { Text("编辑") }
-            TextButton(onClick = onDelete) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            if (chapter.participants.isNotEmpty()) {
+                Text(
+                    text = chapter.participants.joinToString("、"),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Text(
+                text = chapter.content.ifBlank { "空白草稿" },
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (chapter.content.isBlank()) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurface
+                },
+                maxLines = 5,
+                overflow = TextOverflow.Ellipsis,
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Button(onClick = onContinue, enabled = !opening) { Text(if (opening) "正在入场…" else "继续写作") }
+                if (chapter.lastSessionId.isNotBlank()) {
+                    OutlinedButton(onClick = onSync, enabled = !syncing) { Text(if (syncing) "正在收录…" else "收录会话") }
+                }
+                TextButton(onClick = onMoveUp, enabled = canMoveUp) { Text("上移") }
+                TextButton(onClick = onMoveDown, enabled = canMoveDown) { Text("下移") }
+                OutlinedButton(onClick = onEdit) { Text("编辑") }
+                TextButton(onClick = onDelete) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            }
         }
-    } }
+    }
 }
 
 @Composable

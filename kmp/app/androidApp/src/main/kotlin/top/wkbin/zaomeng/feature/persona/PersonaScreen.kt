@@ -67,6 +67,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppCardVariant
+import top.wkbin.zaomeng.ui.theme.AppAlpha
+import top.wkbin.zaomeng.ui.theme.AppSpacing
 import top.wkbin.zaomeng.data.api.PersonaIssueDto
 import top.wkbin.zaomeng.data.api.PersonaQualityReportDto
 import top.wkbin.zaomeng.data.api.PersonaRepairChangeDto
@@ -680,21 +684,16 @@ private fun FieldGroupHeader(
     completedCount: Int,
     onClick: () -> Unit,
 ) {
-    Card(
+    val total = group.fields.size.coerceAtLeast(1)
+    val ratio = (completedCount.toFloat() / total).coerceIn(0f, 1f)
+    AppCard(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (expanded) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant
-            },
-        ),
+        variant = AppCardVariant.Filled,
+        containerColor = if (expanded) MaterialTheme.colorScheme.primaryContainer else null,
+        contentPadding = PaddingValues(horizontal = AppSpacing.lg, vertical = 14.dp),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -709,14 +708,36 @@ private fun FieldGroupHeader(
                         text = "$completedCount/${group.fields.size}",
                         modifier = Modifier.padding(start = 8.dp),
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (expanded) {
+                            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = AppAlpha.Muted)
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
                     )
                 }
+                // 完成度条：字段多且折叠时，只看「8/12」很难判断还差多少，一条细进度更直观。
+                LinearProgressIndicator(
+                    progress = { ratio },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp)
+                        .height(3.dp),
+                    color = if (expanded) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                    trackColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = AppAlpha.Disabled),
+                )
                 Text(
                     text = group.description,
-                    modifier = Modifier.padding(top = 4.dp),
+                    modifier = Modifier.padding(top = 6.dp),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (expanded) {
+                        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = AppAlpha.Muted)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                     maxLines = if (expanded) 3 else 1,
                     overflow = TextOverflow.Ellipsis,
                 )

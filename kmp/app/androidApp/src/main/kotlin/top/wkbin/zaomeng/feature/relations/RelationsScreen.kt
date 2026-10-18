@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -56,7 +57,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import top.wkbin.zaomeng.data.api.RelationDetailsDto
 import top.wkbin.zaomeng.data.api.RelationItemDto
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppCardVariant
+import top.wkbin.zaomeng.ui.components.AppEmptyState
+import top.wkbin.zaomeng.ui.theme.AppSpacing
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.max
@@ -75,7 +81,23 @@ fun RelationsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("人物关系校对") },
+                title = {
+                    Column {
+                        Text(
+                            text = "人物关系",
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                        val details = state.details
+                        Text(
+                            text = details?.let {
+                                val people = it.items.flatMap { item -> item.characters }.distinct().size
+                                "$people 位人物 · ${it.relationCount} 组关系"
+                            } ?: "抽取后在这里校对",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -102,8 +124,13 @@ fun RelationsScreen(
             )
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(innerPadding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(
+                    start = AppSpacing.lg,
+                    top = AppSpacing.lg,
+                    end = AppSpacing.lg,
+                    bottom = AppSpacing.xxl,
+                ),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.md),
             ) {
                 item {
                     val details = requireNotNull(state.details)
@@ -127,13 +154,36 @@ fun RelationsScreen(
                 }
                 if (state.details?.items.isNullOrEmpty()) {
                     item {
-                        Text(
-                            "这份书卷还没有关系明细。完成关系抽取后会显示在这里。",
-                            modifier = Modifier.padding(vertical = 32.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        AppEmptyState(
+                            title = "还没有关系明细",
+                            description = "完成关系抽取后，人物之间的信任、情感、敌意会显示在这里，并且可以逐条校对。",
+                            icon = Icons.Outlined.Hub,
+                            action = {
+                                Button(onClick = viewModel::load) { Text("重新读取") }
+                            },
                         )
                     }
                 } else {
+                    item(key = "relations-header") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = AppSpacing.sm),
+                            verticalAlignment = Alignment.Bottom,
+                        ) {
+                            Text(
+                                text = "关系明细",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                text = "${requireNotNull(state.details).items.size} 组",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     items(requireNotNull(state.details).items, key = RelationItemDto::pairKey) { item ->
                         RelationEditor(
                             item = item,
@@ -170,8 +220,8 @@ private fun RelationGraphSection(
     onExpandedChange: (Boolean) -> Unit,
     onOpenPersona: (String) -> Unit,
 ) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    AppCard(variant = AppCardVariant.Elevated) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("关系图谱", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -415,22 +465,38 @@ private fun RelationEditor(
     onChange: ((RelationItemDto) -> RelationItemDto) -> Unit,
     onSave: () -> Unit,
 ) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    AppCard(variant = AppCardVariant.Outlined) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
+                // 两个首字圆牌：一眼能看出这是「谁和谁」，比一行人名更容易扫读。
+                item.characters.take(2).forEachIndexed { index, name ->
+                    CharacterInitial(name = name, highlighted = index == 0)
+                    if (index == 0 && item.characters.size > 1) {
+                        Text(
+                            text = "·",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                        )
+                    }
+                }
+                Column(Modifier.weight(1f).padding(start = 4.dp)) {
                     Text(
                         item.characters.joinToString("、").ifBlank { item.pairKey },
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
                     if (item.relationshipType.isNotBlank()) {
-                        Text(item.relationshipType, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            text = item.relationshipType,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
                     }
                 }
                 Button(onClick = onSave, enabled = enabled) {
                     if (saving) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    else Icon(Icons.Outlined.Save, contentDescription = null)
+                    else Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(6.dp))
                     Text("保存")
                 }
@@ -516,16 +582,57 @@ private fun Notice(text: String, isError: Boolean, onDismiss: () -> Unit) {
 }
 
 @Composable
+private fun CharacterInitial(name: String, highlighted: Boolean) {
+    Surface(
+        shape = CircleShape,
+        color = if (highlighted) {
+            MaterialTheme.colorScheme.primaryContainer
+        } else {
+            MaterialTheme.colorScheme.secondaryContainer
+        },
+        contentColor = if (highlighted) {
+            MaterialTheme.colorScheme.onPrimaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSecondaryContainer
+        },
+    ) {
+        Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
+            Text(
+                text = name.trim().take(1).ifBlank { "?" },
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
 private fun LoadingRelations(modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    Column(
+        modifier = modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        CircularProgressIndicator()
+        Text(
+            text = "正在读取关系资料…",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = AppSpacing.md),
+        )
+    }
 }
 
 @Composable
 private fun MissingRelations(message: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(message, color = MaterialTheme.colorScheme.error)
-            Button(onClick = onRetry, modifier = Modifier.padding(top = 12.dp)) { Text("重试") }
-        }
+    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        AppEmptyState(
+            title = "关系资料读取失败",
+            description = message,
+            icon = Icons.Outlined.Hub,
+            action = {
+                Button(onClick = onRetry) { Text("重试") }
+            },
+        )
     }
 }

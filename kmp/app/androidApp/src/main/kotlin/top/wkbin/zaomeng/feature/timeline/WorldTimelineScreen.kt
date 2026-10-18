@@ -1,5 +1,6 @@
 package top.wkbin.zaomeng.feature.timeline
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,9 +28,8 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.Timeline
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -62,7 +62,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import top.wkbin.zaomeng.data.api.SaveWorldFactRequest
 import top.wkbin.zaomeng.data.api.WorldFactDto
 import top.wkbin.zaomeng.data.api.WorldTimelineItemDto
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppCardVariant
+import top.wkbin.zaomeng.ui.components.AppEmptyState
 import top.wkbin.zaomeng.ui.format.toLocalDateTimeDisplay
+import top.wkbin.zaomeng.ui.theme.AppSpacing
 
 private val factCategories = listOf(
     "event" to "事件",
@@ -128,7 +132,19 @@ fun WorldTimelineScreen(
         topBar = {
             Column {
                 TopAppBar(
-                    title = { Text("故事时间线") },
+                    title = {
+                        Column {
+                            Text("故事时间线", style = MaterialTheme.typography.titleLarge)
+                            val memory = state.memory
+                            Text(
+                                text = memory?.let {
+                                    "${it.timeline.size} 条剧情 · ${it.facts.size} 条事实"
+                                } ?: "记录与设定",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -165,10 +181,19 @@ fun WorldTimelineScreen(
         },
     ) { innerPadding ->
         when {
-            state.loading -> Box(
+            state.loading -> Column(
                 Modifier.fillMaxSize().padding(innerPadding),
-                contentAlignment = Alignment.Center,
-            ) { CircularProgressIndicator() }
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                CircularProgressIndicator()
+                Text(
+                    text = "正在读取故事记忆…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = AppSpacing.md),
+                )
+            }
             state.memory == null -> EmptyState(
                 text = state.error.ifBlank { "故事记忆读取失败。" },
                 onRetry = viewModel::load,
@@ -223,8 +248,8 @@ private fun TimelineContent(
     }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(AppSpacing.lg),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.md),
     ) {
         item {
             FilterBar(
@@ -271,8 +296,8 @@ private fun FactsContent(
     }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(AppSpacing.lg),
+        verticalArrangement = Arrangement.spacedBy(AppSpacing.md),
     ) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -408,17 +433,46 @@ private fun CharacterFilter(
 @Composable
 private fun TimelineCard(item: WorldTimelineItemDto, onOpenChat: (String) -> Unit) {
     val warning = item.consistencyStatus !in listOf("", "pass")
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (warning) MaterialTheme.colorScheme.errorContainer
-            else MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
+    val pillBackground = if (warning) {
+        MaterialTheme.colorScheme.surface
+    } else {
+        MaterialTheme.colorScheme.secondaryContainer
+    }
+    val pillContent = if (warning) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    }
+    AppCard(
+        variant = AppCardVariant.Filled,
+        containerColor = if (warning) MaterialTheme.colorScheme.errorContainer else null,
+        contentPadding = PaddingValues(AppSpacing.lg),
     ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // 时间先做成标签：它在时间线里是「定位信息」，混在元数据行里会被读成普通文本。
+                if (item.timeHint.isNotBlank()) {
+                    Box(
+                        Modifier
+                            .background(pillBackground, MaterialTheme.shapes.small)
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                    ) {
+                        Text(
+                            text = item.timeHint,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = pillContent,
+                        )
+                    }
+                    Spacer(Modifier.width(AppSpacing.sm))
+                }
                 if (warning) {
-                    Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                    Spacer(Modifier.width(8.dp))
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
                 }
                 Text(
                     item.title.ifBlank { "剧情推进" },
@@ -429,7 +483,7 @@ private fun TimelineCard(item: WorldTimelineItemDto, onOpenChat: (String) -> Uni
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            MetadataLine(item.timeHint, item.location, item.participants.joinToString("、"))
+            MetadataLine(item.location, item.participants.joinToString("、"))
             if (warning) {
                 Text("这一轮存在一致性警告，建议进入来源会话检查。", style = MaterialTheme.typography.bodySmall)
             }
@@ -447,13 +501,12 @@ private fun FactCard(
     onDelete: () -> Unit,
     onOpenChat: (String) -> Unit,
 ) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (fact.locked) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
+    AppCard(
+        variant = AppCardVariant.Filled,
+        containerColor = if (fact.locked) MaterialTheme.colorScheme.primaryContainer else null,
+        contentPadding = PaddingValues(AppSpacing.lg),
     ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Row(verticalAlignment = Alignment.Top) {
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
@@ -512,8 +565,11 @@ private fun FactTurnGroupCard(
     val facts = group.facts
     val sourceSessionId = facts.first().sourceSessionId
     val updatedAt = facts.maxByOrNull(WorldFactDto::updatedAt)?.updatedAt.orEmpty()
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    AppCard(
+        variant = AppCardVariant.Outlined,
+        contentPadding = PaddingValues(AppSpacing.lg),
+    ) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Text(
                 "本轮剧情变化",
                 style = MaterialTheme.typography.titleSmall,
@@ -720,13 +776,15 @@ private fun SettingSwitch(label: String, checked: Boolean, onCheckedChange: (Boo
 
 @Composable
 private fun Notice(text: String, error: Boolean, onDismiss: () -> Unit) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (error) MaterialTheme.colorScheme.errorContainer
-            else MaterialTheme.colorScheme.secondaryContainer,
-        ),
+    AppCard(
+        containerColor = if (error) {
+            MaterialTheme.colorScheme.errorContainer
+        } else {
+            MaterialTheme.colorScheme.secondaryContainer
+        },
+        contentPadding = PaddingValues(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
     ) {
-        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(text, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
             TextButton(onClick = onDismiss) { Text("关闭") }
         }
@@ -735,20 +793,24 @@ private fun Notice(text: String, error: Boolean, onDismiss: () -> Unit) {
 
 @Composable
 private fun EmptyMessage(text: String) {
-    Text(
-        text,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    AppEmptyState(
+        title = "这里还是空的",
+        description = text,
+        icon = Icons.Outlined.Timeline,
     )
 }
 
 @Composable
 private fun EmptyState(text: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onClick = onRetry) { Text("重试") }
-        }
+        AppEmptyState(
+            title = "故事记忆读取失败",
+            description = text,
+            icon = Icons.Outlined.Timeline,
+            action = {
+                TextButton(onClick = onRetry) { Text("重试") }
+            },
+        )
     }
 }
 
