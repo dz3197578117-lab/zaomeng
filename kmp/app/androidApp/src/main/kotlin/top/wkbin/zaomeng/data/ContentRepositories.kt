@@ -18,6 +18,9 @@ import top.wkbin.zaomeng.data.local.ChapterClient
 import top.wkbin.zaomeng.data.api.ReusableCardDto
 import top.wkbin.zaomeng.data.api.SaveChapterRequest
 import top.wkbin.zaomeng.data.api.SearchResultDto
+import top.wkbin.zaomeng.data.api.DraftChapterRequest
+import top.wkbin.zaomeng.data.api.GenerateNovelOutlineRequest
+import top.wkbin.zaomeng.data.api.NovelOutlineResponse
 
 class ChapterRepositoryImpl(
     private val chapters: ChapterClient,
@@ -40,6 +43,21 @@ class ChapterRepositoryImpl(
         payload: SaveChapterRequest,
     ): ChapterDto = repositoryRequest {
         chapters.save(runId, chapterId, payload)
+    }
+
+    override suspend fun generateNovelOutline(
+        runId: String,
+        request: GenerateNovelOutlineRequest,
+    ): NovelOutlineResponse = repositoryRequest {
+        chapters.generateOutline(runId, request)
+    }
+
+    override suspend fun draftChapter(
+        runId: String,
+        chapterId: String,
+        instruction: String,
+    ): ChapterDto = repositoryRequest {
+        chapters.draftChapter(runId, chapterId, DraftChapterRequest(instruction))
     }
 
     override suspend fun archiveSessionAsChapter(

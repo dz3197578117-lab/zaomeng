@@ -41,8 +41,35 @@ data class ChapterDto(
     val content: String = "",
     @SerialName("source_session_id") val sourceSessionId: String = "",
     @SerialName("last_session_id") val lastSessionId: String = "",
+    /** 叙事视角（「第三人称限知」等）。AI 大纲创建章节时写入，成稿时沿用。 */
+    val perspective: String = "",
     @SerialName("created_at") val createdAt: String = "",
     @SerialName("updated_at") val updatedAt: String = "",
+)
+
+@Serializable
+data class GenerateNovelOutlineRequest(
+    val premise: String,
+    @SerialName("chapter_count") val chapterCount: Int = 6,
+    val genre: String = "",
+    val perspective: String = "第三人称限知",
+    val style: String = "",
+)
+
+@Serializable
+data class NovelOutlineChapterDto(
+    val title: String = "",
+    val goal: String = "",
+)
+
+@Serializable
+data class NovelOutlineResponse(
+    val items: List<NovelOutlineChapterDto> = emptyList(),
+)
+
+@Serializable
+data class DraftChapterRequest(
+    val instruction: String = "",
 )
 
 @Serializable
@@ -51,6 +78,8 @@ data class SaveChapterRequest(
     val goal: String = "",
     val participants: List<String> = emptyList(),
     val content: String = "",
+    /** 叙事视角；AI 大纲创建章节时写入，成稿时沿用。 */
+    val perspective: String = "",
 )
 
 @Serializable

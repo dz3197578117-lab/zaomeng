@@ -3,6 +3,8 @@ package top.wkbin.zaomeng.feature.chapters
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.Alignment
@@ -24,6 +26,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -77,6 +80,8 @@ fun ChaptersScreen(
     var showCreate by remember { mutableStateOf(false) }
     var showArchive by remember { mutableStateOf(false) }
     var pendingNovelConversion by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var showNovelCreation by remember { mutableStateOf(false) }
+    var pendingDraftChapter by remember { mutableStateOf<ChapterDto?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     val requestNotificationPermission = rememberNotificationPermissionRequester { granted ->
@@ -109,6 +114,10 @@ fun ChaptersScreen(
             )
         }
     }
+    LaunchedEffect(state.outlineCreationCount) {
+        // 大纲写入完成后收起弹层：继续停在「大纲」页会让用户以为还要再确认一次。
+        if (state.outlineCreationCount > 0) showNovelCreation = false
+    }
     LaunchedEffect(state.navigationSessionId) {
         val sessionId = state.navigationSessionId
         if (sessionId.isNotBlank()) {
@@ -137,6 +146,9 @@ fun ChaptersScreen(
                 },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") } },
                 actions = {
+                    IconButton(onClick = { showNovelCreation = true }, enabled = !state.saving) {
+                        Icon(Icons.Rounded.AutoAwesome, contentDescription = "AI 小说创作")
+                    }
                     IconButton(onClick = { showArchive = true }, enabled = state.sessions.isNotEmpty() && !state.saving) {
                         Icon(Icons.Default.Forum, "转为小说")
                     }
@@ -312,8 +324,9 @@ fun ChaptersScreen(
                     description = "新建一个空白章节，或把现有聊天会话转为小说草稿。",
                     icon = Icons.Outlined.MenuBook,
                     action = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
-                            Button(onClick = { showCreate = true }) { Text("新建章节") }
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                            Button(onClick = { showNovelCreation = true }) { Text("AI 生成大纲") }
+                            OutlinedButton(onClick = { showCreate = true }) { Text("新建章节") }
                             OutlinedButton(
                                 onClick = { showArchive = true },
                                 enabled = state.sessions.isNotEmpty(),
@@ -327,10 +340,18 @@ fun ChaptersScreen(
                     chapter = chapter,
                     opening = state.openingChapterId == chapter.chapterId,
                     syncing = state.syncingChapterId == chapter.chapterId,
+                    drafting = state.draftingChapterId == chapter.chapterId,
                     canMoveUp = chapter.order > 1,
                     canMoveDown = chapter.order < state.chapters.size,
                     onContinue = { viewModel.continueWriting(chapter.chapterId) },
                     onSync = { viewModel.syncLatestSession(chapter.chapterId) },
+                    onDraft = {
+                        if (chapter.content.isBlank()) {
+                            viewModel.draftChapter(chapter.chapterId)
+                        } else {
+                            pendingDraftChapter = chapter
+                        }
+                    },
                     onMoveUp = { viewModel.move(chapter.chapterId, chapter.order - 1) },
                     onMoveDown = { viewModel.move(chapter.chapterId, chapter.order + 1) },
                     onEdit = { editing = chapter },
@@ -352,6 +373,36 @@ fun ChaptersScreen(
         viewModel.save(chapter.chapterId, title, goal, participants, content)
         editing = null
     } }
+    if (showNovelCreation) {
+        NovelCreationSheet(
+            state = state,
+            onGenerate = viewModel::generateOutline,
+            onCreateChapters = viewModel::createChaptersFromOutline,
+            onClearOutline = viewModel::clearOutline,
+            onDismiss = { showNovelCreation = false },
+        )
+    }
+    pendingDraftChapter?.let { chapter ->
+        AlertDialog(
+            onDismissRequest = { pendingDraftChapter = null },
+            title = { Text("覆盖《${chapter.title}》的正文？") },
+            text = {
+                Text("这一章已有 ${chapter.content.length} 字草稿。AI 成稿会覆盖现有正文，且无法撤销。")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val chapterId = chapter.chapterId
+                        pendingDraftChapter = null
+                        viewModel.draftChapter(chapterId)
+                    },
+                ) { Text("覆盖并生成") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDraftChapter = null }) { Text("取消") }
+            },
+        )
+    }
     if (showArchive) ArchiveSessionDialog(
         sessions = state.sessions,
         onDismiss = { showArchive = false },
@@ -379,10 +430,12 @@ private fun ChapterCard(
     chapter: ChapterDto,
     opening: Boolean,
     syncing: Boolean,
+    drafting: Boolean,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onContinue: () -> Unit,
     onSync: () -> Unit,
+    onDraft: () -> Unit,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
     onEdit: () -> Unit,
@@ -444,6 +497,17 @@ private fun ChapterCard(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Button(onClick = onContinue, enabled = !opening) { Text(if (opening) "正在入场…" else "继续写作") }
+                OutlinedButton(onClick = onDraft, enabled = !drafting) {
+                    if (drafting) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text("正在写…")
+                    } else {
+                        Icon(Icons.Rounded.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(if (chapter.content.isBlank()) "AI 写这一章" else "AI 重写")
+                    }
+                }
                 if (chapter.lastSessionId.isNotBlank()) {
                     OutlinedButton(onClick = onSync, enabled = !syncing) { Text(if (syncing) "正在收录…" else "收录会话") }
                 }

@@ -151,6 +151,33 @@ class PromptLoader(private val source: PromptSource) {
     }
 
     /**
+     * Get novel outline prompt.
+     *
+     * AI 小说创作的第一步：把一句设定展开成分章大纲。
+     * 输出格式强约束为 JSON 数组，由 `NovelOutlineParser` 解析。
+     */
+    fun getNovelOutlinePrompt(): String {
+        val config = loadPromptConfig("chapters", "novel_outline")
+        return listOf(
+            config.getString("system_prompt"),
+            config.getString("output_rules"),
+        ).filter { it.isNotBlank() }.joinToString("\n\n")
+    }
+
+    /**
+     * Get chapter drafting prompt.
+     *
+     * AI 小说创作的第二步：依据大纲、前文与人物资料写出本章正文。
+     */
+    fun getNovelChapterPrompt(): String {
+        val config = loadPromptConfig("chapters", "draft_chapter")
+        return listOf(
+            config.getString("system_prompt"),
+            config.getString("output_rules"),
+        ).filter { it.isNotBlank() }.joinToString("\n\n")
+    }
+
+    /**
      * Get scene card generation prompt.
      */
     fun getSceneCardGenerationPrompt(): String {

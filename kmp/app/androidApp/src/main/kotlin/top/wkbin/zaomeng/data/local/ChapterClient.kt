@@ -8,6 +8,9 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.put
 import top.wkbin.zaomeng.data.api.ArchiveDialogueChapterRequest
+import top.wkbin.zaomeng.data.api.DraftChapterRequest
+import top.wkbin.zaomeng.data.api.GenerateNovelOutlineRequest
+import top.wkbin.zaomeng.data.api.NovelOutlineResponse
 import top.wkbin.zaomeng.data.api.AskBookResponseDto
 import top.wkbin.zaomeng.data.api.ChapterDto
 import top.wkbin.zaomeng.data.api.ChaptersResponse
@@ -60,6 +63,7 @@ class ChapterClient(
                 goal = payload.goal,
                 participants = payload.participants,
                 content = payload.content,
+                perspective = payload.perspective,
             ),
         )
 
@@ -68,6 +72,31 @@ class ChapterClient(
 
     suspend fun convertSessionAsNovel(runId: String, request: ArchiveDialogueChapterRequest): ChapterDto =
         decodeChapter(chapterManagement.convert(runId, request.sessionId, request.title))
+
+    /** AI 小说创作：一句设定 → 分章大纲（不落盘）。 */
+    suspend fun generateOutline(
+        runId: String,
+        request: GenerateNovelOutlineRequest,
+    ): NovelOutlineResponse {
+        val body = chapterManagement.generateOutline(
+            runId = runId,
+            premise = request.premise,
+            chapterCount = request.chapterCount,
+            genre = request.genre,
+            perspective = request.perspective,
+            style = request.style,
+        )
+        return json.decodeFromJsonElement(body)
+    }
+
+    /** AI 小说创作：按大纲与前文写出本章正文。 */
+    suspend fun draftChapter(
+        runId: String,
+        chapterId: String,
+        request: DraftChapterRequest,
+    ): ChapterDto = decodeChapter(
+        chapterManagement.draftChapter(runId, chapterId, request.instruction),
+    )
 
     suspend fun delete(runId: String, chapterId: String): JsonObject =
         chapterManagement.delete(runId, chapterId)

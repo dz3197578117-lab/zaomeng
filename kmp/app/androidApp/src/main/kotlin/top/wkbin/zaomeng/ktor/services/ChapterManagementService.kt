@@ -178,6 +178,7 @@ class ChapterManagementService(
         content: String,
         sourceSessionId: String = "",
         contextSummary: String = "",
+        perspective: String = "",
     ): JsonObject {
         val normalizedTitle = title.trim()
         if (normalizedTitle.isEmpty()) throw IllegalArgumentException("章节标题不能为空。")
@@ -200,6 +201,7 @@ class ChapterManagementService(
                 put("goal", goal.trim())
                 put("participants", buildJsonArray { normalizedParticipants.forEach { add(JsonPrimitive(it)) } })
                 put("content", normalizedContent)
+                if (perspective.isNotBlank()) put("perspective", perspective.trim())
                 if (sourceSessionId.isNotEmpty()) put("source_session_id", sourceSessionId.trim())
                 if (contextSummary.isNotEmpty()) put("context_summary", contextSummary.trim())
                 put("updated_at", now)
@@ -213,6 +215,7 @@ class ChapterManagementService(
                 put("goal", goal.trim())
                 put("participants", buildJsonArray { normalizedParticipants.forEach { add(JsonPrimitive(it)) } })
                 put("content", normalizedContent)
+                put("perspective", perspective.trim())
                 put("source_session_id", sourceSessionId.trim())
                 put("context_summary", contextSummary.trim())
                 put("last_session_id", "")
@@ -346,6 +349,198 @@ class ChapterManagementService(
             sourceSessionId = session["session_id"]?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotBlank) ?: sessionId,
             contextSummary = contextSummary,
         )
+    }
+
+    /**
+     * AI 小说创作第一步：一句设定 → 分章大纲。
+     *
+     * **不落盘**：大纲只是提案，用户在界面上确认后才由客户端逐章调用 [save] 写入。
+     * 这样「生成不满意」不会在书卷里留下垃圾章节。
+     */
+    suspend fun generateOutline(
+        runId: String,
+        premise: String,
+        chapterCount: Int,
+        genre: String,
+        perspective: String,
+        style: String,
+    ): JsonObject {
+        if (!storage.runExists(runId)) throw NoSuchElementException("Run not found: $runId")
+        val idea = premise.trim()
+        require(idea.length >= 4) { "先用一句话写下故事设定（至少 4 个字）。" }
+        require(idea.length <= 800) { "设定请控制在 800 字以内。" }
+        val client = requireNotNull(llm) { "还没有配置模型，请先到设置里填写模型与密钥。" }
+        val loader = requireNotNull(prompts) { "提示词加载器未配置。" }
+        val count = chapterCount.coerceIn(1, 20)
+        val manifest = storage.readRunManifest(runId)
+        val characters = characterBriefs(manifest)
+
+        val input = buildJsonObject {
+            put("book_title", bookTitleOf(runId, manifest))
+            put("premise", idea)
+            put("genre", genre.trim().ifBlank { "不限" })
+            put("perspective", perspective.trim().ifBlank { "第三人称限知" })
+            put("style", style.trim().ifBlank { "自然、克制、有画面感" })
+            put("chapter_count", count)
+            if (characters.isNotEmpty()) {
+                put("known_characters", buildJsonArray {
+                    characters.forEach { (name, brief) ->
+                        add(
+                            buildJsonObject {
+                                put("name", name)
+                                if (brief.isNotBlank()) put("brief", brief)
+                            },
+                        )
+                    }
+                })
+            }
+        }
+        val raw = client.chatCompletion(
+            messages = listOf(
+                LlmClient.ChatMessage("system", loader.getNovelOutlinePrompt()),
+                LlmClient.ChatMessage("user", input.toString()),
+            ),
+            temperature = 0.8,
+            maxTokens = 3072,
+        ).choices.firstOrNull()?.message?.content.orEmpty()
+        if (raw.isBlank()) throw IllegalStateException("模型没有返回大纲，请稍后重试。")
+        val outline = NovelOutlineParser.parse(raw, count)
+        return buildJsonObject {
+            put("items", buildJsonArray {
+                outline.forEach { chapter ->
+                    add(
+                        buildJsonObject {
+                            put("title", chapter.title)
+                            put("goal", chapter.goal)
+                        },
+                    )
+                }
+            })
+        }
+    }
+
+    /**
+     * AI 小说创作第二步：依据大纲与前文写出本章正文。
+     *
+     * 上下文包含：全书分章大纲、前两章的摘要与结尾、人物简报、本章目标。
+     * 只覆盖 `content` 与 `context_summary`，不动标题、目标、出场人物。
+     */
+    suspend fun draftChapter(
+        runId: String,
+        chapterId: String,
+        instruction: String = "",
+    ): JsonObject {
+        if (!storage.runExists(runId)) throw NoSuchElementException("Run not found: $runId")
+        val chapters = list(runId)
+        val index = chapters.indexOfFirst { it["chapter_id"]?.jsonPrimitive?.contentOrNull == chapterId }
+        if (index < 0) throw NoSuchElementException("Chapter not found: $chapterId")
+        val chapter = chapters[index]
+        val title = chapter["title"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        val goal = chapter["goal"]?.jsonPrimitive?.contentOrNull.orEmpty()
+        require(title.isNotBlank() || goal.isNotBlank()) { "这一章还没有标题或目标，先补一个章节目标再生成。" }
+
+        val client = requireNotNull(llm) { "还没有配置模型，请先到设置里填写模型与密钥。" }
+        val loader = requireNotNull(prompts) { "提示词加载器未配置。" }
+        val manifest = storage.readRunManifest(runId)
+        val perspective = chapter["perspective"]?.jsonPrimitive?.contentOrNull
+            ?.takeIf(String::isNotBlank) ?: "第三人称限知"
+        val outline = chapters.mapIndexed { chapterIndex, item ->
+            val itemTitle = item["title"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val itemGoal = item["goal"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            "第 ${chapterIndex + 1} 章 ${itemTitle}：${itemGoal}"
+        }.joinToString("\n")
+        val previous = chapters.take(index).takeLast(2).joinToString("\n\n") { item ->
+            val itemTitle = item["title"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val summary = item["context_summary"]?.jsonPrimitive?.contentOrNull.orEmpty().trim()
+            val tail = item["content"]?.jsonPrimitive?.contentOrNull.orEmpty().trim().takeLast(NOVEL_CONTEXT_PREVIOUS_CHARS)
+            buildString {
+                append("《").append(itemTitle).append("》")
+                if (summary.isNotEmpty()) append("\n摘要：").append(summary)
+                if (tail.isNotEmpty()) append("\n结尾：\n").append(tail)
+            }
+        }
+        val characters = characterBriefs(manifest)
+
+        val input = buildJsonObject {
+            put("book_title", bookTitleOf(runId, manifest))
+            put("chapter_number", index + 1)
+            put("chapter_title", title)
+            put("chapter_goal", goal)
+            put("perspective", perspective)
+            put("target_length", "约 2500 字，不超过 $NOVEL_CHAPTER_MAX_CHARS 字")
+            put("outline", outline)
+            if (previous.isNotBlank()) put("previous_chapters", previous)
+            if (instruction.isNotBlank()) put("extra_instruction", instruction.trim().take(300))
+            if (characters.isNotEmpty()) {
+                put("characters", buildJsonArray {
+                    characters.forEach { (name, brief) ->
+                        add(
+                            buildJsonObject {
+                                put("name", name)
+                                if (brief.isNotBlank()) put("brief", brief)
+                            },
+                        )
+                    }
+                })
+            }
+        }
+        val raw = client.chatCompletion(
+            messages = listOf(
+                LlmClient.ChatMessage("system", loader.getNovelChapterPrompt()),
+                LlmClient.ChatMessage("user", input.toString()),
+            ),
+            temperature = 0.75,
+            maxTokens = 4096,
+        ).choices.firstOrNull()?.message?.content.orEmpty()
+        var body = stripLeadingChapterHeading(raw, title, index + 1)
+        if (body.isBlank()) throw IllegalStateException("模型没有返回正文，请稍后重试。")
+        if (body.length > NOVEL_CHAPTER_MAX_CHARS) body = trimChapterContent(body, NOVEL_CHAPTER_MAX_CHARS)
+        val participants = chapter["participants"]?.jsonArray
+            ?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty()
+        return save(
+            runId = runId,
+            chapterId = chapterId,
+            title = title,
+            goal = goal,
+            participants = participants,
+            content = body,
+            contextSummary = body.take(180),
+            perspective = perspective,
+        )
+    }
+
+    /** 模型常会把「第 3 章 标题」再抄一遍，正文里不该出现这行。 */
+    private fun stripLeadingChapterHeading(raw: String, title: String, number: Int): String {
+        val lines = raw.trim().lines().toMutableList()
+        if (lines.isEmpty()) return ""
+        val first = lines.first().trim().trim('#', '*', '《', '》').trim()
+        val looksLikeHeading = (first.startsWith("第") && first.contains("章") && first.length <= 40) ||
+            (title.isNotBlank() && first == title)
+        if (looksLikeHeading) lines.removeAt(0)
+        return lines.joinToString("\n").trim()
+    }
+
+    private fun bookTitleOf(runId: String, manifest: JsonObject?): String =
+        manifest?.get("title")?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotBlank)
+            ?: manifest?.get("novel_id")?.jsonPrimitive?.contentOrNull?.takeIf(String::isNotBlank)
+            ?: runId
+
+    /**
+     * 人物简报：只取能影响「怎么说话、会做什么」的字段，避免把整份档案塞进提示词。
+     * 取不到就返回空表——大纲与正文仍可生成，只是人物一致性会弱一些。
+     */
+    private fun characterBriefs(manifest: JsonObject?): List<Pair<String, String>> {
+        val array = manifest?.get("artifact_index")?.jsonObject?.get("characters")?.jsonArray ?: return emptyList()
+        return array.mapNotNull { raw ->
+            val obj = runCatching { raw.jsonObject }.getOrNull() ?: return@mapNotNull null
+            val name = obj["name"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            if (name.isEmpty()) return@mapNotNull null
+            val preview = obj["preview"]?.jsonObject ?: JsonObject(emptyMap())
+            val brief = listOf("core_identity", "story_role", "speech_style", "temperament_type")
+                .mapNotNull { key -> preview[key]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf(String::isNotBlank) }
+                .joinToString("；")
+            name to brief
+        }.take(8)
     }
 
     /** 删除章节。对应 Python delete_chapter。 */
