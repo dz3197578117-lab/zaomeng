@@ -452,6 +452,7 @@ private fun RunDetailContent(
                         onOpenPersona = onOpenPersona,
                         onOpenRelations = onOpenRelations,
                         onOpenSessions = onOpenSessions,
+                        onOpenChapters = onOpenChapters,
                         modifier = Modifier.weight(1f),
                     )
                     BookReviewCard(
@@ -473,6 +474,7 @@ private fun RunDetailContent(
                     onOpenPersona = onOpenPersona,
                     onOpenRelations = onOpenRelations,
                     onOpenSessions = onOpenSessions,
+                    onOpenChapters = onOpenChapters,
                 )
             }
             if (reviewAvailable) {
@@ -734,6 +736,7 @@ private fun NextActionCard(
     onOpenPersona: (String) -> Unit,
     onOpenRelations: () -> Unit,
     onOpenSessions: () -> Unit,
+    onOpenChapters: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val action = nextActionFor(run)
@@ -762,6 +765,7 @@ private fun NextActionCard(
                         RunNextActionTarget.OpenPersona -> onOpenPersona(action.character)
                         RunNextActionTarget.OpenRelations -> onOpenRelations()
                         RunNextActionTarget.OpenSessions -> onOpenSessions()
+                        RunNextActionTarget.OpenChapters -> onOpenChapters()
                     }
                 },
                 modifier = Modifier.align(Alignment.End),
@@ -1011,7 +1015,7 @@ private fun RunHero(run: RunManifestDto) {
                     )
                 }
                 Spacer(Modifier.width(12.dp))
-                RunStatus(run.status)
+                RunStatus(run)
             }
 
             if (run.status == "running") {
@@ -1023,7 +1027,7 @@ private fun RunHero(run: RunManifestDto) {
             }
 
             Text(
-                text = run.progress.message.ifBlank { run.summary.statusText.ifBlank { statusCopy(run.status) } },
+                text = run.progress.message.ifBlank { run.summary.statusText.ifBlank { statusCopy(run) } },
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
                 style = MaterialTheme.typography.bodyLarge,
             )
@@ -1612,14 +1616,14 @@ private fun clampCropOffsets(
 }
 
 @Composable
-private fun RunStatus(status: String) {
+private fun RunStatus(run: RunManifestDto) {
     Surface(
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = RoundedCornerShape(999.dp),
     ) {
         Text(
-            text = statusLabel(status),
+            text = statusLabel(run),
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
             style = MaterialTheme.typography.labelSmall,
         )
@@ -1697,22 +1701,28 @@ private fun DetailFailure(message: String, onRetry: () -> Unit, modifier: Modifi
     }
 }
 
-private fun statusLabel(status: String): String = when (status) {
-    "ready" -> "可使用"
-    "running" -> "蒸馏中"
-    "draft" -> "待蒸馏"
-    "failed" -> "失败"
-    "stopped" -> "已停止"
-    else -> status.ifBlank { "未知" }
+private fun statusLabel(run: RunManifestDto): String {
+    if (run.isOriginal) return "原创"
+    return when (run.status) {
+        "ready" -> "可使用"
+        "running" -> "蒸馏中"
+        "pending", "draft" -> "待蒸馏"
+        "failed" -> "失败"
+        "stopped" -> "已停止"
+        else -> run.status.ifBlank { "未知" }
+    }
 }
 
-private fun statusCopy(status: String): String = when (status) {
-    "ready" -> "人物资料和关系已经整理完成。"
-    "running" -> "人物和关系正在这台手机上逐步浮现。"
-    "draft" -> "正文已经导入，尚未调用模型。"
-    "failed" -> "这次蒸馏没有完成，已有结果仍会保留。"
-    "stopped" -> "蒸馏已停止，可以按原人物重新开始。"
-    else -> "书卷状态正在更新。"
+private fun statusCopy(run: RunManifestDto): String {
+    if (run.isOriginal) return "原创书卷，不需要蒸馏。直接去章节工作台写大纲和正文。"
+    return when (run.status) {
+        "ready" -> "人物资料和关系已经整理完成。"
+        "running" -> "人物和关系正在这台手机上逐步浮现。"
+        "pending", "draft" -> "正文已经导入，尚未调用模型。"
+        "failed" -> "这次蒸馏没有完成，已有结果仍会保留。"
+        "stopped" -> "蒸馏已停止，可以按原人物重新开始。"
+        else -> "书卷状态正在更新。"
+    }
 }
 
 private fun graphLabel(status: String): String = when (status) {

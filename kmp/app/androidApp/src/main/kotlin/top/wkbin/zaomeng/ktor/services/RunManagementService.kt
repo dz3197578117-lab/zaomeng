@@ -10,6 +10,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
+import top.wkbin.zaomeng.data.api.RunManifestDto
 import top.wkbin.zaomeng.ktor.models.*
 import top.wkbin.zaomeng.platform.PlatformLog
 import top.wkbin.zaomeng.platform.base64Decode
@@ -43,7 +44,9 @@ class RunManagementService(
         maxSentences: Int = 120,
         maxChars: Int = 50000,
         autoRun: Boolean = false,
-        deferRun: Boolean = false
+        deferRun: Boolean = false,
+        /** `original`：直接开写的原创书卷，建好即可用，不排队等蒸馏。 */
+        origin: String = "",
     ): JsonObject {
         // 验证参数
         if (novelName.isBlank()) {
@@ -99,9 +102,11 @@ class RunManagementService(
         val novelContent = novelBytes.decodeToString()
 
         // 创建运行清单
+        val original = origin == RunManifestDto.ORIGIN_ORIGINAL
         val manifest = buildJsonObject {
             put("run_id", runId)
             put("novel_name", novelName)
+            if (original) put("origin", origin)
             put("novel_sources", buildJsonArray {
                 add(buildJsonObject {
                     put("source_name", novelName.ifBlank { novelFile.name })
@@ -118,10 +123,18 @@ class RunManagementService(
             put("max_chars", maxChars)
             put("created_at", timestamp)
             put("updated_at", timestamp)
-            put("status", if (deferRun) "pending" else "running")
+            put("status", when {
+                original -> "ready"
+                deferRun -> "pending"
+                else -> "running"
+            })
             put("progress", buildJsonObject {
-                put("stage", if (deferRun) "pending" else "starting")
-                put("percent", 0.0)
+                put("stage", when {
+                    original -> "complete"
+                    deferRun -> "pending"
+                    else -> "starting"
+                })
+                put("percent", if (original) 100.0 else 0.0)
             })
         }
 
@@ -141,6 +154,7 @@ class RunManagementService(
             put("characters", buildJsonArray { characterNames.forEach { add(JsonPrimitive(it)) } })
             put("created_at", timestamp)
             put("status", manifest["status"]?.jsonPrimitive?.contentOrNull ?: "running")
+            if (original) put("origin", origin)
         }
     }
 

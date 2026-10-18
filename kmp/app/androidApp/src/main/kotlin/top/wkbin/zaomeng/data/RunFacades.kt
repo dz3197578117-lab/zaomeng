@@ -26,6 +26,7 @@ interface RunRepository {
         maxSentences: Int,
         maxChars: Int,
         autoRun: Boolean = true,
+        origin: String = "",
     ): RunManifestDto
 
     suspend fun estimateSampling(

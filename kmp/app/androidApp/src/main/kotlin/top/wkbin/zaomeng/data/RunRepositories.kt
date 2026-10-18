@@ -55,6 +55,7 @@ class RunRepositoryImpl(
         maxSentences: Int,
         maxChars: Int,
         autoRun: Boolean,
+        origin: String,
     ): RunManifestDto {
         val payload = withContext(Dispatchers.Default) {
             CreateRunRequest(
@@ -65,6 +66,7 @@ class RunRepositoryImpl(
                 maxChars = maxChars,
                 autoRun = autoRun,
                 deferRun = !autoRun,
+                origin = origin,
             )
         }
         return repositoryRequest {

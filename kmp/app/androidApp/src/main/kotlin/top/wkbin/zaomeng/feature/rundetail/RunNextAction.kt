@@ -8,6 +8,7 @@ internal enum class RunNextActionTarget {
     OpenPersona,
     OpenRelations,
     OpenSessions,
+    OpenChapters,
 }
 
 internal data class RunNextAction(
@@ -25,6 +26,15 @@ internal data class RunNextAction(
  * of tools. This deliberately prefers unfinished work over optional browsing.
  */
 internal fun nextActionFor(run: RunManifestDto): RunNextAction {
+    if (run.isOriginal) {
+        return RunNextAction(
+            title = "直接开始写",
+            description = "这是原创书卷，不需要蒸馏。去章节工作台写一句设定，先生成大纲再逐章成稿。",
+            label = "开始写",
+            target = RunNextActionTarget.OpenChapters,
+        )
+    }
+
     val completedCharacters = run.progress.completedCharacters.toSet()
     val unfinishedCount = run.lockedCharacters.count { it !in completedCharacters }
     val characters = run.availableCharacters

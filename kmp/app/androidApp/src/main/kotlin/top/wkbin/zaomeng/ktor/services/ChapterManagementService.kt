@@ -527,20 +527,30 @@ class ChapterManagementService(
 
     /**
      * 人物简报：只取能影响「怎么说话、会做什么」的字段，避免把整份档案塞进提示词。
-     * 取不到就返回空表——大纲与正文仍可生成，只是人物一致性会弱一些。
+     * 未蒸馏的书卷没有人物档案，退回创建时记录的人物名单——只有名字，
+     * 一致性会弱一些，但大纲与正文照常生成。
      */
     private fun characterBriefs(manifest: JsonObject?): List<Pair<String, String>> {
-        val array = manifest?.get("artifact_index")?.jsonObject?.get("characters")?.jsonArray ?: return emptyList()
-        return array.mapNotNull { raw ->
-            val obj = runCatching { raw.jsonObject }.getOrNull() ?: return@mapNotNull null
-            val name = obj["name"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
-            if (name.isEmpty()) return@mapNotNull null
-            val preview = obj["preview"]?.jsonObject ?: JsonObject(emptyMap())
-            val brief = listOf("core_identity", "story_role", "speech_style", "temperament_type")
-                .mapNotNull { key -> preview[key]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf(String::isNotBlank) }
-                .joinToString("；")
-            name to brief
-        }.take(8)
+        val briefs = manifest?.get("artifact_index")?.jsonObject?.get("characters")?.jsonArray
+            ?.mapNotNull { raw ->
+                val obj = runCatching { raw.jsonObject }.getOrNull() ?: return@mapNotNull null
+                val name = obj["name"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                if (name.isEmpty()) return@mapNotNull null
+                val preview = obj["preview"]?.jsonObject ?: JsonObject(emptyMap())
+                val brief = listOf("core_identity", "story_role", "speech_style", "temperament_type")
+                    .mapNotNull { key -> preview[key]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf(String::isNotBlank) }
+                    .joinToString("；")
+                name to brief
+            }
+            ?.take(8)
+            .orEmpty()
+        if (briefs.isNotEmpty()) return briefs
+        return manifest?.get("characters")?.jsonArray
+            ?.mapNotNull { runCatching { it.jsonPrimitive.contentOrNull }.getOrNull()?.trim() }
+            ?.filter(String::isNotBlank)
+            ?.take(8)
+            ?.map { it to "" }
+            .orEmpty()
     }
 
     /** 删除章节。对应 Python delete_chapter。 */

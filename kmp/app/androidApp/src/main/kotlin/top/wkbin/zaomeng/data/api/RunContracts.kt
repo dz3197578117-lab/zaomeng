@@ -38,7 +38,16 @@ data class RunManifestDto(
     @SerialName("artifact_index") val artifactIndex: ArtifactIndexDto = ArtifactIndexDto(),
     @SerialName("imported_from") val importedFrom: ImportedFromDto = ImportedFromDto(),
     @SerialName("beta_feature") val betaFeature: BetaFeatureDto? = null,
+    /** `original` 表示这本是直接开写的原创书卷，没有原文、也不需要蒸馏。 */
+    val origin: String = "",
 ) {
+    companion object {
+        const val ORIGIN_ORIGINAL = "original"
+    }
+
+    val isOriginal: Boolean
+        get() = origin == ORIGIN_ORIGINAL
+
     val title: String
         get() = novelSources.lastOrNull()?.sourceName
             ?.substringBeforeLast('.')
@@ -235,6 +244,8 @@ data class CreateRunRequest(
     @SerialName("auto_run") val autoRun: Boolean = false,
     @EncodeDefault(EncodeDefault.Mode.ALWAYS)
     @SerialName("defer_run") val deferRun: Boolean = false,
+    /** 传 `original` 时建卷即就绪，不会排队等待蒸馏。 */
+    val origin: String = "",
 )
 
 @Serializable

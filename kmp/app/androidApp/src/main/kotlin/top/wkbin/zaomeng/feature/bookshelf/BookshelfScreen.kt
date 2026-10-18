@@ -538,7 +538,7 @@ private fun RunCard(run: RunManifestDto, onClick: () -> Unit) {
                                 Text("Beta 共演", Modifier.padding(horizontal = 9.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
                             }
                         }
-                        StatusPill(run.status)
+                        StatusPill(run)
                     }
                 }
 
@@ -554,7 +554,7 @@ private fun RunCard(run: RunManifestDto, onClick: () -> Unit) {
                     text = if (run.betaFeature?.kind == "cross_book_crossover") {
                         "独立人物快照空间，不会改动来源书卷。"
                     } else {
-                        run.progress.message.ifBlank { statusDescription(run.status) }
+                        run.progress.message.ifBlank { statusDescription(run) }
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -628,7 +628,8 @@ private fun BookSpine(title: String) {
 }
 
 @Composable
-private fun StatusPill(status: String) {
+private fun StatusPill(run: RunManifestDto) {
+    val status = run.status
     val ready = status == "ready"
     val failed = status == "failed"
     val container = when {
@@ -643,7 +644,7 @@ private fun StatusPill(status: String) {
     }
     Surface(color = container, contentColor = content, shape = AppPillShape) {
         Text(
-            text = statusLabel(status),
+            text = statusLabel(run),
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
             style = MaterialTheme.typography.labelSmall,
         )
@@ -720,22 +721,29 @@ private fun BackendFailure(message: String, onRetry: () -> Unit, modifier: Modif
     }
 }
 
-private fun statusLabel(status: String): String = when (status) {
-    "ready" -> "可使用"
-    "running" -> "蒸馏中"
-    "draft" -> "待蒸馏"
-    "failed" -> "失败"
-    "stopped" -> "已停止"
-    else -> status.ifBlank { "未知" }
+private fun statusLabel(run: RunManifestDto): String {
+    if (run.isOriginal) return "原创"
+    return when (run.status) {
+        "ready" -> "可使用"
+        "running" -> "蒸馏中"
+        "pending" -> "待蒸馏"
+        "draft" -> "待蒸馏"
+        "failed" -> "失败"
+        "stopped" -> "已停止"
+        else -> run.status.ifBlank { "未知" }
+    }
 }
 
-private fun statusDescription(status: String): String = when (status) {
-    "ready" -> "人物资料已经可以校对，也可以开始新的会话。"
-    "running" -> "人物和关系正在这台手机上逐步整理。"
-    "draft" -> "正文已经导入，可以打开书卷开始蒸馏。"
-    "failed" -> "这次处理没有完成，可以打开书卷查看详情。"
-    "stopped" -> "蒸馏已经停止，已有结果仍会保留。"
-    else -> "打开书卷查看当前状态。"
+private fun statusDescription(run: RunManifestDto): String {
+    if (run.isOriginal) return "原创书卷，不需要蒸馏；直接写章节或生成大纲即可。"
+    return when (run.status) {
+        "ready" -> "人物资料已经可以校对，也可以开始新的会话。"
+        "running" -> "人物和关系正在这台手机上逐步整理。"
+        "pending", "draft" -> "正文已经导入，可以打开书卷开始蒸馏。"
+        "failed" -> "这次处理没有完成，可以打开书卷查看详情。"
+        "stopped" -> "蒸馏已经停止，已有结果仍会保留。"
+        else -> "打开书卷查看当前状态。"
+    }
 }
 
 private fun Int.formatCount(): String = when {

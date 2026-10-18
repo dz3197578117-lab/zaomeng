@@ -17,12 +17,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -30,6 +35,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -48,8 +57,8 @@ import top.wkbin.zaomeng.ui.theme.AppSpacing
 /**
  * 「创作」顶级页。
  *
- * 底栏的入口不该直接落在某个书卷上——用户还没选书。所以这里先做一件事：
- * 把「可以写的书」列出来，选一本再进入它的创作工作台（章节页会自动展开 AI 创作弹层）。
+ * 底栏的入口不该直接落在某个书卷上——用户还没选书。所以这里做两件事：
+ * 列出所有可以写的书卷，以及直接新建一本原创书卷（不必先导入原文蒸馏）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,6 +68,7 @@ fun CreationScreen(
     viewModel: CreationViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var showNewBook by rememberSaveable { mutableStateOf(false) }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -75,6 +85,16 @@ fun CreationScreen(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            viewModel.clearCreateError()
+                            showNewBook = true
+                        },
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = "新建原创书卷")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -108,10 +128,24 @@ fun CreationScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 AppEmptyState(
-                    title = "还没有可以创作的书",
-                    description = "AI 创作需要人物档案做上下文。先去书卷架蒸馏一本，完成后这里就会出现。",
+                    title = "从第一本开始写",
+                    description = "可以直接新建原创书卷，不必先导入原文；" +
+                        "也可以在书卷架蒸馏一本，创作时带上人物与世界观。",
                     icon = Icons.Outlined.AutoStories,
-                    action = { TextButton(onClick = onOpenBookshelf) { Text("去书卷架") } },
+                    action = {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+                        ) {
+                            Button(
+                                onClick = {
+                                    viewModel.clearCreateError()
+                                    showNewBook = true
+                                },
+                            ) { Text("新建原创书卷") }
+                            TextButton(onClick = onOpenBookshelf) { Text("去书卷架蒸馏") }
+                        }
+                    },
                 )
             }
 
@@ -138,7 +172,7 @@ fun CreationScreen(
                             modifier = Modifier.weight(1f),
                         )
                         Text(
-                            text = "人物与世界观会带进创作",
+                            text = "蒸馏过的会带上人物与世界观",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -149,6 +183,23 @@ fun CreationScreen(
                 }
             }
         }
+    }
+
+    if (showNewBook) {
+        NewBookDialog(
+            creating = state.creating,
+            error = state.createError,
+            onDismiss = {
+                showNewBook = false
+                viewModel.clearCreateError()
+            },
+            onCreate = { title, lead ->
+                viewModel.createOriginalBook(title, lead) { runId ->
+                    showNewBook = false
+                    onOpenRun(runId)
+                }
+            },
+        )
     }
 }
 
@@ -174,7 +225,7 @@ private fun CreationIntroCard() {
                 )
                 Text(
                     text = "一句设定 → 分章大纲 → 逐章成稿。大纲先预览、确认后才写入；" +
-                        "正文按章生成，写坏一章只损失一章。",
+                        "正文按章生成，写坏一章只损失一章。没有蒸馏过的书也能写。",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
@@ -184,6 +235,7 @@ private fun CreationIntroCard() {
 
 @Composable
 private fun CreationRunCard(run: RunManifestDto, onClick: () -> Unit) {
+    val hint = creationStatusHint(run.status, run.isOriginal)
     AppCard(
         variant = AppCardVariant.Outlined,
         onClick = onClick,
@@ -200,9 +252,18 @@ private fun CreationRunCard(run: RunManifestDto, onClick: () -> Unit) {
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (hint.isNotBlank()) {
+                    Text(
+                        text = hint,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = creationStatusColor(run.status, run.isOriginal),
+                        modifier = Modifier.padding(top = 3.dp),
+                    )
+                }
                 Text(
                     text = buildString {
-                        append("${run.artifactIndex.characters.size} 位人物")
+                        val count = run.artifactIndex.characters.size
+                        append(if (count > 0) "$count 位人物" else "人物档案未生成")
                         if (run.updatedAt.isNotBlank()) {
                             append(" · 更新于 ").append(run.updatedAt.toLocalDateTimeDisplay(""))
                         }
@@ -230,6 +291,82 @@ private fun CreationRunCard(run: RunManifestDto, onClick: () -> Unit) {
             )
         }
     }
+}
+
+@Composable
+private fun NewBookDialog(
+    creating: Boolean,
+    error: String,
+    onDismiss: () -> Unit,
+    onCreate: (String, String) -> Unit,
+) {
+    var title by rememberSaveable { mutableStateOf("") }
+    var lead by rememberSaveable { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = { if (!creating) onDismiss() },
+        title = { Text("新建原创书卷") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+                Text(
+                    text = "不用导入原文，也不用等蒸馏。建好后直接进章节工作台，" +
+                        "写一句设定就能生成大纲。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it.take(60) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("书名") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = lead,
+                    onValueChange = { lead = it.take(20) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("主角") },
+                    singleLine = true,
+                )
+                if (error.isNotBlank()) {
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onCreate(title, lead) },
+                enabled = !creating && title.isNotBlank() && lead.isNotBlank(),
+            ) { Text(if (creating) "创建中…" else "开始创作") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !creating) { Text("取消") }
+        },
+    )
+}
+
+/** 未蒸馏的书卷也能写，这里只说明「上下文差在哪」，不做准入限制。 */
+internal fun creationStatusHint(status: String, isOriginal: Boolean = false): String {
+    if (isOriginal) return "原创 · 不需要蒸馏"
+    return when (status) {
+        "ready" -> ""
+        "running" -> "蒸馏中 · 人物档案稍后补上"
+        "pending", "draft" -> "未蒸馏 · 仅凭设定与大纲写"
+        "failed" -> "蒸馏失败 · 仍可创作"
+        "stopped" -> "蒸馏已停止 · 仍可创作"
+        else -> ""
+    }
+}
+
+@Composable
+private fun creationStatusColor(status: String, isOriginal: Boolean): Color = when {
+    isOriginal -> MaterialTheme.colorScheme.primary
+    status == "running" -> MaterialTheme.colorScheme.primary
+    status == "failed" -> MaterialTheme.colorScheme.error
+    else -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
 /** 书脊色块：按标题稳定取色，同一本书在书架与创作页永远同色。 */
