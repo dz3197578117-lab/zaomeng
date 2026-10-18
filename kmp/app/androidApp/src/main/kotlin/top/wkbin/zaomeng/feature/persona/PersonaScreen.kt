@@ -385,9 +385,11 @@ private fun PersonaEditor(
 @Composable
 private fun SourceCard(state: PersonaUiState) {
     val hasEditableProfile = state.editableProfilePath.isNotBlank()
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        contentPadding = PaddingValues(0.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -412,10 +414,10 @@ private fun SourceCard(state: PersonaUiState) {
 @Composable
 private fun QualityCard(report: PersonaQualityReportDto?, error: String) {
     var showAllIssues by rememberSaveable { mutableStateOf(false) }
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        variant = AppCardVariant.Elevated,
+        contentPadding = PaddingValues(0.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -537,9 +539,11 @@ private fun RepairProposalCard(
     if (proposal == null && error.isBlank()) return
     if (proposal?.status in setOf("not_available", "not_needed", "applied") && error.isBlank()) return
     var expanded by rememberSaveable(proposal?.createdAt, error) { mutableStateOf(false) }
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        contentPadding = PaddingValues(0.dp),
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -585,7 +589,7 @@ private fun RepairProposalCard(
                     )
                 } else proposal?.changes.orEmpty().forEach { change ->
                     val applied = change.field in appliedFields
-                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    AppCard(contentPadding = PaddingValues(0.dp)) {
                         Column(
                             modifier = Modifier.padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(7.dp),
@@ -762,10 +766,10 @@ private fun PersonaFieldEditor(
     onValueChange: (String) -> Unit,
     onSuggest: () -> Unit,
 ) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        variant = AppCardVariant.Elevated,
+        contentPadding = PaddingValues(0.dp),
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
@@ -842,9 +846,11 @@ private fun ReviewNoteCard(
     enabled: Boolean,
     onValueChange: (String) -> Unit,
 ) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        contentPadding = PaddingValues(0.dp),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -921,11 +927,13 @@ private fun PersonaLoadError(
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        Card(
+        AppCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(24.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            contentPadding = PaddingValues(AppSpacing.lg),
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(
@@ -1001,13 +1009,11 @@ private fun VoiceLibraryCard(
     var showLibrary by remember { mutableStateOf(false) }
     val currentVoice = fields["voice_name"].orEmpty().trim()
 
-    Card(
+    AppCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
+        contentPadding = PaddingValues(AppSpacing.lg),
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
@@ -1097,13 +1103,13 @@ private fun VoicePreviewCard(
         emotion = classifySpeechEmotion(testText),
     )
 
-    Card(
+    AppCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-        ),
+        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        contentPadding = PaddingValues(horizontal = AppSpacing.lg, vertical = 10.dp),
     ) {
         Row(
             modifier = Modifier

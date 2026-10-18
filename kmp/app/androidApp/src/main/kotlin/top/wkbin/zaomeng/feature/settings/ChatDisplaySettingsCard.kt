@@ -3,6 +3,7 @@ package top.wkbin.zaomeng.feature.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,6 +36,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import okio.Path
 import org.koin.compose.koinInject
+import top.wkbin.zaomeng.ui.components.AppCard
 import top.wkbin.zaomeng.data.preferences.AppPreferencesRepository
 import top.wkbin.zaomeng.data.preferences.CHAT_FONT_SCALE_MAX
 import top.wkbin.zaomeng.data.preferences.CHAT_FONT_SCALE_MIN
@@ -207,10 +209,10 @@ fun ChatDisplaySettingsCard(
 
 @Composable
 private fun SettingsGroupCard(content: @Composable () -> Unit) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentPadding = PaddingValues(0.dp),
     ) { Column { content() } }
 }
 

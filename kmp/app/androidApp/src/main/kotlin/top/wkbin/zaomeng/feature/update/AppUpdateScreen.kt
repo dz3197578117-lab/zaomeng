@@ -2,14 +2,12 @@ package top.wkbin.zaomeng.feature.update
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -27,6 +25,8 @@ import top.wkbin.zaomeng.app.shared.AppMetadata
 import top.wkbin.zaomeng.data.update.AppUpdateDownloadStatus
 import top.wkbin.zaomeng.data.update.AppUpdateUiState
 import top.wkbin.zaomeng.feature.settings.SettingsRow
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.theme.AppSpacing
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,7 +44,16 @@ fun AppUpdateScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("检查更新") },
+                title = {
+                    Column {
+                        Text("检查更新", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = "当前 ${AppMetadata.VERSION_NAME}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -57,10 +66,9 @@ fun AppUpdateScreen(
             modifier = Modifier.fillMaxSize().padding(innerPadding).padding(horizontal = 16.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Card(
+            AppCard(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                contentPadding = PaddingValues(0.dp),
             ) {
                 Column {
                     SettingsRow(title = "当前版本", subtitle = AppMetadata.VERSION_NAME, enabled = false)
@@ -93,7 +101,7 @@ fun AppUpdateScreen(
                     text = state.error,
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp),
+                    modifier = Modifier.padding(horizontal = AppSpacing.lg),
                 )
             }
         }

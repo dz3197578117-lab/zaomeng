@@ -3,6 +3,7 @@ package top.wkbin.zaomeng.feature.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import top.wkbin.zaomeng.ui.components.AppCard
 import top.wkbin.zaomeng.data.RuntimeCaptureStatus
 import top.wkbin.zaomeng.data.api.RuntimeLogDto
 import top.wkbin.zaomeng.platform.rememberFileExporter
@@ -145,10 +147,10 @@ private fun RuntimeCaptureCard(
     onToggleCapture: (Boolean) -> Unit,
     onRequestClear: () -> Unit,
 ) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentPadding = PaddingValues(0.dp),
     ) {
         Column(
             modifier = Modifier
@@ -217,10 +219,10 @@ private fun captureStatusLabel(capture: RuntimeCaptureStatus): String = when {
 @Composable
 private fun RuntimeLogSummary(state: RuntimeLogUiState) {
     val snapshot = state.snapshot
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentPadding = PaddingValues(0.dp),
     ) {
         Column(
             modifier = Modifier

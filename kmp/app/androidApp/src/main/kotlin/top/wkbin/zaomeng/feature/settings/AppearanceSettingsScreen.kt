@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
+import top.wkbin.zaomeng.ui.components.AppCard
 import top.wkbin.zaomeng.data.preferences.AppPreferencesRepository
 import top.wkbin.zaomeng.data.preferences.ThemeMode
 import top.wkbin.zaomeng.ui.theme.ThemeSeedColor
@@ -98,10 +99,10 @@ fun AppearanceSettingsScreen(
                 )
             }
             item {
-                Card(
+                AppCard(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    contentPadding = PaddingValues(0.dp),
                 ) {
                     Column {
                         ThemeMode.values().forEachIndexed { index, mode ->
@@ -147,10 +148,10 @@ fun AppearanceSettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(start = 32.dp, top = 16.dp, bottom = 8.dp, end = 32.dp),
                         )
-                        Card(
+                        AppCard(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            contentPadding = PaddingValues(0.dp),
                         ) {
                             FlowRow(
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
@@ -177,10 +178,10 @@ fun AppearanceSettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 32.dp, top = 16.dp, bottom = 8.dp, end = 32.dp),
                     )
-                    Card(
+                    AppCard(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        contentPadding = PaddingValues(0.dp),
                     ) {
                         Column(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 13.dp),
@@ -218,10 +219,10 @@ fun AppearanceSettingsScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(start = 32.dp, top = 16.dp, bottom = 8.dp, end = 32.dp),
                         )
-                        Card(
+                        AppCard(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                            contentPadding = PaddingValues(0.dp),
                         ) {
                             Row(
                                 modifier = Modifier

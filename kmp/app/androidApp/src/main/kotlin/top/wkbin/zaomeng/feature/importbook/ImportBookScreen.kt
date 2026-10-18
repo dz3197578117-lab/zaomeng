@@ -21,8 +21,6 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -170,7 +168,7 @@ fun ImportBookScreen(
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(innerPadding),
-            contentPadding = PaddingValues(20.dp),
+            contentPadding = PaddingValues(AppSpacing.lg),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
@@ -224,8 +222,12 @@ fun ImportBookScreen(
             }
             if (state.fileName.isNotBlank()) {
                 item {
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(16.dp)) {
+                    AppCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        variant = AppCardVariant.Outlined,
+                        contentPadding = PaddingValues(AppSpacing.lg),
+                    ) {
+                        Column {
                             Text(state.fileName, style = MaterialTheme.typography.titleSmall)
                             Text(
                                 if (state.packageFile) {
@@ -450,13 +452,11 @@ private fun ModelConfigurationNotice(
             color = MaterialTheme.colorScheme.primary,
         )
 
-        false -> Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        false -> AppCard(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentPadding = PaddingValues(AppSpacing.lg),
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                 Text("开始蒸馏前需要配置模型", style = MaterialTheme.typography.titleSmall)
                 Text(
                     error.ifBlank { "书卷包可以直接恢复；TXT 或 EPUB 正文需要模型生成角色资料。" },
@@ -489,14 +489,12 @@ private fun SamplingPlanCard(
         }
 
         state.samplingPlan != null -> state.samplingPlan.let { plan ->
-            Card(
+            AppCard(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                variant = AppCardVariant.Outlined,
+                contentPadding = PaddingValues(AppSpacing.lg),
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("本次蒸馏预估", style = MaterialTheme.typography.titleSmall)
                     Text(
                         "推荐取样 ${plan.suggestedMaxSentences} 句 / ${plan.suggestedMaxChars.readableCount()} 字",

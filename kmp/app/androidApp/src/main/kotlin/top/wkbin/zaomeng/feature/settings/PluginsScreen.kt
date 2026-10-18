@@ -24,8 +24,6 @@ import androidx.compose.material.icons.outlined.InstallMobile
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -52,6 +50,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import org.koin.compose.viewmodel.koinViewModel
 import kotlinx.coroutines.launch
+import top.wkbin.zaomeng.ui.components.AppCard
 import top.wkbin.zaomeng.platform.rememberZipFilePicker
 import top.wkbin.zaomeng.data.api.PluginDto
 import kotlinx.serialization.json.contentOrNull
@@ -229,9 +228,9 @@ fun PluginsScreen(
 
 @Composable
 private fun PluginIntroductionCard(onOpenBuilder: () -> Unit) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-        shape = RoundedCornerShape(14.dp),
+    AppCard(
+        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        contentPadding = PaddingValues(0.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(AppDimens.cardPadding),
@@ -262,10 +261,10 @@ private fun PluginCard(
     onDetails: () -> Unit,
     onConfig: () -> Unit,
 ) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentPadding = PaddingValues(0.dp),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(AppDimens.cardPadding),
@@ -559,10 +558,13 @@ private fun PluginPermissionDialog(
 
 @Composable
 private fun StatusCard(message: String, error: Boolean) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (error) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
-        ),
+    AppCard(
+        containerColor = if (error) {
+            MaterialTheme.colorScheme.errorContainer
+        } else {
+            MaterialTheme.colorScheme.primaryContainer
+        },
+        contentPadding = PaddingValues(0.dp),
     ) {
         Text(
             message,

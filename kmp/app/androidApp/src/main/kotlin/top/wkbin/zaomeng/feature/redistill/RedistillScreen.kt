@@ -20,8 +20,6 @@ import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -48,6 +46,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import top.wkbin.zaomeng.data.api.RedistillSegmentDto
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppCardVariant
+import top.wkbin.zaomeng.ui.theme.AppSpacing
 import org.koin.compose.koinInject
 import top.wkbin.zaomeng.platform.DistillationForeground
 import top.wkbin.zaomeng.platform.rememberDocumentPicker
@@ -123,7 +124,16 @@ fun RedistillScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("继续蒸馏") },
+                title = {
+                    Column {
+                        Text("继续蒸馏", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = "在现有资料上补充，不覆盖已有人物",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -140,8 +150,8 @@ fun RedistillScreen(
         }
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(innerPadding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(AppSpacing.lg),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.md),
         ) {
             item {
                 Text(
@@ -184,8 +194,8 @@ fun RedistillScreen(
                 }
             }
             item {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                AppCard(contentPadding = PaddingValues(AppSpacing.lg)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                         Text("换入新书段", style = MaterialTheme.typography.titleMedium)
                         OutlinedButton(
                             onClick = { documentPicker() },
@@ -314,14 +324,12 @@ private fun RedistillSamplingPlanCard(
         }
 
         state.samplingPlan != null -> state.samplingPlan.let { plan ->
-            Card(
+            AppCard(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                variant = AppCardVariant.Outlined,
+                contentPadding = PaddingValues(AppSpacing.lg),
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("本轮蒸馏预估", style = MaterialTheme.typography.titleSmall)
                     Text(
                         "约 ${plan.totalCalls} 次模型调用 · ${plan.tokenLow.readableCount()}–${plan.tokenHigh.readableCount()} tokens",
@@ -355,8 +363,8 @@ private fun RedistillSamplingPlanCard(
 private fun RecommendationHeader(state: RedistillUiState, viewModel: RedistillViewModel) {
     var expanded by remember { mutableStateOf(false) }
     val characters = parseRedistillCharacters(state.characters)
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    AppCard(contentPadding = PaddingValues(AppSpacing.lg)) {
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Text("从原文推荐片段", style = MaterialTheme.typography.titleMedium)
             Box(Modifier.fillMaxWidth()) {
                 OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
@@ -399,14 +407,14 @@ private fun RecommendationHeader(state: RedistillUiState, viewModel: RedistillVi
 
 @Composable
 private fun SegmentCard(segment: RedistillSegmentDto, selected: Boolean, onSelect: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onSelect),
-        colors = CardDefaults.cardColors(
-            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
+    AppCard(
+        modifier = Modifier.fillMaxWidth(),
+        variant = AppCardVariant.Outlined,
+        onClick = onSelect,
+        containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else null,
+        contentPadding = PaddingValues(AppSpacing.lg),
     ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked = selected, onCheckedChange = null)
                 Text(

@@ -19,11 +19,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +42,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppCardVariant
+import top.wkbin.zaomeng.ui.components.AppEmptyState
+import top.wkbin.zaomeng.ui.theme.AppSpacing
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.koinInject
 import top.wkbin.zaomeng.platform.NovelConversionForeground
@@ -97,7 +100,18 @@ fun StoryRecapScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("剧情复盘") },
+                title = {
+                    Column {
+                        Text("剧情复盘", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = recap?.let {
+                                "${it.eventCount} 个事件 · ${it.chapterCount} 幕 · ${it.unresolvedHookCount} 条伏笔"
+                            } ?: "把这一局发生的事收拢成一篇",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -155,7 +169,12 @@ fun StoryRecapScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 18.dp),
+                contentPadding = PaddingValues(
+                    start = AppSpacing.lg,
+                    top = AppSpacing.lg,
+                    end = AppSpacing.lg,
+                    bottom = AppSpacing.xxl,
+                ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item(key = "header") { RecapHeader(recap) }
@@ -199,13 +218,12 @@ fun StoryRecapScreen(
 
 @Composable
 private fun RecapHeader(recap: StoryRecapDto) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-        ),
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentPadding = PaddingValues(AppSpacing.lg),
     ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Text(
                 text = recap.title.ifBlank { "未命名章节" },
                 style = MaterialTheme.typography.headlineSmall,
@@ -401,13 +419,12 @@ private fun NovelConversionCard(
     started: Boolean,
     onClick: () -> Unit,
 ) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
+        variant = AppCardVariant.Outlined,
+        contentPadding = PaddingValues(AppSpacing.lg),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Text(
                 text = if (started) "小说生成已在后台开始" else "生成本章小说",
                 style = MaterialTheme.typography.titleMedium,
@@ -433,13 +450,12 @@ private fun NovelConversionCard(
 
 @Composable
 private fun NextHintCard(nextHint: String) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-        ),
+        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        contentPadding = PaddingValues(AppSpacing.lg),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 text = "下一拍",
                 style = MaterialTheme.typography.titleSmall,
@@ -462,13 +478,11 @@ private fun RecapSectionCard(
     title: String,
     content: @Composable () -> Unit,
 ) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
+        contentPadding = PaddingValues(AppSpacing.lg),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
@@ -481,21 +495,12 @@ private fun RecapSectionCard(
 
 @Composable
 private fun EmptyRecap(modifier: Modifier = Modifier) {
-    Box(modifier.padding(24.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = "这局还没有足够剧情",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                text = "继续聊几轮后，再回来生成剧情复盘。",
-                modifier = Modifier.padding(top = 8.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
+    AppEmptyState(
+        title = "这局还没有足够剧情",
+        description = "继续聊几轮，重要事件与关系变化积累起来后，再回来生成复盘。",
+        icon = Icons.Outlined.MenuBook,
+        modifier = modifier,
+    )
 }
 
 @Composable
@@ -504,17 +509,14 @@ private fun RecapLoadError(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier.padding(24.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-            )
-            Button(onClick = onRetry, modifier = Modifier.padding(top = 14.dp)) {
-                Text("重新载入")
-            }
-        }
-    }
+    AppEmptyState(
+        title = "复盘读取失败",
+        description = message,
+        icon = Icons.Outlined.MenuBook,
+        modifier = modifier,
+        action = {
+            Button(onClick = onRetry) { Text("重新载入") }
+        },
+    )
 }
 

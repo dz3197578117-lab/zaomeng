@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.koinInject
+import top.wkbin.zaomeng.ui.components.AppCard
 import top.wkbin.zaomeng.data.preferences.AppPreferencesRepository
 import top.wkbin.zaomeng.data.preferences.ThemeMode
 import top.wkbin.zaomeng.ui.theme.AppDimens
@@ -196,10 +197,10 @@ private fun SectionTitle(text: String, topPadding: androidx.compose.ui.unit.Dp =
 
 @Composable
 private fun SettingsHomeGroup(content: @Composable () -> Unit) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth().padding(horizontal = AppDimens.screenPadding),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentPadding = PaddingValues(0.dp),
     ) { Column(content = { content() }) }
 }
 

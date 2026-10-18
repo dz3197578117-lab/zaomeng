@@ -17,8 +17,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -45,6 +43,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import top.wkbin.zaomeng.data.api.OriginalKnowledgeEntryDto
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppCardVariant
+import top.wkbin.zaomeng.ui.components.AppEmptyState
+import top.wkbin.zaomeng.ui.theme.AppSpacing
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -71,7 +73,20 @@ fun OriginalKnowledgeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("原文证据中心") },
+                title = {
+                    Column {
+                        Text("原文证据中心", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = if (state.items.isEmpty()) {
+                                "搜索、固定并校对角色可知边界"
+                            } else {
+                                "${state.items.size} 条证据 · ${state.characters.size} 位角色"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -88,12 +103,17 @@ fun OriginalKnowledgeScreen(
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                start = AppSpacing.lg,
+                top = AppSpacing.lg,
+                end = AppSpacing.lg,
+                bottom = AppSpacing.xxl,
+            ),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.md),
         ) {
             item(key = "search") {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                AppCard(contentPadding = androidx.compose.foundation.layout.PaddingValues(AppSpacing.lg)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                         Text("搜索、固定并校对角色可知边界", fontWeight = FontWeight.SemiBold)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             OutlinedTextField(
@@ -119,12 +139,18 @@ fun OriginalKnowledgeScreen(
             }
             if (state.error.isNotBlank() || state.message.isNotBlank()) {
                 item(key = "notice") {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (state.error.isNotBlank()) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+                    AppCard(
+                        containerColor = if (state.error.isNotBlank()) {
+                            MaterialTheme.colorScheme.errorContainer
+                        } else {
+                            MaterialTheme.colorScheme.primaryContainer
+                        },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            horizontal = AppSpacing.lg,
+                            vertical = AppSpacing.sm,
                         ),
                     ) {
-                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(state.error.ifBlank { state.message }, modifier = Modifier.weight(1f))
                             TextButton(onClick = viewModel::dismissNotice) { Text("关闭") }
                         }
@@ -138,7 +164,11 @@ fun OriginalKnowledgeScreen(
                     }
                 }
                 state.items.isEmpty() -> item(key = "empty") {
-                    Text("没有找到匹配的原文证据。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    AppEmptyState(
+                        title = "没有找到匹配的原文证据",
+                        description = "换一个角色名、事件或原文关键词再试；也可以先点右上角重建证据索引。",
+                        icon = Icons.Default.Search,
+                    )
                 }
                 else -> items(state.items, key = OriginalKnowledgeEntryDto::sourceId) { entry ->
                     EvidenceCard(
@@ -160,8 +190,11 @@ private fun EvidenceCard(
     onTogglePinned: () -> Unit,
     onEditBoundary: () -> Unit,
 ) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    AppCard(
+        variant = AppCardVariant.Outlined,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(AppSpacing.lg),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(entry.title.ifBlank { entry.sourceId }, fontWeight = FontWeight.SemiBold)

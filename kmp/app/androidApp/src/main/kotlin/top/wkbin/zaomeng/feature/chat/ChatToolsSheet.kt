@@ -1,6 +1,8 @@
 package top.wkbin.zaomeng.feature.chat
+import top.wkbin.zaomeng.ui.components.AppCard
 import top.wkbin.zaomeng.feature.chat.insights.*
 
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -31,8 +33,6 @@ import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -455,7 +455,7 @@ internal fun ToolSection(
     action: @Composable (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    AppCard(contentPadding = PaddingValues(0.dp)) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),

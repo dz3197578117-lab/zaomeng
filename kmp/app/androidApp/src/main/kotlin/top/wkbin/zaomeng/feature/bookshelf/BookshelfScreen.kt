@@ -35,8 +35,6 @@ import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.CollectionsBookmark
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -229,9 +227,11 @@ private fun ReadyBookshelf(
         }
         if (state.runs.count { it.betaFeature == null && it.availableCharacters.isNotEmpty() } >= 2) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Card(
+                AppCard(
                     modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenCrossover),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                    contentPadding = PaddingValues(0.dp),
                 ) {
                     Box(Modifier.fillMaxWidth()) {
                         Column(
@@ -306,7 +306,11 @@ private fun RecoveredDistillationCard(
     onResume: (String) -> Unit,
     onDismiss: (String) -> Unit,
 ) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
+    AppCard(
+        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        contentPadding = PaddingValues(0.dp),
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
                 "上次蒸馏被中断",
@@ -390,7 +394,11 @@ private fun BetaCornerBadge(modifier: Modifier = Modifier) {
 
 @Composable
 private fun ActiveModelCard(modelLabel: String, onOpenSettings: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+    AppCard(
+        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        contentPadding = PaddingValues(0.dp),
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -413,7 +421,11 @@ private fun ActiveModelCard(modelLabel: String, onOpenSettings: () -> Unit) {
 
 @Composable
 private fun ModelRequiredCard(onOpenSettings: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+    AppCard(
+        containerColor = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        contentPadding = PaddingValues(0.dp),
+    ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
@@ -444,7 +456,11 @@ private fun ActiveDistillationTasksCard(
     stopping: Boolean,
     onStopAll: () -> Unit,
 ) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+    AppCard(
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        contentPadding = PaddingValues(0.dp),
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("后台蒸馏任务", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
@@ -650,7 +666,11 @@ private fun EmptyBookshelf(onImport: () -> Unit) {
 
 @Composable
 private fun ErrorCard(message: String, onRetry: () -> Unit, onDismiss: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+    AppCard(
+        containerColor = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        contentPadding = PaddingValues(0.dp),
+    ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(message, color = MaterialTheme.colorScheme.onErrorContainer)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -681,7 +701,11 @@ private fun BackendLoading(message: String, modifier: Modifier = Modifier) {
 @Composable
 private fun BackendFailure(message: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
     Box(modifier = modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+        AppCard(
+        containerColor = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        contentPadding = PaddingValues(0.dp),
+    ) {
             Column(modifier = Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     "本地服务没有启动成功",

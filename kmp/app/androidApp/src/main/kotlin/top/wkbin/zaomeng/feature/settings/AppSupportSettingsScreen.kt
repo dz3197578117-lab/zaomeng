@@ -3,6 +3,7 @@ package top.wkbin.zaomeng.feature.settings
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -22,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import top.wkbin.zaomeng.app.shared.AppMetadata
+import top.wkbin.zaomeng.ui.components.AppCard
 import top.wkbin.zaomeng.platform.rememberOpenExternalUrl
 import top.wkbin.zaomeng.platform.rememberToast
 
@@ -81,10 +83,10 @@ private fun SettingsSupportGroup(
     onOpenProject: () -> Unit,
     onOpenPackageLibrary: () -> Unit,
 ) {
-    androidx.compose.material3.Card(
+    AppCard(
         modifier = modifier,
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentPadding = PaddingValues(0.dp),
     ) {
         androidx.compose.foundation.layout.Column {
             SettingsRow(

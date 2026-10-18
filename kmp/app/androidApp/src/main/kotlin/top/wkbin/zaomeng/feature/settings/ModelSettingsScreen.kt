@@ -28,8 +28,6 @@ import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -66,6 +64,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import top.wkbin.zaomeng.ui.components.AppCard
 import top.wkbin.zaomeng.platform.ProviderLogoMark
 import top.wkbin.zaomeng.data.api.ModelProfileDto
 
@@ -514,10 +513,10 @@ fun ModelProfileEditorScreen(
  */
 @Composable
 private fun OnDeviceEntryCard(onClick: () -> Unit) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentPadding = PaddingValues(0.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp),
@@ -567,10 +566,10 @@ private fun ModelProfileCard(
     onEdit: () -> Unit,
     onActivate: () -> Unit,
 ) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentPadding = PaddingValues(0.dp),
     ) {
         Column(Modifier.clickable(onClick = onEdit).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -818,7 +817,10 @@ internal fun EditorSection(title: String, content: @Composable () -> Unit) {
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Card(shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+        AppCard(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            contentPadding = PaddingValues(0.dp),
+        ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) { content() }
         }
     }

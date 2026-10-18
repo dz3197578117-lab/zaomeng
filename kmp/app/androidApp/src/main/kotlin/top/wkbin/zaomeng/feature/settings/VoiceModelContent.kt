@@ -2,12 +2,11 @@ package top.wkbin.zaomeng.feature.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -21,6 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.theme.AppSpacing
 import top.wkbin.zaomeng.platform.NeuralVoiceCatalog
 
 /**
@@ -42,16 +43,12 @@ internal fun VoiceModelContent(
     onDelete: () -> Unit,
     onDismissMessage: () -> Unit,
 ) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-        ),
+        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+        contentPadding = PaddingValues(AppSpacing.lg),
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
+        Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
             Text(
                 text = "离线神经朗读（每个角色不同音色）",
                 style = MaterialTheme.typography.titleSmall,

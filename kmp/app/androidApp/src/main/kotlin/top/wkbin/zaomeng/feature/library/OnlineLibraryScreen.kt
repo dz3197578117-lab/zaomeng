@@ -20,8 +20,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.CloudDownload
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -40,6 +38,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import top.wkbin.zaomeng.data.library.OnlineLibraryBook
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppCardVariant
+import top.wkbin.zaomeng.ui.components.AppEmptyState
+import top.wkbin.zaomeng.ui.theme.AppSpacing
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,7 +62,16 @@ fun OnlineLibraryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("在线书卷包") },
+                title = {
+                    Column {
+                        Text("在线书卷包", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = if (state.loading) "正在读取…" else "${state.books.size} 个可下载",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
                 navigationIcon = {
                     if (showBackButton) {
                         IconButton(onClick = onBack) {
@@ -79,9 +90,9 @@ fun OnlineLibraryScreen(
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 380.dp),
             modifier = Modifier.fillMaxSize().padding(innerPadding),
-            contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(AppSpacing.lg),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.md),
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.md),
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -107,10 +118,13 @@ fun OnlineLibraryScreen(
             }
             if (state.error.isNotBlank()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                    AppCard(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentPadding = PaddingValues(AppSpacing.lg),
+                    ) {
                         Column(
-                            modifier = Modifier.fillMaxWidth().padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
                         ) {
                             Text(state.error, color = MaterialTheme.colorScheme.onErrorContainer)
                             OutlinedButton(onClick = viewModel::refresh, enabled = state.importingBookId.isBlank()) {
@@ -122,7 +136,14 @@ fun OnlineLibraryScreen(
             }
             if (!state.loading && state.books.isEmpty() && state.error.isBlank()) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Text("暂时没有可下载的在线书卷包。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    AppEmptyState(
+                        title = "暂时没有可下载的书卷包",
+                        description = "这里会列出已蒸馏并公开的 .zaomeng-run.zip。下拉或点右上角刷新再试。",
+                        icon = Icons.Outlined.CloudDownload,
+                        action = {
+                            OutlinedButton(onClick = viewModel::refresh) { Text("重新读取") }
+                        },
+                    )
                 }
             }
             items(state.books, key = OnlineLibraryBook::id) { book ->
@@ -152,13 +173,14 @@ private fun OnlineLibraryBookCard(
     onImport: () -> Unit,
     onCancel: () -> Unit,
 ) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        variant = AppCardVariant.Outlined,
+        contentPadding = PaddingValues(AppSpacing.lg),
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
         ) {
             Text(book.title, style = MaterialTheme.typography.titleMedium)
             val metadata = buildList {

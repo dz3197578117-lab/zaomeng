@@ -4,6 +4,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,8 +26,6 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -46,6 +45,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppCardVariant
+import top.wkbin.zaomeng.ui.theme.AppSpacing
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -101,7 +103,16 @@ fun PluginBuilderScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("插件工坊") },
+                title = {
+                    Column {
+                        Text("插件工坊", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = "描述玩法 → 生成草稿 → 安装前校验",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -115,8 +126,8 @@ fun PluginBuilderScreen(
             contentAlignment = Alignment.TopCenter,
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().widthIn(max = 920.dp).padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.fillMaxWidth().widthIn(max = 920.dp).padding(AppSpacing.lg),
+                verticalArrangement = Arrangement.spacedBy(AppSpacing.md),
             ) {
                 AiDraftCard(
                     idea = state.idea,
@@ -270,13 +281,13 @@ private fun AiDraftCard(
     onIdeaChange: (String) -> Unit,
     onGenerate: () -> Unit,
 ) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        shape = RoundedCornerShape(16.dp),
+    AppCard(
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentPadding = PaddingValues(AppSpacing.lg),
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
@@ -351,9 +362,13 @@ private fun GeneratedDraftDialog(
 private fun RuleChainSection(rules: List<PluginRuleDraft>) {
     SectionCard("AI 玩法规则", "事件、条件和动作可以组合；运行状态只保存在当前会话。") {
         rules.forEachIndexed { index, rule ->
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+            AppCard(
+                variant = AppCardVariant.Outlined,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentPadding = PaddingValues(AppSpacing.md),
+            ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Text("${index + 1}. ${rule.title}", fontWeight = FontWeight.SemiBold)
@@ -450,12 +465,12 @@ private fun AdvancedRuntimeSection(
 
 @Composable
 private fun BuilderIntroCard() {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-        shape = RoundedCornerShape(16.dp),
+    AppCard(
+        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        contentPadding = PaddingValues(AppSpacing.lg),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(18.dp),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.Top,
         ) {
@@ -473,14 +488,14 @@ private fun BuilderIntroCard() {
 
 @Composable
 private fun SectionCard(title: String, subtitle: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        shape = RoundedCornerShape(16.dp),
+        variant = AppCardVariant.Outlined,
+        contentPadding = PaddingValues(AppSpacing.lg),
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
         ) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -515,10 +530,14 @@ private fun SettingsSection(
             Text("当前没有设置项。简单插件可以直接跳过。", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         settings.forEachIndexed { index, setting ->
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+            AppCard(
+                variant = AppCardVariant.Outlined,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentPadding = PaddingValues(AppSpacing.md),
+            ) {
                 Column(
-                    modifier = Modifier.fillMaxWidth().padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("设置 ${index + 1}", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
@@ -648,14 +667,17 @@ private fun PermissionRow(permission: PluginBuilderPermissionDto) {
 
 @Composable
 private fun StatusCard(message: String, error: Boolean) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (error) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
-        ),
+    AppCard(
+        containerColor = if (error) {
+            MaterialTheme.colorScheme.errorContainer
+        } else {
+            MaterialTheme.colorScheme.primaryContainer
+        },
+        contentPadding = PaddingValues(horizontal = AppSpacing.lg, vertical = AppSpacing.md),
     ) {
         Text(
             message,
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            modifier = Modifier.fillMaxWidth(),
             color = if (error) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer,
         )
     }

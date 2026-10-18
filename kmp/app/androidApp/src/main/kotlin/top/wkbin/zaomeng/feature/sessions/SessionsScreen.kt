@@ -37,8 +37,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -87,6 +85,7 @@ import top.wkbin.zaomeng.data.api.NovelChapterDto
 import top.wkbin.zaomeng.data.api.ReusableCardDto
 import top.wkbin.zaomeng.data.api.RunManifestDto
 import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppEmptyState
 import top.wkbin.zaomeng.ui.components.AppCardVariant
 import top.wkbin.zaomeng.ui.format.toLocalDateTimeDisplay
 import top.wkbin.zaomeng.ui.theme.AppSpacing
@@ -548,31 +547,11 @@ private fun SessionsContent(
                 }
             } else {
                 item(span = { GridItemSpan(maxLineSpan) }) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                        ),
-                    ) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.Chat,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(36.dp),
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            Text("还没有聊天记录", style = MaterialTheme.typography.titleMedium)
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "选择一本已蒸馏的书，就能让人物在新的场景里开口。",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
+                    AppEmptyState(
+                        title = "还没有聊天记录",
+                        description = "选择一本已蒸馏的书，就能让人物在新的场景里开口。",
+                        icon = Icons.AutoMirrored.Filled.Chat,
+                    )
                 }
             }
 
@@ -682,34 +661,16 @@ private fun SessionListControls(
 
 @Composable
 private fun NoSessionMatches(onClearSearch: () -> Unit) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
-    ) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Icon(
-                Icons.Default.Search,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(32.dp),
-            )
-            Spacer(Modifier.height(10.dp))
-            Text("没有找到相关会话", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "可以换个书名、人物名或消息关键词。",
-                modifier = Modifier.padding(top = 4.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+    AppEmptyState(
+        title = "没有找到相关会话",
+        description = "可以换个书名、人物名或消息关键词。",
+        icon = Icons.Default.Search,
+        action = {
             TextButton(onClick = onClearSearch) {
                 Text("清空搜索", color = MaterialTheme.colorScheme.error)
             }
-        }
-    }
+        },
+    )
 }
 
 @Composable
@@ -905,17 +866,20 @@ private fun PersonaAvatar(
 
 @Composable
 private fun ErrorCard(message: String, onDismiss: () -> Unit) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        ),
+    AppCard(
+        containerColor = MaterialTheme.colorScheme.errorContainer,
+        contentPadding = PaddingValues(horizontal = AppSpacing.lg, vertical = AppSpacing.sm),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(message, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(
+                message,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
             TextButton(onClick = onDismiss) { Text("知道了") }
         }
     }

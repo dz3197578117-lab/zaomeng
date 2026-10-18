@@ -1,5 +1,6 @@
 package top.wkbin.zaomeng.feature.chat
 
+import top.wkbin.zaomeng.ui.components.AppCard
 import top.wkbin.zaomeng.ui.components.ChatBackgroundImage
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -65,8 +66,6 @@ import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -187,11 +186,7 @@ internal fun ChatSearchResults(
                     "${item.turnId}-${item.timestamp}-${item.message.hashCode()}-$index"
                 },
             ) { _, result ->
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                    ),
-                ) {
+                AppCard(contentPadding = PaddingValues(0.dp)) {
                     Column(
                         Modifier
                             .fillMaxWidth()

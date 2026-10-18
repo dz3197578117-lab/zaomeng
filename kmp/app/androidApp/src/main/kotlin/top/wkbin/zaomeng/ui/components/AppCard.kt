@@ -46,6 +46,11 @@ fun AppCard(
     contentPadding: PaddingValues = PaddingValues(AppSpacing.lg),
     /** 覆盖默认容器色（如列表多选态）。不传则按 [variant] 取默认层级色。 */
     containerColor: Color? = null,
+    /**
+     * 覆盖默认内容色。语义色容器（错误 / 次要 / 强调）必须显式传 `onXxxContainer`，
+     * 否则正文会落回 `onSurface`，在色块上对比不足。
+     */
+    contentColor: Color? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val shape = MaterialTheme.shapes.large
@@ -57,7 +62,7 @@ fun AppCard(
         AppCardVariant.Filled -> {
             val colors = CardDefaults.cardColors(
                 containerColor = containerColor ?: MaterialTheme.colorScheme.surfaceContainerLow,
-                contentColor = MaterialTheme.colorScheme.onSurface,
+                contentColor = contentColor ?: MaterialTheme.colorScheme.onSurface,
             )
             val elevation = CardDefaults.cardElevation(defaultElevation = AppElevation.none)
             if (onClick != null) {
@@ -70,7 +75,7 @@ fun AppCard(
         AppCardVariant.Elevated -> {
             val colors = CardDefaults.elevatedCardColors(
                 containerColor = containerColor ?: MaterialTheme.colorScheme.surfaceContainerLow,
-                contentColor = MaterialTheme.colorScheme.onSurface,
+                contentColor = contentColor ?: MaterialTheme.colorScheme.onSurface,
             )
             val elevation = CardDefaults.elevatedCardElevation(defaultElevation = AppElevation.low)
             if (onClick != null) {
@@ -83,7 +88,7 @@ fun AppCard(
         AppCardVariant.Outlined -> {
             val colors = CardDefaults.outlinedCardColors(
                 containerColor = containerColor ?: MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.onSurface,
+                contentColor = contentColor ?: MaterialTheme.colorScheme.onSurface,
             )
             val border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             val elevation = CardDefaults.outlinedCardElevation(defaultElevation = AppElevation.none)

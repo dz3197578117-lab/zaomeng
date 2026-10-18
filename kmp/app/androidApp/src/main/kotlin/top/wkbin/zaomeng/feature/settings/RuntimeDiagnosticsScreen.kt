@@ -1,5 +1,6 @@
 package top.wkbin.zaomeng.feature.settings
 
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import top.wkbin.zaomeng.ui.components.AppCard
 import top.wkbin.zaomeng.data.DiagnosticsExportTier
 import top.wkbin.zaomeng.data.RuntimeCaptureStatus
 import top.wkbin.zaomeng.data.api.DiagnosticsOverviewDto
@@ -589,10 +591,10 @@ private fun OverlaySwitchCard(
     capture: RuntimeCaptureStatus,
     onToggle: (Boolean) -> Unit,
 ) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentPadding = PaddingValues(0.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -663,10 +665,10 @@ private fun ProblemCard(
     // 先在表达式里算好再插值：Kotlin 的字符串模板里不能再嵌一个带引号的字符串字面量。
     val firstText = problem.firstAt.ifBlank { problem.occurredAt }.ifBlank { "时间未知" }
     val lastText = problem.lastAt.ifBlank { problem.occurredAt }.ifBlank { "时间未知" }
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentPadding = PaddingValues(0.dp),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -1078,10 +1080,10 @@ private fun BlindSpotsCard(
 
 @Composable
 private fun SectionCard(title: String, content: @Composable () -> Unit) {
-    Card(
+    AppCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentPadding = PaddingValues(0.dp),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),

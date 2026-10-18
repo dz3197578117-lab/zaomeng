@@ -16,6 +16,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppCardVariant
+import top.wkbin.zaomeng.ui.theme.AppSpacing
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -34,7 +37,16 @@ fun CrossoverScreen(
         }
     }
     Scaffold(topBar = { TopAppBar(
-        title = { Text("跨书卷共演 Beta") },
+        title = {
+            Column {
+                Text("跨书卷共演", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    text = "Beta · 独立人物快照，不写回原书卷",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
         navigationIcon = {
             if (showBackButton) {
                 IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
@@ -43,12 +55,15 @@ fun CrossoverScreen(
     ) }) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            contentPadding = PaddingValues(AppSpacing.lg),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.md),
         ) {
             item {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                AppCard(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                    contentPadding = PaddingValues(AppSpacing.lg),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("测试功能 · 结果可能不稳定", style = MaterialTheme.typography.titleMedium)
                         Text("人物表现、世界设定和关系演化仍可能偏离预期。创建时只复制人物资料快照，共演产生的聊天、记忆、关系和修正不会写回任何原书卷。", style = MaterialTheme.typography.bodySmall)
                     }
@@ -59,8 +74,11 @@ fun CrossoverScreen(
             item { Text("选择人物 ${state.selected.size}/$CROSSOVER_MAX_PARTICIPANTS", style = MaterialTheme.typography.titleMedium) }
             if (state.loading) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
             items(state.runs, key = { it.runId }) { run ->
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                AppCard(
+                    variant = AppCardVariant.Elevated,
+                    contentPadding = PaddingValues(AppSpacing.lg),
+                ) {
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
                         Text(run.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                         BoxWithConstraints(Modifier.fillMaxWidth()) {
                             val itemWidth = (maxWidth - 16.dp) / 3

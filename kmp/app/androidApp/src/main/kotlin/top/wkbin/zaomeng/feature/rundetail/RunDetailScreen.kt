@@ -1,5 +1,7 @@
 package top.wkbin.zaomeng.feature.rundetail
 
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppCardVariant
 import top.wkbin.zaomeng.domain.run.RunReviewOverview
 
 import androidx.compose.foundation.clickable
@@ -44,8 +46,6 @@ import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.StopCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -547,7 +547,11 @@ private fun RunDetailContent(
 
         if (run.artifactIndex.characters.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                AppCard(
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        contentPadding = PaddingValues(0.dp),
+    ) {
                     Text(
                         text = if (run.status == "running") "正在等待第一位人物完成…" else "还没有人物档案。",
                         modifier = Modifier.padding(20.dp),
@@ -576,7 +580,11 @@ private fun PersonaQualityOverviewCard(
     overview: PersonaQualityOverviewDto?,
     onOpenPersona: (String) -> Unit,
 ) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    AppCard(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        contentPadding = PaddingValues(0.dp),
+    ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -729,10 +737,11 @@ private fun NextActionCard(
     modifier: Modifier = Modifier,
 ) {
     val action = nextActionFor(run)
-    Card(
+    AppCard(
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-        shape = RoundedCornerShape(20.dp),
+        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        contentPadding = PaddingValues(0.dp),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(18.dp),
@@ -772,9 +781,9 @@ private fun BookReviewCard(
     onOpenWorldTimeline: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Card(
+    AppCard(
         modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        contentPadding = PaddingValues(0.dp),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(18.dp),
@@ -845,7 +854,11 @@ private fun ReviewActionRow(text: String, label: String, onClick: () -> Unit) {
 
 @Composable
 private fun CrossoverBetaCard(beta: BetaFeatureDto) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
+    AppCard(
+        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+        contentPadding = PaddingValues(0.dp),
+    ) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("跨书卷共演 · Beta", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("这是独立人物快照空间。这里产生的关系、记忆、修正和会话不会写回来源书卷；测试功能的角色表现可能不稳定。", style = MaterialTheme.typography.bodySmall)
@@ -862,7 +875,11 @@ private fun CrossoverBetaCard(beta: BetaFeatureDto) {
 @Composable
 private fun OnlinePackageSourceCard(source: OnlineLibrarySourceDto) {
     val openExternalUrl = rememberOpenExternalUrl()
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+    AppCard(
+        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        contentPadding = PaddingValues(0.dp),
+    ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -896,7 +913,11 @@ private fun SourceHistoryCard(
     val visibleSources = if (expanded) sortedSources else sortedSources.take(3)
     val currentPath = run.novelPath.trim()
 
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    AppCard(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        contentPadding = PaddingValues(0.dp),
+    ) {
         Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text("正文来源", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -1101,7 +1122,11 @@ private fun ActionCard(
     onOpenRedistill: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    AppCard(
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        contentPadding = PaddingValues(0.dp),
+    ) {
         Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("书卷操作", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             val showAdvancedManagement = rememberSaveable(run.runId) { mutableStateOf(false) }
@@ -1340,10 +1365,11 @@ private fun PersonaCard(
     val summary = listOf(preview.coreIdentity, preview.storyRole, preview.soulGoal)
         .firstOrNull(String::isNotBlank)
         .orEmpty()
-    Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    AppCard(
+        modifier = Modifier.fillMaxWidth(),
+        variant = AppCardVariant.Elevated,
+        onClick = onClick,
+        contentPadding = PaddingValues(0.dp),
     ) {
         Row(modifier = Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onAvatarClick, modifier = Modifier.size(44.dp)) {
@@ -1608,11 +1634,18 @@ private fun NoticeCard(
     actionLabel: String = "",
     onAction: () -> Unit = {},
 ) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (error) MaterialTheme.colorScheme.errorContainer
-            else MaterialTheme.colorScheme.secondaryContainer,
-        ),
+    AppCard(
+        containerColor = if (error) {
+            MaterialTheme.colorScheme.errorContainer
+        } else {
+            MaterialTheme.colorScheme.secondaryContainer
+        },
+        contentColor = if (error) {
+            MaterialTheme.colorScheme.onErrorContainer
+        } else {
+            MaterialTheme.colorScheme.onSecondaryContainer
+        },
+        contentPadding = PaddingValues(0.dp),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(14.dp),
@@ -1650,7 +1683,11 @@ private fun DetailLoading(modifier: Modifier = Modifier) {
 @Composable
 private fun DetailFailure(message: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
     Box(modifier = modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+        AppCard(
+        containerColor = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        contentPadding = PaddingValues(0.dp),
+    ) {
             Column(modifier = Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("书卷没有打开", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text(message, color = MaterialTheme.colorScheme.onErrorContainer)

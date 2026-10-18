@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
+import top.wkbin.zaomeng.ui.components.AppCard
 import top.wkbin.zaomeng.data.preferences.AppPreferences
 import top.wkbin.zaomeng.data.preferences.AppPreferencesRepository
 
@@ -59,10 +60,10 @@ fun StartupRecoverySettingsScreen(
             contentPadding = PaddingValues(vertical = 16.dp),
         ) {
             item {
-                Card(
+                AppCard(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    contentPadding = PaddingValues(0.dp),
                 ) {
                     Row(
                         modifier = Modifier
