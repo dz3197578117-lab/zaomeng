@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import top.wkbin.zaomeng.data.api.ChapterDto
 import top.wkbin.zaomeng.data.api.ChapterReviewDto
+import top.wkbin.zaomeng.data.api.DraftVersionDto
 import top.wkbin.zaomeng.data.api.RescueOptionDto
 import top.wkbin.zaomeng.data.api.StoryBibleDto
 import top.wkbin.zaomeng.data.api.WritingGenres
@@ -61,7 +62,7 @@ import top.wkbin.zaomeng.ui.components.AppCard
 import top.wkbin.zaomeng.ui.components.AppCardVariant
 import top.wkbin.zaomeng.ui.theme.AppSpacing
 
-private val writingTabs = listOf("设定", "类型", "救援", "检查")
+private val writingTabs = listOf("设定", "类型", "扩写", "救援", "检查")
 private val rescueKinds = listOf(
     "plot" to "情节走向",
     "dialogue" to "对话",
@@ -88,6 +89,19 @@ internal fun WritingToolSheet(
     onRescueProblem: (String) -> Unit,
     onRescueKind: (String) -> Unit,
     onRescue: () -> Unit,
+    onGenerateCore: (String) -> Unit,
+    onSaveCore: () -> Unit,
+    onSelectExpandChapter: (String) -> Unit,
+    onGenerateSceneCards: (String) -> Unit,
+    onSaveSceneCards: (String) -> Unit,
+    onDraftVersions: (String) -> Unit,
+    onApplyVersion: (String, DraftVersionDto) -> Unit,
+    onRewriteInput: (String) -> Unit,
+    onRewriteInstruction: (String) -> Unit,
+    onRewrite: () -> Unit,
+    onCheckConsistency: () -> Unit,
+    onRunFinalReview: () -> Unit,
+    onMarkApproved: (Boolean) -> Unit,
     onSelectReviewChapter: (String) -> Unit,
     onReviewChapter: (String) -> Unit,
     onPolish: (String) -> Unit,
@@ -157,14 +171,34 @@ internal fun WritingToolSheet(
             }
             when (tab) {
                 0 -> item(key = "writing-tools-bible") {
-                    StoryBibleSection(state, onGenerateBible, onSaveBible)
+                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+                        StoryCoreSection(state, onGenerateCore, onSaveCore)
+                        HorizontalDivider()
+                        StoryBibleSection(state, onGenerateBible, onSaveBible)
+                        HorizontalDivider()
+                        BibleExtraSection(state.storyBible)
+                    }
                 }
 
                 1 -> item(key = "writing-tools-genre") {
                     GenreSection(state, onSaveProfile)
                 }
 
-                2 -> item(key = "writing-tools-rescue") {
+                2 -> item(key = "writing-tools-expand") {
+                    ExpandSection(
+                        state = state,
+                        onSelectChapter = onSelectExpandChapter,
+                        onGenerateSceneCards = onGenerateSceneCards,
+                        onSaveSceneCards = onSaveSceneCards,
+                        onDraftVersions = onDraftVersions,
+                        onApplyVersion = onApplyVersion,
+                        onRewriteInput = onRewriteInput,
+                        onRewriteInstruction = onRewriteInstruction,
+                        onRewrite = onRewrite,
+                    )
+                }
+
+                3 -> item(key = "writing-tools-rescue") {
                     RescueSection(
                         state = state,
                         onChapter = onRescueChapter,
@@ -175,12 +209,214 @@ internal fun WritingToolSheet(
                 }
 
                 else -> item(key = "writing-tools-review") {
-                    ReviewSection(
-                        state = state,
-                        onSelectChapter = onSelectReviewChapter,
-                        onReviewChapter = onReviewChapter,
-                        onPolish = onPolish,
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+                        ReviewSection(
+                            state = state,
+                            onSelectChapter = onSelectReviewChapter,
+                            onReviewChapter = onReviewChapter,
+                            onPolish = onPolish,
+                        )
+                        HorizontalDivider()
+                        BookReviewSection(
+                            state = state,
+                            onCheckConsistency = onCheckConsistency,
+                            onRunFinalReview = onRunFinalReview,
+                            onMarkApproved = onMarkApproved,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StoryCoreSection(
+    state: ChaptersUiState,
+    onGenerate: (String) -> Unit,
+    onSave: () -> Unit,
+) {
+    var premise by rememberSaveable { mutableStateOf("") }
+    val core = state.storyCore
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+        Text("故事核心（人定）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(
+            text = "主题、人物欲望、关键转折、结局。AI 只提案，确认后才保存；保存后大纲与正文都会按它来。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = premise,
+            onValueChange = { premise = it.take(800) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("一句话设定（可留空，用书名与设定集）") },
+            minLines = 2,
+            maxLines = 4,
+            enabled = !state.generatingCore,
+        )
+        Button(
+            onClick = { onGenerate(premise) },
+            enabled = !state.generatingCore,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (state.generatingCore) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("正在想主题…")
+            } else {
+                Text(if (core.isEmpty) "生成核心提案" else "重新生成核心")
+            }
+        }
+        if (!core.isEmpty) {
+            if (!state.storyCoreSaved) {
+                Text(
+                    "这是提案，还没有保存。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            if (core.theme.isNotBlank()) {
+                Text("主题", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                AppCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    variant = AppCardVariant.Outlined,
+                    contentPadding = PaddingValues(AppSpacing.md),
+                ) {
+                    SelectionContainer { Text(core.theme, style = MaterialTheme.typography.bodySmall) }
+                }
+            }
+            if (core.desires.isNotEmpty()) {
+                Text("人物欲望", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                core.desires.forEach { desire ->
+                    AppCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        variant = AppCardVariant.Outlined,
+                        contentPadding = PaddingValues(AppSpacing.md),
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(desire.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            if (desire.want.isNotBlank()) {
+                                Text("想要：${desire.want}", style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (desire.obstacle.isNotBlank()) {
+                                Text(
+                                    "真正挡住他：${desire.obstacle}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            if (core.turningPoints.isNotEmpty()) {
+                Text("关键转折", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                core.turningPoints.forEachIndexed { index, point ->
+                    AppCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        variant = AppCardVariant.Outlined,
+                        contentPadding = PaddingValues(AppSpacing.md),
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                "${index + 1}. ${point.title}" + if (point.chapter.isNotBlank()) " · ${point.chapter}" else "",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            if (point.description.isNotBlank()) {
+                                Text(point.description, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
+            if (core.ending.isNotBlank()) {
+                Text("结局", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                AppCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    variant = AppCardVariant.Outlined,
+                    contentPadding = PaddingValues(AppSpacing.md),
+                ) {
+                    SelectionContainer { Text(core.ending, style = MaterialTheme.typography.bodySmall) }
+                }
+            }
+            Button(
+                onClick = onSave,
+                enabled = !state.storyCoreSaved && !state.savingCore,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (state.savingCore) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(if (state.storyCoreSaved) "核心已保存" else "保存核心")
+            }
+        }
+    }
+}
+
+@Composable
+private fun BibleExtraSection(bible: StoryBibleDto) {
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+        Text("时间线", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        if (bible.timeline.isEmpty()) {
+            Text(
+                "生成设定集时会一并产出时间线，用来查前后矛盾。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            bible.timeline.forEach { event ->
+                AppCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    variant = AppCardVariant.Outlined,
+                    contentPadding = PaddingValues(AppSpacing.md),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        val whenWhere = listOf(event.time, event.place)
+                            .filter(String::isNotBlank).joinToString(" · ")
+                        if (whenWhere.isNotBlank()) {
+                            Text(whenWhere, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Text(event.event, style = MaterialTheme.typography.bodySmall)
+                        if (event.chapter.isNotBlank()) {
+                            Text(
+                                event.chapter,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        Text("伏笔表", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        if (bible.foreshadowings.isEmpty()) {
+            Text(
+                "伏笔会记录埋在哪、打算在哪回收，全书检查时会提示未回收的条目。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            bible.foreshadowings.forEach { item ->
+                AppCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    variant = AppCardVariant.Outlined,
+                    contentPadding = PaddingValues(AppSpacing.md),
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(item.content, style = MaterialTheme.typography.bodySmall)
+                        val route = listOf(
+                            item.plantedIn.takeIf(String::isNotBlank)?.let { "埋于 $it" },
+                            item.payoffIn.takeIf(String::isNotBlank)?.let { "回收于 $it" },
+                            when (item.status) {
+                                "paid" -> "已回收"
+                                "dropped" -> "已放弃"
+                                else -> "未回收"
+                            },
+                        ).filterNotNull().joinToString(" · ")
+                        Text(route, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }
@@ -648,7 +884,7 @@ private fun ReviewReport(review: ChapterReviewDto) {
 }
 
 @Composable
-private fun ChapterPicker(chapters: List<ChapterDto>, selectedId: String, onSelect: (String) -> Unit) {
+internal fun ChapterPicker(chapters: List<ChapterDto>, selectedId: String, onSelect: (String) -> Unit) {
     val effective = selectedId.ifBlank {
         chapters.firstOrNull { it.content.isNotBlank() }?.chapterId.orEmpty()
     }

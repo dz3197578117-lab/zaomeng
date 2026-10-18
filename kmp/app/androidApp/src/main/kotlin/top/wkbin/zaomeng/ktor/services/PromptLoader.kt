@@ -213,6 +213,32 @@ class PromptLoader(private val source: PromptSource) {
         ).filter { it.isNotBlank() }.joinToString("\n\n")
     }
 
+    /** 人定核心：主题、人物欲望、关键转折、结局。 */
+    fun getStoryCorePrompt(): String = chapterPrompt("story_core")
+
+    /** 场景卡：把一章拆成几场戏。 */
+    fun getSceneCardsPrompt(): String = chapterPrompt("scene_cards")
+
+    /** 多版本初稿：同一章写出差异明显的两版。 */
+    fun getChapterVersionsPrompt(): String = chapterPrompt("chapter_versions")
+
+    /** 局部重写：只改一段，要求有性格与细节。 */
+    fun getRewriteSelectionPrompt(): String = chapterPrompt("rewrite_selection")
+
+    /** 全书一致性：时间线、人物、伏笔、设定。 */
+    fun getConsistencyCheckPrompt(): String = chapterPrompt("consistency_check")
+
+    /** 人工终审：逻辑、情感、敏感内容、原创性。 */
+    fun getFinalReviewPrompt(): String = chapterPrompt("final_review")
+
+    private fun chapterPrompt(name: String): String {
+        val config = loadPromptConfig("chapters", name)
+        return listOf(
+            config.getString("system_prompt"),
+            config.getString("output_rules"),
+        ).filter { it.isNotBlank() }.joinToString("\n\n")
+    }
+
     /**
      * Get scene card generation prompt.
      */

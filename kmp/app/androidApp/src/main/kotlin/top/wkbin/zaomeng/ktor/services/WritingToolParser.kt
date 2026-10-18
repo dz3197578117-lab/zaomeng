@@ -8,8 +8,14 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import top.wkbin.zaomeng.data.api.ChapterReviewDto
+import top.wkbin.zaomeng.data.api.ConsistencyReportDto
+import top.wkbin.zaomeng.data.api.DraftVersionDto
+import top.wkbin.zaomeng.data.api.FinalReviewDto
 import top.wkbin.zaomeng.data.api.RescueOptionDto
+import top.wkbin.zaomeng.data.api.RewriteOptionDto
+import top.wkbin.zaomeng.data.api.SceneCardDto
 import top.wkbin.zaomeng.data.api.StoryBibleDto
+import top.wkbin.zaomeng.data.api.StoryCoreDto
 
 /**
  * 创作工具的结构化输出解析。
@@ -45,6 +51,49 @@ internal object WritingToolParser {
     fun parseReview(raw: String): ChapterReviewDto {
         val element = extractJson(raw) ?: throw IllegalStateException("模型没有返回可解析的检查结果，请重试。")
         return json.decodeFromJsonElement(element)
+    }
+
+    fun parseStoryCore(raw: String): StoryCoreDto {
+        val element = extractJson(raw) ?: throw IllegalStateException("模型没有返回可解析的故事核心，请重试。")
+        return json.decodeFromJsonElement(element)
+    }
+
+    fun parseSceneCards(raw: String): List<SceneCardDto> {
+        val element = extractJson(raw) ?: throw IllegalStateException("模型没有返回可解析的场景卡，请重试。")
+        return decodeItems<SceneCardDto>(element, "items")
+            .filter { it.title.isNotBlank() || it.goal.isNotBlank() }
+    }
+
+    fun parseDraftVersions(raw: String): List<DraftVersionDto> {
+        val element = extractJson(raw) ?: throw IllegalStateException("模型没有返回可解析的初稿，请重试。")
+        return decodeItems<DraftVersionDto>(element, "items")
+            .filter { it.content.isNotBlank() }
+    }
+
+    fun parseRewriteOptions(raw: String): List<RewriteOptionDto> {
+        val element = extractJson(raw) ?: throw IllegalStateException("模型没有返回可解析的改写，请重试。")
+        return decodeItems<RewriteOptionDto>(element, "items")
+            .filter { it.content.isNotBlank() }
+    }
+
+    fun parseConsistency(raw: String): ConsistencyReportDto {
+        val element = extractJson(raw) ?: throw IllegalStateException("模型没有返回可解析的一致性报告，请重试。")
+        return json.decodeFromJsonElement(element)
+    }
+
+    fun parseFinalReview(raw: String): FinalReviewDto {
+        val element = extractJson(raw) ?: throw IllegalStateException("模型没有返回可解析的终审结果，请重试。")
+        return json.decodeFromJsonElement(element)
+    }
+
+    /** 兼容 `{items:[...]}` 与裸数组两种输出。 */
+    private inline fun <reified T> decodeItems(element: JsonElement, key: String): List<T> {
+        val array = when (element) {
+            is JsonArray -> element
+            is JsonObject -> element[key]?.jsonArray ?: JsonArray(emptyList())
+            else -> JsonArray(emptyList())
+        }
+        return runCatching { json.decodeFromJsonElement<List<T>>(array) }.getOrDefault(emptyList())
     }
 
     /** 取最先出现的 JSON 对象或数组，忽略代码块与前后说明。 */

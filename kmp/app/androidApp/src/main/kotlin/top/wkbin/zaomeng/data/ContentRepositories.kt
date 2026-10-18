@@ -9,7 +9,18 @@ import okio.FileSystem
 import okio.Path
 import top.wkbin.zaomeng.data.api.ArchiveDialogueChapterRequest
 import top.wkbin.zaomeng.data.api.AskBookResponseDto
+import top.wkbin.zaomeng.data.api.ApplyChapterContentRequest
 import top.wkbin.zaomeng.data.api.ChapterDto
+import top.wkbin.zaomeng.data.api.ConsistencyReportDto
+import top.wkbin.zaomeng.data.api.DraftVersionDto
+import top.wkbin.zaomeng.data.api.DraftVersionsRequest
+import top.wkbin.zaomeng.data.api.FinalReviewDto
+import top.wkbin.zaomeng.data.api.GenerateSceneCardsRequest
+import top.wkbin.zaomeng.data.api.GenerateStoryCoreRequest
+import top.wkbin.zaomeng.data.api.RewriteOptionDto
+import top.wkbin.zaomeng.data.api.RewriteSelectionRequest
+import top.wkbin.zaomeng.data.api.SceneCardDto
+import top.wkbin.zaomeng.data.api.StoryCoreDto
 import top.wkbin.zaomeng.data.api.DialogueSessionDto
 import top.wkbin.zaomeng.data.api.ExportedChapterManuscript
 import top.wkbin.zaomeng.data.local.CardsClient
@@ -114,6 +125,67 @@ class ChapterRepositoryImpl(
         instruction: String,
     ): ChapterDto = repositoryRequest {
         chapters.polishChapter(runId, chapterId, PolishChapterRequest(instruction))
+    }
+
+    override suspend fun readStoryCore(runId: String): StoryCoreDto = repositoryRequest {
+        chapters.readStoryCore(runId)
+    }
+
+    override suspend fun generateStoryCore(
+        runId: String,
+        request: GenerateStoryCoreRequest,
+    ): StoryCoreDto = repositoryRequest {
+        chapters.generateStoryCore(runId, request)
+    }
+
+    override suspend fun saveStoryCore(runId: String, core: StoryCoreDto): StoryCoreDto =
+        repositoryRequest {
+            chapters.saveStoryCore(runId, core)
+        }
+
+    override suspend fun generateSceneCards(
+        runId: String,
+        request: GenerateSceneCardsRequest,
+    ): List<SceneCardDto> = repositoryRequest {
+        chapters.generateSceneCards(runId, request).items
+    }
+
+    override suspend fun saveSceneCards(
+        runId: String,
+        chapterId: String,
+        cards: List<SceneCardDto>,
+    ): List<SceneCardDto> = repositoryRequest {
+        chapters.saveSceneCards(runId, chapterId, cards)
+    }
+
+    override suspend fun draftVersions(
+        runId: String,
+        request: DraftVersionsRequest,
+    ): List<DraftVersionDto> = repositoryRequest {
+        chapters.draftVersions(runId, request).items
+    }
+
+    override suspend fun applyChapterContent(
+        runId: String,
+        chapterId: String,
+        request: ApplyChapterContentRequest,
+    ): ChapterDto = repositoryRequest {
+        chapters.applyChapterContent(runId, chapterId, request)
+    }
+
+    override suspend fun rewriteSelection(
+        runId: String,
+        request: RewriteSelectionRequest,
+    ): List<RewriteOptionDto> = repositoryRequest {
+        chapters.rewriteSelection(runId, request).items
+    }
+
+    override suspend fun checkConsistency(runId: String): ConsistencyReportDto = repositoryRequest {
+        chapters.checkConsistency(runId)
+    }
+
+    override suspend fun finalReview(runId: String): FinalReviewDto = repositoryRequest {
+        chapters.finalReview(runId)
     }
 
     override suspend fun archiveSessionAsChapter(

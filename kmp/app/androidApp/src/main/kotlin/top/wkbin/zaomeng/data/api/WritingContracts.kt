@@ -3,17 +3,72 @@ package top.wkbin.zaomeng.data.api
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/** 设定集：世界观、人物小传、势力关系、冲突设计。 */
+/** 设定集：世界观、人物小传、势力关系、冲突设计、时间线与伏笔表。 */
 @Serializable
 data class StoryBibleDto(
     val world: String = "",
     val characters: List<StoryCharacterDto> = emptyList(),
     val factions: List<StoryFactionDto> = emptyList(),
     val conflicts: List<StoryConflictDto> = emptyList(),
+    val timeline: List<TimelineEventDto> = emptyList(),
+    val foreshadowings: List<ForeshadowDto> = emptyList(),
 ) {
     val isEmpty: Boolean
-        get() = world.isBlank() && characters.isEmpty() && factions.isEmpty() && conflicts.isEmpty()
+        get() = world.isBlank() && characters.isEmpty() && factions.isEmpty() &&
+            conflicts.isEmpty() && timeline.isEmpty() && foreshadowings.isEmpty()
 }
+
+/** 时间线：一条只记「何时、何地、谁做了什么、导致什么」的事件。 */
+@Serializable
+data class TimelineEventDto(
+    val time: String = "",
+    val place: String = "",
+    val event: String = "",
+    /** 对应章节标题；尚未写到的可以留空。 */
+    val chapter: String = "",
+)
+
+/** 伏笔表：埋在哪里、打算在哪回收、现在什么状态。 */
+@Serializable
+data class ForeshadowDto(
+    val content: String = "",
+    @SerialName("planted_in") val plantedIn: String = "",
+    @SerialName("payoff_in") val payoffIn: String = "",
+    /** open 未回收 / paid 已回收 / dropped 已放弃。 */
+    val status: String = "open",
+)
+
+/** 人定的故事核心：主题、人物欲望、关键转折、结局。 */
+@Serializable
+data class StoryCoreDto(
+    val theme: String = "",
+    val desires: List<StoryDesireDto> = emptyList(),
+    @SerialName("turning_points") val turningPoints: List<StoryTurningPointDto> = emptyList(),
+    val ending: String = "",
+) {
+    val isEmpty: Boolean
+        get() = theme.isBlank() && desires.isEmpty() && turningPoints.isEmpty() && ending.isBlank()
+}
+
+@Serializable
+data class StoryDesireDto(
+    val name: String = "",
+    /** 他以为自己想要的。 */
+    val want: String = "",
+    /** 真正挡住他的东西。 */
+    val obstacle: String = "",
+)
+
+@Serializable
+data class StoryTurningPointDto(
+    val title: String = "",
+    val description: String = "",
+    /** 大致发生在哪一章；可以是「第 3 章」或章节标题。 */
+    val chapter: String = "",
+)
+
+@Serializable
+data class GenerateStoryCoreRequest(val premise: String = "")
 
 @Serializable
 data class StoryCharacterDto(
@@ -195,4 +250,144 @@ internal fun StoryBibleDto.normalizedForStorage(): StoryBibleDto = StoryBibleDto
             escalation = it.escalation.trim().take(240),
         )
     }.filter { it.name.isNotBlank() }.take(8),
+    timeline = timeline.map {
+        TimelineEventDto(
+            time = it.time.trim().take(60),
+            place = it.place.trim().take(60),
+            event = it.event.trim().take(300),
+            chapter = it.chapter.trim().take(60),
+        )
+    }.filter { it.event.isNotBlank() }.take(60),
+    foreshadowings = foreshadowings.map {
+        ForeshadowDto(
+            content = it.content.trim().take(200),
+            plantedIn = it.plantedIn.trim().take(60),
+            payoffIn = it.payoffIn.trim().take(60),
+            status = it.status.trim().take(20).ifBlank { "open" },
+        )
+    }.filter { it.content.isNotBlank() }.take(40),
+)
+
+/** 故事核心的落盘清洗：去空、限量，避免模型一次塞进几十条转折。 */
+internal fun StoryCoreDto.normalizedForStorage(): StoryCoreDto = StoryCoreDto(
+    theme = theme.trim().take(600),
+    desires = desires.map {
+        StoryDesireDto(
+            name = it.name.trim().take(40),
+            want = it.want.trim().take(200),
+            obstacle = it.obstacle.trim().take(200),
+        )
+    }.filter { it.name.isNotBlank() }.take(12),
+    turningPoints = turningPoints.map {
+        StoryTurningPointDto(
+            title = it.title.trim().take(60),
+            description = it.description.trim().take(300),
+            chapter = it.chapter.trim().take(60),
+        )
+    }.filter { it.title.isNotBlank() }.take(12),
+    ending = ending.trim().take(800),
+)
+
+/** 场景卡：一场戏的最小骨架，用来把「这一章要发生什么」拆成可写的几步。 */
+@Serializable
+data class SceneCardDto(
+    val title: String = "",
+    val place: String = "",
+    val time: String = "",
+    val characters: List<String> = emptyList(),
+    /** 这场戏里谁想要什么。 */
+    val goal: String = "",
+    /** 谁/什么挡住了他。 */
+    val conflict: String = "",
+    /** 这场戏结束时局面发生的变化。 */
+    val turn: String = "",
+    /** 离场时的状态，供下一场接上。 */
+    val exit: String = "",
+)
+
+@Serializable
+data class SceneCardsResponse(val items: List<SceneCardDto> = emptyList())
+
+@Serializable
+data class GenerateSceneCardsRequest(
+    @SerialName("chapter_id") val chapterId: String,
+    val count: Int = 4,
+)
+
+@Serializable
+data class DraftVersionsRequest(
+    @SerialName("chapter_id") val chapterId: String,
+    val count: Int = 2,
+    /** 可指定取向，例如「克制」「更激烈」；为空则由模型给出差异明显的两种写法。 */
+    val directions: List<String> = emptyList(),
+    val instruction: String = "",
+)
+
+@Serializable
+data class DraftVersionDto(
+    /** A / B，便于用户指代。 */
+    val label: String = "",
+    /** 这一版与另一版差在哪。 */
+    val approach: String = "",
+    val content: String = "",
+)
+
+@Serializable
+data class DraftVersionsResponse(val items: List<DraftVersionDto> = emptyList())
+
+@Serializable
+data class ApplyChapterContentRequest(
+    val content: String,
+    @SerialName("context_summary") val contextSummary: String = "",
+)
+
+/** 局部重写：只改选中的一段，不动整章。 */
+@Serializable
+data class RewriteSelectionRequest(
+    val text: String,
+    val instruction: String = "",
+    val count: Int = 3,
+)
+
+@Serializable
+data class RewriteOptionDto(
+    val label: String = "",
+    val content: String = "",
+)
+
+@Serializable
+data class RewriteSelectionResponse(val items: List<RewriteOptionDto> = emptyList())
+
+/** 全书一致性：跨章节的矛盾、时间线冲突、未回收伏笔。 */
+@Serializable
+data class ConsistencyIssueDto(
+    /** 时间线 / 人物 / 伏笔 / 设定。 */
+    val kind: String = "",
+    val chapters: List<String> = emptyList(),
+    val detail: String = "",
+    val advice: String = "",
+)
+
+@Serializable
+data class ConsistencyReportDto(
+    val summary: String = "",
+    val issues: List<ConsistencyIssueDto> = emptyList(),
+)
+
+/** 人工终审：逻辑、情感、敏感内容、原创性四项，由人决定是否放行。 */
+@Serializable
+data class FinalReviewIssueDto(
+    val quote: String = "",
+    val detail: String = "",
+    val advice: String = "",
+)
+
+@Serializable
+data class FinalReviewDto(
+    val logic: List<FinalReviewIssueDto> = emptyList(),
+    val emotion: List<FinalReviewIssueDto> = emptyList(),
+    val sensitive: List<FinalReviewIssueDto> = emptyList(),
+    /** 只提示套路化与高度相似的情节，不做抄袭判定。 */
+    val originality: List<FinalReviewIssueDto> = emptyList(),
+    val verdict: String = "",
 )

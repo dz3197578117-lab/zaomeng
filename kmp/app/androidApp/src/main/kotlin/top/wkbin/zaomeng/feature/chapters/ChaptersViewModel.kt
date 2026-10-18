@@ -4,8 +4,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import top.wkbin.zaomeng.data.ChapterRepository
 import top.wkbin.zaomeng.data.SessionRepository
+import top.wkbin.zaomeng.data.api.ApplyChapterContentRequest
 import top.wkbin.zaomeng.data.api.ChapterDto
 import top.wkbin.zaomeng.data.api.ChapterReviewDto
+import top.wkbin.zaomeng.data.api.ConsistencyReportDto
+import top.wkbin.zaomeng.data.api.DraftVersionDto
+import top.wkbin.zaomeng.data.api.DraftVersionsRequest
+import top.wkbin.zaomeng.data.api.FinalReviewDto
+import top.wkbin.zaomeng.data.api.GenerateSceneCardsRequest
+import top.wkbin.zaomeng.data.api.GenerateStoryCoreRequest
+import top.wkbin.zaomeng.data.api.RewriteOptionDto
+import top.wkbin.zaomeng.data.api.RewriteSelectionRequest
+import top.wkbin.zaomeng.data.api.SceneCardDto
+import top.wkbin.zaomeng.data.api.StoryCoreDto
 import top.wkbin.zaomeng.data.api.DialogueSessionDto
 import top.wkbin.zaomeng.data.api.ExportedChapterManuscript
 import top.wkbin.zaomeng.data.api.GenerateNovelOutlineRequest
@@ -69,6 +80,32 @@ data class ChaptersUiState(
     val savingBible: Boolean = false,
     val writingProfile: WritingProfileDto = WritingProfileDto(),
     val savingProfile: Boolean = false,
+    // ===== 人定核心 =====
+    val storyCore: StoryCoreDto = StoryCoreDto(),
+    val storyCoreSaved: Boolean = true,
+    val generatingCore: Boolean = false,
+    val savingCore: Boolean = false,
+    // ===== 场景卡与多版本 =====
+    /** 扩写面板当前选中的章节。 */
+    val expandChapterId: String = "",
+    /** 刚生成、还没保存的场景卡；为空时界面回退到章节里已保存的卡。 */
+    val sceneCards: List<SceneCardDto> = emptyList(),
+    val generatingSceneCards: Boolean = false,
+    val savingSceneCards: Boolean = false,
+    val draftVersions: List<DraftVersionDto> = emptyList(),
+    val draftingVersions: Boolean = false,
+    val applyingVersion: String = "",
+    // ===== 局部重写 =====
+    val rewriteInput: String = "",
+    val rewriteInstruction: String = "",
+    val rewriteOptions: List<RewriteOptionDto> = emptyList(),
+    val rewriting: Boolean = false,
+    // ===== 全书检查与终审 =====
+    val consistency: ConsistencyReportDto? = null,
+    val checkingConsistency: Boolean = false,
+    val finalReview: FinalReviewDto? = null,
+    val reviewingAll: Boolean = false,
+    val finalApproved: Boolean = false,
     val rescueChapterId: String = "",
     val rescueProblem: String = "",
     val rescueKind: String = "plot",
@@ -288,8 +325,15 @@ class ChaptersViewModel(
             try {
                 val bible = chapters.readStoryBible(runId)
                 val profile = chapters.readWritingProfile(runId)
+                val core = chapters.readStoryCore(runId)
                 mutableState.update {
-                    it.copy(storyBible = bible, storyBibleSaved = true, writingProfile = profile)
+                    it.copy(
+                        storyBible = bible,
+                        storyBibleSaved = true,
+                        writingProfile = profile,
+                        storyCore = core,
+                        storyCoreSaved = true,
+                    )
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -375,6 +419,266 @@ class ChaptersViewModel(
                 }
             }
         }
+    }
+
+    // ===== 人定核心 =====
+
+    fun generateStoryCore(premise: String = "") {
+        if (state.value.generatingCore) return
+        viewModelScope.launch {
+            mutableState.update { it.copy(generatingCore = true, error = "", message = "") }
+            try {
+                val core = chapters.generateStoryCore(runId, GenerateStoryCoreRequest(premise.trim()))
+                mutableState.update {
+                    it.copy(
+                        generatingCore = false,
+                        storyCore = core,
+                        storyCoreSaved = false,
+                        message = "核心已生成，确认后保存；之后的大纲与正文都会按它来。",
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(generatingCore = false, error = error.message ?: "生成故事核心失败。")
+                }
+            }
+        }
+    }
+
+    fun saveStoryCore() {
+        val core = state.value.storyCore
+        if (core.isEmpty || state.value.savingCore) return
+        viewModelScope.launch {
+            mutableState.update { it.copy(savingCore = true, error = "", message = "") }
+            try {
+                val saved = chapters.saveStoryCore(runId, core)
+                mutableState.update {
+                    it.copy(
+                        savingCore = false,
+                        storyCore = saved,
+                        storyCoreSaved = true,
+                        message = "故事核心已保存。",
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(savingCore = false, error = error.message ?: "保存故事核心失败。")
+                }
+            }
+        }
+    }
+
+    // ===== 场景卡与多版本初稿 =====
+
+    fun selectExpandChapter(chapterId: String) {
+        mutableState.update {
+            it.copy(expandChapterId = chapterId, sceneCards = emptyList(), draftVersions = emptyList())
+        }
+    }
+
+    fun generateSceneCards(chapterId: String) {
+        if (state.value.generatingSceneCards) return
+        val target = chapterId.ifBlank {
+            state.value.chapters.firstOrNull { it.content.isNotBlank() }?.chapterId.orEmpty()
+        }
+        if (target.isBlank()) {
+            mutableState.update { it.copy(error = "先选一章再拆场景。") }
+            return
+        }
+        viewModelScope.launch {
+            mutableState.update {
+                it.copy(generatingSceneCards = true, sceneCards = emptyList(), error = "", message = "")
+            }
+            try {
+                val cards = chapters.generateSceneCards(runId, GenerateSceneCardsRequest(target, 4))
+                mutableState.update {
+                    it.copy(
+                        generatingSceneCards = false,
+                        expandChapterId = target,
+                        sceneCards = cards,
+                        message = "拆出 ${cards.size} 张场景卡，确认后保存。",
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(generatingSceneCards = false, error = error.message ?: "生成场景卡失败。")
+                }
+            }
+        }
+    }
+
+    fun saveSceneCards(chapterId: String) {
+        val cards = state.value.sceneCards
+        if (cards.isEmpty() || state.value.savingSceneCards) return
+        viewModelScope.launch {
+            mutableState.update { it.copy(savingSceneCards = true, error = "", message = "") }
+            try {
+                chapters.saveSceneCards(runId, chapterId, cards)
+                val refreshed = chapters.listChapters(runId)
+                mutableState.update {
+                    it.copy(
+                        savingSceneCards = false,
+                        sceneCards = emptyList(),
+                        chapters = refreshed,
+                        message = "场景卡已保存，可以按它写初稿了。",
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(savingSceneCards = false, error = error.message ?: "保存场景卡失败。")
+                }
+            }
+        }
+    }
+
+    fun draftVersions(chapterId: String) {
+        if (state.value.draftingVersions) return
+        if (chapterId.isBlank()) return
+        viewModelScope.launch {
+            mutableState.update {
+                it.copy(draftingVersions = true, draftVersions = emptyList(), error = "", message = "")
+            }
+            try {
+                val versions = chapters.draftVersions(runId, DraftVersionsRequest(chapterId, count = 2))
+                mutableState.update {
+                    it.copy(
+                        draftingVersions = false,
+                        draftVersions = versions,
+                        message = "写了 ${versions.size} 版初稿，挑一版采用，或继续改。",
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(draftingVersions = false, error = error.message ?: "生成初稿失败。")
+                }
+            }
+        }
+    }
+
+    fun applyVersion(chapterId: String, version: DraftVersionDto) {
+        if (chapterId.isBlank() || state.value.applyingVersion.isNotBlank()) return
+        viewModelScope.launch {
+            mutableState.update {
+                it.copy(applyingVersion = version.label, error = "", message = "")
+            }
+            try {
+                val saved = chapters.applyChapterContent(
+                    runId,
+                    chapterId,
+                    ApplyChapterContentRequest(version.content),
+                )
+                mutableState.update { current ->
+                    current.copy(
+                        applyingVersion = "",
+                        draftVersions = emptyList(),
+                        chapters = current.chapters.map { if (it.chapterId == saved.chapterId) saved else it },
+                        message = "已采用版本 ${version.label}，正文已覆盖。",
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(applyingVersion = "", error = error.message ?: "采用这一版失败。")
+                }
+            }
+        }
+    }
+
+    // ===== 局部重写 =====
+
+    fun updateRewriteInput(value: String) {
+        mutableState.update { it.copy(rewriteInput = value, rewriteOptions = emptyList()) }
+    }
+
+    fun updateRewriteInstruction(value: String) {
+        mutableState.update { it.copy(rewriteInstruction = value.take(300), rewriteOptions = emptyList()) }
+    }
+
+    fun rewriteSelection() {
+        val current = state.value
+        if (current.rewriting) return
+        val text = current.rewriteInput.trim()
+        if (text.length < 10) {
+            mutableState.update { it.copy(error = "先贴一段要改的正文（至少 10 个字）。") }
+            return
+        }
+        viewModelScope.launch {
+            mutableState.update { it.copy(rewriting = true, rewriteOptions = emptyList(), error = "", message = "") }
+            try {
+                val options = chapters.rewriteSelection(
+                    runId,
+                    RewriteSelectionRequest(
+                        text = text,
+                        instruction = current.rewriteInstruction.trim(),
+                        count = 3,
+                    ),
+                )
+                mutableState.update {
+                    it.copy(rewriting = false, rewriteOptions = options, message = "给了 ${options.size} 个改写版本。")
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(rewriting = false, error = error.message ?: "改写失败。")
+                }
+            }
+        }
+    }
+
+    // ===== 全书一致性与终审 =====
+
+    fun checkConsistency() {
+        if (state.value.checkingConsistency) return
+        viewModelScope.launch {
+            mutableState.update {
+                it.copy(checkingConsistency = true, consistency = null, error = "", message = "")
+            }
+            try {
+                val report = chapters.checkConsistency(runId)
+                mutableState.update { it.copy(checkingConsistency = false, consistency = report) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(checkingConsistency = false, error = error.message ?: "一致性检查失败。")
+                }
+            }
+        }
+    }
+
+    fun runFinalReview() {
+        if (state.value.reviewingAll) return
+        viewModelScope.launch {
+            mutableState.update {
+                it.copy(reviewingAll = true, finalReview = null, finalApproved = false, error = "", message = "")
+            }
+            try {
+                val report = chapters.finalReview(runId)
+                mutableState.update { it.copy(reviewingAll = false, finalReview = report) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(reviewingAll = false, error = error.message ?: "终审失败。")
+                }
+            }
+        }
+    }
+
+    fun markFinalApproved(value: Boolean) {
+        mutableState.update { it.copy(finalApproved = value) }
     }
 
     fun updateRescueChapter(chapterId: String) {

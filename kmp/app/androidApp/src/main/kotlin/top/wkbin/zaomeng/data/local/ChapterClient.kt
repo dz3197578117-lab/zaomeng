@@ -12,7 +12,21 @@ import top.wkbin.zaomeng.data.api.DraftChapterRequest
 import top.wkbin.zaomeng.data.api.GenerateNovelOutlineRequest
 import top.wkbin.zaomeng.data.api.NovelOutlineResponse
 import top.wkbin.zaomeng.data.api.AskBookResponseDto
+import top.wkbin.zaomeng.data.api.ApplyChapterContentRequest
 import top.wkbin.zaomeng.data.api.ChapterDto
+import top.wkbin.zaomeng.data.api.ConsistencyReportDto
+import top.wkbin.zaomeng.data.api.DraftVersionDto
+import top.wkbin.zaomeng.data.api.DraftVersionsRequest
+import top.wkbin.zaomeng.data.api.DraftVersionsResponse
+import top.wkbin.zaomeng.data.api.FinalReviewDto
+import top.wkbin.zaomeng.data.api.GenerateSceneCardsRequest
+import top.wkbin.zaomeng.data.api.GenerateStoryCoreRequest
+import top.wkbin.zaomeng.data.api.RewriteOptionDto
+import top.wkbin.zaomeng.data.api.RewriteSelectionRequest
+import top.wkbin.zaomeng.data.api.RewriteSelectionResponse
+import top.wkbin.zaomeng.data.api.SceneCardDto
+import top.wkbin.zaomeng.data.api.SceneCardsResponse
+import top.wkbin.zaomeng.data.api.StoryCoreDto
 import top.wkbin.zaomeng.data.api.ChapterReviewDto
 import top.wkbin.zaomeng.data.api.ChaptersResponse
 import top.wkbin.zaomeng.data.api.DialogueSessionDto
@@ -139,6 +153,51 @@ class ChapterClient(
     ): ChapterDto = decodeChapter(
         chapterManagement.polishChapter(runId, chapterId, request.instruction),
     )
+
+    // ===== 人定核心 / 扩写 / 重写 / 全书检查 =====
+
+    suspend fun readStoryCore(runId: String): StoryCoreDto =
+        chapterManagement.readStoryCore(runId)
+
+    suspend fun generateStoryCore(runId: String, request: GenerateStoryCoreRequest): StoryCoreDto =
+        chapterManagement.generateStoryCore(runId, request)
+
+    suspend fun saveStoryCore(runId: String, core: StoryCoreDto): StoryCoreDto =
+        chapterManagement.saveStoryCore(runId, core)
+
+    suspend fun generateSceneCards(
+        runId: String,
+        request: GenerateSceneCardsRequest,
+    ): SceneCardsResponse = SceneCardsResponse(chapterManagement.generateSceneCards(runId, request))
+
+    suspend fun saveSceneCards(
+        runId: String,
+        chapterId: String,
+        cards: List<SceneCardDto>,
+    ): List<SceneCardDto> = chapterManagement.saveSceneCards(runId, chapterId, cards)
+
+    suspend fun draftVersions(
+        runId: String,
+        request: DraftVersionsRequest,
+    ): DraftVersionsResponse = DraftVersionsResponse(chapterManagement.draftVersions(runId, request))
+
+    suspend fun applyChapterContent(
+        runId: String,
+        chapterId: String,
+        request: ApplyChapterContentRequest,
+    ): ChapterDto = decodeChapter(chapterManagement.applyChapterContent(runId, chapterId, request))
+
+    suspend fun rewriteSelection(
+        runId: String,
+        request: RewriteSelectionRequest,
+    ): RewriteSelectionResponse =
+        RewriteSelectionResponse(chapterManagement.rewriteSelection(runId, request))
+
+    suspend fun checkConsistency(runId: String): ConsistencyReportDto =
+        chapterManagement.checkConsistency(runId)
+
+    suspend fun finalReview(runId: String): FinalReviewDto =
+        chapterManagement.finalReview(runId)
 
     suspend fun delete(runId: String, chapterId: String): JsonObject =
         chapterManagement.delete(runId, chapterId)

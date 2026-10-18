@@ -3,7 +3,18 @@ package top.wkbin.zaomeng.data
 import kotlinx.serialization.json.JsonObject
 import okio.Path
 import top.wkbin.zaomeng.data.api.AskBookResponseDto
+import top.wkbin.zaomeng.data.api.ApplyChapterContentRequest
 import top.wkbin.zaomeng.data.api.ChapterDto
+import top.wkbin.zaomeng.data.api.ConsistencyReportDto
+import top.wkbin.zaomeng.data.api.DraftVersionDto
+import top.wkbin.zaomeng.data.api.DraftVersionsRequest
+import top.wkbin.zaomeng.data.api.FinalReviewDto
+import top.wkbin.zaomeng.data.api.GenerateSceneCardsRequest
+import top.wkbin.zaomeng.data.api.GenerateStoryCoreRequest
+import top.wkbin.zaomeng.data.api.RewriteOptionDto
+import top.wkbin.zaomeng.data.api.RewriteSelectionRequest
+import top.wkbin.zaomeng.data.api.SceneCardDto
+import top.wkbin.zaomeng.data.api.StoryCoreDto
 import top.wkbin.zaomeng.data.api.ChapterReviewDto
 import top.wkbin.zaomeng.data.api.DialogueSessionDto
 import top.wkbin.zaomeng.data.api.ExportedChapterManuscript
@@ -47,6 +58,32 @@ interface ChapterRepository {
 
     /** 按检查建议改写并保存正文。 */
     suspend fun polishChapter(runId: String, chapterId: String, instruction: String = ""): ChapterDto
+
+    // ===== 人定核心 =====
+
+    suspend fun readStoryCore(runId: String): StoryCoreDto
+    suspend fun generateStoryCore(runId: String, request: GenerateStoryCoreRequest): StoryCoreDto
+    suspend fun saveStoryCore(runId: String, core: StoryCoreDto): StoryCoreDto
+
+    // ===== 场景卡与多版本初稿 =====
+
+    suspend fun generateSceneCards(runId: String, request: GenerateSceneCardsRequest): List<SceneCardDto>
+    suspend fun saveSceneCards(runId: String, chapterId: String, cards: List<SceneCardDto>): List<SceneCardDto>
+    suspend fun draftVersions(runId: String, request: DraftVersionsRequest): List<DraftVersionDto>
+    suspend fun applyChapterContent(
+        runId: String,
+        chapterId: String,
+        request: ApplyChapterContentRequest,
+    ): ChapterDto
+
+    // ===== 局部重写 =====
+
+    suspend fun rewriteSelection(runId: String, request: RewriteSelectionRequest): List<RewriteOptionDto>
+
+    // ===== 全书一致性与终审 =====
+
+    suspend fun checkConsistency(runId: String): ConsistencyReportDto
+    suspend fun finalReview(runId: String): FinalReviewDto
     suspend fun archiveSessionAsChapter(runId: String, sessionId: String, title: String = ""): ChapterDto
     suspend fun convertSessionAsNovel(runId: String, sessionId: String, title: String = ""): ChapterDto
     suspend fun deleteChapter(runId: String, chapterId: String): JsonObject

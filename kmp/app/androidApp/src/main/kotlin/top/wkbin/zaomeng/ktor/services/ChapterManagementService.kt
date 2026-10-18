@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
@@ -16,7 +17,18 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okio.Path
+import top.wkbin.zaomeng.data.api.ApplyChapterContentRequest
 import top.wkbin.zaomeng.data.api.ChapterReviewDto
+import top.wkbin.zaomeng.data.api.ConsistencyReportDto
+import top.wkbin.zaomeng.data.api.DraftVersionDto
+import top.wkbin.zaomeng.data.api.DraftVersionsRequest
+import top.wkbin.zaomeng.data.api.FinalReviewDto
+import top.wkbin.zaomeng.data.api.GenerateSceneCardsRequest
+import top.wkbin.zaomeng.data.api.GenerateStoryCoreRequest
+import top.wkbin.zaomeng.data.api.RewriteOptionDto
+import top.wkbin.zaomeng.data.api.RewriteSelectionRequest
+import top.wkbin.zaomeng.data.api.SceneCardDto
+import top.wkbin.zaomeng.data.api.StoryCoreDto
 import top.wkbin.zaomeng.data.api.GenerateStoryBibleRequest
 import top.wkbin.zaomeng.data.api.RescueOptionDto
 import top.wkbin.zaomeng.data.api.RescueRequest
@@ -49,6 +61,7 @@ class ChapterManagementService(
         private const val NOVEL_CHAPTER_MAX_CHARS = 3500
         private const val NOVEL_CONTEXT_PREVIOUS_CHARS = 1000
         private const val STORY_BIBLE_FILE = "story_bible.json"
+        private const val STORY_CORE_FILE = "story_core.json"
         private const val WRITING_PROFILE_FILE = "writing_profile.json"
         private const val NOVEL_REVIEW_MAX_CHARS = 12000
     }
@@ -608,6 +621,329 @@ class ChapterManagementService(
         )
     }
 
+    // ===== 人定核心 =====
+
+    fun readStoryCore(runId: String): StoryCoreDto {
+        if (!storage.runExists(runId)) throw NoSuchElementException("Run not found: $runId")
+        val raw = storage.readTextOrNull(storyCoreFile(runId)) ?: return StoryCoreDto()
+        return runCatching { json.decodeFromString<StoryCoreDto>(raw) }.getOrDefault(StoryCoreDto())
+    }
+
+    fun saveStoryCore(runId: String, core: StoryCoreDto): StoryCoreDto {
+        if (!storage.runExists(runId)) throw NoSuchElementException("Run not found: $runId")
+        val clean = core.normalizedForStorage()
+        require(!clean.isEmpty) { "故事核心还是空的，先生成或填写一些内容。" }
+        storage.writeBytesAtomically(storyCoreFile(runId), json.encodeToString(clean).encodeToByteArray())
+        return clean
+    }
+
+    /** 依据设定与已有章节提出故事核心，**不落盘**，等人确认。 */
+    suspend fun generateStoryCore(
+        runId: String,
+        request: GenerateStoryCoreRequest,
+    ): StoryCoreDto {
+        if (!storage.runExists(runId)) throw NoSuchElementException("Run not found: $runId")
+        val client = requireNotNull(llm) { "还没有配置模型，请先到设置里填写模型与密钥。" }
+        val loader = requireNotNull(prompts) { "提示词加载器未配置。" }
+        val manifest = storage.readRunManifest(runId)
+        val chapters = list(runId)
+        val bible = readStoryBible(runId)
+        val seed = request.premise.trim().ifBlank {
+            buildString {
+                append("书名：").append(bookTitleOf(runId, manifest)).append('\n')
+                if (!bible.world.isBlank()) append("世界观：").append(bible.world.take(600)).append('\n')
+                val goals = chapters.take(10).mapNotNull { item ->
+                    item["goal"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf(String::isNotBlank)
+                }
+                if (goals.isNotEmpty()) append("已有章节目标：\n").append(goals.joinToString("\n") { "· $it" })
+            }
+        }
+        require(seed.trim().length >= 4) { "先写一句故事设定，或先生成设定集。" }
+        val input = buildJsonObject {
+            put("premise", seed.trim().take(2000))
+            put("book_title", bookTitleOf(runId, manifest))
+            putNovelContext(runId, manifest, this)
+        }
+        val raw = client.chatCompletion(
+            messages = listOf(
+                LlmClient.ChatMessage("system", loader.getStoryCorePrompt()),
+                LlmClient.ChatMessage("user", input.toString()),
+            ),
+            temperature = 0.7,
+            maxTokens = 3072,
+        ).choices.firstOrNull()?.message?.content.orEmpty()
+        if (raw.isBlank()) throw IllegalStateException("模型没有返回故事核心，请稍后重试。")
+        return WritingToolParser.parseStoryCore(raw)
+    }
+
+    // ===== 场景卡与多版本初稿 =====
+
+    suspend fun generateSceneCards(runId: String, request: GenerateSceneCardsRequest): List<SceneCardDto> {
+        if (!storage.runExists(runId)) throw NoSuchElementException("Run not found: $runId")
+        val client = requireNotNull(llm) { "还没有配置模型，请先到设置里填写模型与密钥。" }
+        val loader = requireNotNull(prompts) { "提示词加载器未配置。" }
+        val manifest = storage.readRunManifest(runId)
+        val chapters = list(runId)
+        val chapter = chapters.firstOrNull {
+            it["chapter_id"]?.jsonPrimitive?.contentOrNull == request.chapterId
+        } ?: throw NoSuchElementException("Chapter not found: ${request.chapterId}")
+        val count = request.count.coerceIn(2, 5)
+        val input = buildJsonObject {
+            put("book_title", bookTitleOf(runId, manifest))
+            put("chapter_title", chapter["title"]?.jsonPrimitive?.contentOrNull.orEmpty())
+            put("chapter_goal", chapter["goal"]?.jsonPrimitive?.contentOrNull.orEmpty())
+            put("count", count)
+            val tail = chapter["content"]?.jsonPrimitive?.contentOrNull.orEmpty().trim().takeLast(2000)
+            if (tail.isNotBlank()) put("previous_text", tail)
+            put("outline", chapterOutline(chapters))
+            putNovelContext(runId, manifest, this)
+        }
+        val raw = client.chatCompletion(
+            messages = listOf(
+                LlmClient.ChatMessage("system", loader.getSceneCardsPrompt()),
+                LlmClient.ChatMessage("user", input.toString()),
+            ),
+            temperature = 0.75,
+            maxTokens = 3072,
+        ).choices.firstOrNull()?.message?.content.orEmpty()
+        if (raw.isBlank()) throw IllegalStateException("模型没有返回场景卡，请稍后重试。")
+        val cards = WritingToolParser.parseSceneCards(raw)
+        if (cards.isEmpty()) throw IllegalStateException("模型返回的场景卡无法解析，请重试。")
+        return cards.take(count)
+    }
+
+    fun saveSceneCards(runId: String, chapterId: String, cards: List<SceneCardDto>): List<SceneCardDto> {
+        val chapters = list(runId)
+        val index = chapters.indexOfFirst { it["chapter_id"]?.jsonPrimitive?.contentOrNull == chapterId }
+        if (index < 0) throw NoSuchElementException("Chapter not found: $chapterId")
+        val clean = cards.take(8).map {
+            it.copy(
+                title = it.title.trim().take(60),
+                place = it.place.trim().take(60),
+                time = it.time.trim().take(60),
+                characters = it.characters.map(String::trim).filter(String::isNotBlank).take(12),
+                goal = it.goal.trim().take(240),
+                conflict = it.conflict.trim().take(240),
+                turn = it.turn.trim().take(240),
+                exit = it.exit.trim().take(240),
+            )
+        }.filter { it.title.isNotBlank() || it.goal.isNotBlank() }
+        require(clean.isNotEmpty()) { "场景卡还是空的。" }
+        val updated = buildJsonObject {
+            chapters[index].forEach { (key, value) -> put(key, value) }
+            put("scene_cards", json.encodeToJsonElement(clean))
+            put("updated_at", nowIsoString())
+        }
+        writeAll(runId, chapters.toMutableList().apply { this[index] = updated })
+        return clean
+    }
+
+    /** 同一章写两个差异明显的版本，**不落盘**，等人挑一版再写入。 */
+    suspend fun draftVersions(runId: String, request: DraftVersionsRequest): List<DraftVersionDto> {
+        if (!storage.runExists(runId)) throw NoSuchElementException("Run not found: $runId")
+        val client = requireNotNull(llm) { "还没有配置模型，请先到设置里填写模型与密钥。" }
+        val loader = requireNotNull(prompts) { "提示词加载器未配置。" }
+        val manifest = storage.readRunManifest(runId)
+        val chapters = list(runId)
+        val index = chapters.indexOfFirst { it["chapter_id"]?.jsonPrimitive?.contentOrNull == request.chapterId }
+        if (index < 0) throw NoSuchElementException("Chapter not found: ${request.chapterId}")
+        val chapter = chapters[index]
+        val cards = chapter["scene_cards"]?.jsonArray?.mapNotNull { entry ->
+            runCatching { json.decodeFromJsonElement<SceneCardDto>(entry) }.getOrNull()
+        }.orEmpty()
+        require(cards.isNotEmpty()) { "这一章还没有场景卡，先生成或保存场景卡再写初稿。" }
+        val count = request.count.coerceIn(1, 3)
+        val input = buildJsonObject {
+            put("book_title", bookTitleOf(runId, manifest))
+            put("chapter_number", index + 1)
+            put("chapter_title", chapter["title"]?.jsonPrimitive?.contentOrNull.orEmpty())
+            put("chapter_goal", chapter["goal"]?.jsonPrimitive?.contentOrNull.orEmpty())
+            put("count", count)
+            put("scene_cards", json.encodeToJsonElement(cards))
+            if (request.directions.isNotEmpty()) {
+                put("directions", buildJsonArray { request.directions.take(3).forEach { add(JsonPrimitive(it)) } })
+            }
+            if (request.instruction.isNotBlank()) put("extra_instruction", request.instruction.trim().take(300))
+            put("outline", chapterOutline(chapters))
+            val previous = chapters.take(index).takeLast(2).joinToString("\n\n") { item ->
+                val summary = item["context_summary"]?.jsonPrimitive?.contentOrNull.orEmpty().trim()
+                val tail = item["content"]?.jsonPrimitive?.contentOrNull.orEmpty().trim().takeLast(600)
+                buildString {
+                    append("《").append(item["title"]?.jsonPrimitive?.contentOrNull.orEmpty()).append("》")
+                    if (summary.isNotEmpty()) append("\n摘要：").append(summary)
+                    if (tail.isNotEmpty()) append("\n结尾：\n").append(tail)
+                }
+            }
+            if (previous.isNotBlank()) put("previous_chapters", previous)
+            putNovelContext(runId, manifest, this)
+        }
+        val raw = client.chatCompletion(
+            messages = listOf(
+                LlmClient.ChatMessage("system", loader.getChapterVersionsPrompt()),
+                LlmClient.ChatMessage("user", input.toString()),
+            ),
+            temperature = 0.85,
+            maxTokens = 4096,
+        ).choices.firstOrNull()?.message?.content.orEmpty()
+        if (raw.isBlank()) throw IllegalStateException("模型没有返回初稿，请稍后重试。")
+        val versions = WritingToolParser.parseDraftVersions(raw)
+        if (versions.isEmpty()) throw IllegalStateException("模型返回的初稿无法解析，请重试。")
+        return versions.take(count)
+    }
+
+    /** 采用某一版初稿：覆盖正文，保留标题、目标、人物、视角与场景卡。 */
+    fun applyChapterContent(
+        runId: String,
+        chapterId: String,
+        request: ApplyChapterContentRequest,
+    ): JsonObject {
+        val content = request.content.trim()
+        require(content.length >= 50) { "这一版正文太短，换一版或继续生成。" }
+        val chapters = list(runId)
+        val chapter = chapters.firstOrNull {
+            it["chapter_id"]?.jsonPrimitive?.contentOrNull == chapterId
+        } ?: throw NoSuchElementException("Chapter not found: $chapterId")
+        return save(
+            runId = runId,
+            chapterId = chapterId,
+            title = chapter["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            goal = chapter["goal"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            participants = chapter["participants"]?.jsonArray
+                ?.mapNotNull { it.jsonPrimitive.contentOrNull }.orEmpty(),
+            content = content,
+            contextSummary = request.contextSummary.trim().ifBlank { content.take(180) },
+            perspective = chapter["perspective"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+        )
+    }
+
+    // ===== 局部重写 =====
+
+    /** 只改一段：把「合理但无聊」改成有性格、有细节的表达。不落盘。 */
+    suspend fun rewriteSelection(
+        runId: String,
+        request: RewriteSelectionRequest,
+    ): List<RewriteOptionDto> {
+        if (!storage.runExists(runId)) throw NoSuchElementException("Run not found: $runId")
+        val text = request.text.trim()
+        require(text.length >= 10) { "先贴一段要改的正文（至少 10 个字）。" }
+        require(text.length <= 4000) { "一次最多改 4000 字，长段落请分两次。" }
+        val client = requireNotNull(llm) { "还没有配置模型，请先到设置里填写模型与密钥。" }
+        val loader = requireNotNull(prompts) { "提示词加载器未配置。" }
+        val manifest = storage.readRunManifest(runId)
+        val count = request.count.coerceIn(1, 4)
+        val input = buildJsonObject {
+            put("text", text)
+            put("count", count)
+            put(
+                "instruction",
+                request.instruction.trim().ifBlank { "把这段改得更有性格、更有细节，别改剧情。" }.take(300),
+            )
+            putNovelContext(runId, manifest, this)
+        }
+        val raw = client.chatCompletion(
+            messages = listOf(
+                LlmClient.ChatMessage("system", loader.getRewriteSelectionPrompt()),
+                LlmClient.ChatMessage("user", input.toString()),
+            ),
+            temperature = 0.9,
+            maxTokens = 2048,
+        ).choices.firstOrNull()?.message?.content.orEmpty()
+        if (raw.isBlank()) throw IllegalStateException("模型没有返回改写，请稍后重试。")
+        val options = WritingToolParser.parseRewriteOptions(raw)
+        if (options.isEmpty()) throw IllegalStateException("模型返回的改写无法解析，请重试。")
+        return options.take(count)
+    }
+
+    // ===== 全书一致性与终审 =====
+
+    suspend fun checkConsistency(runId: String): ConsistencyReportDto {
+        if (!storage.runExists(runId)) throw NoSuchElementException("Run not found: $runId")
+        val chapters = list(runId).filter { it["content"]?.jsonPrimitive?.contentOrNull.orEmpty().isNotBlank() }
+        require(chapters.size >= 2) { "至少要有两章正文才能做全书一致性检查。" }
+        val client = requireNotNull(llm) { "还没有配置模型，请先到设置里填写模型与密钥。" }
+        val loader = requireNotNull(prompts) { "提示词加载器未配置。" }
+        val manifest = storage.readRunManifest(runId)
+        val input = buildJsonObject {
+            put("book_title", bookTitleOf(runId, manifest))
+            put("chapters", buildJsonArray {
+                chapters.forEach { item ->
+                    add(buildJsonObject {
+                        put("title", item["title"]?.jsonPrimitive?.contentOrNull.orEmpty())
+                        put("goal", item["goal"]?.jsonPrimitive?.contentOrNull.orEmpty())
+                        put(
+                            "summary",
+                            item["context_summary"]?.jsonPrimitive?.contentOrNull
+                                ?.takeIf(String::isNotBlank)
+                                ?: item["content"]?.jsonPrimitive?.contentOrNull.orEmpty().take(200),
+                        )
+                        val tail = item["content"]?.jsonPrimitive?.contentOrNull.orEmpty().trim().takeLast(300)
+                        if (tail.isNotBlank()) put("ending", tail)
+                    })
+                }
+            })
+            putNovelContext(runId, manifest, this)
+        }
+        val raw = client.chatCompletion(
+            messages = listOf(
+                LlmClient.ChatMessage("system", loader.getConsistencyCheckPrompt()),
+                LlmClient.ChatMessage("user", input.toString()),
+            ),
+            temperature = 0.2,
+            maxTokens = 3072,
+        ).choices.firstOrNull()?.message?.content.orEmpty()
+        if (raw.isBlank()) throw IllegalStateException("模型没有返回一致性报告，请稍后重试。")
+        return WritingToolParser.parseConsistency(raw)
+    }
+
+    /** 人工终审：只给检查结果，是否放行由人决定。 */
+    suspend fun finalReview(runId: String): FinalReviewDto {
+        if (!storage.runExists(runId)) throw NoSuchElementException("Run not found: $runId")
+        val chapters = list(runId).filter { it["content"]?.jsonPrimitive?.contentOrNull.orEmpty().isNotBlank() }
+        require(chapters.isNotEmpty()) { "还没有正文可以终审。" }
+        val client = requireNotNull(llm) { "还没有配置模型，请先到设置里填写模型与密钥。" }
+        val loader = requireNotNull(prompts) { "提示词加载器未配置。" }
+        val manifest = storage.readRunManifest(runId)
+        val input = buildJsonObject {
+            put("book_title", bookTitleOf(runId, manifest))
+            put("chapters", buildJsonArray {
+                chapters.forEach { item ->
+                    add(buildJsonObject {
+                        put("title", item["title"]?.jsonPrimitive?.contentOrNull.orEmpty())
+                        put(
+                            "summary",
+                            item["context_summary"]?.jsonPrimitive?.contentOrNull
+                                ?.takeIf(String::isNotBlank)
+                                ?: item["content"]?.jsonPrimitive?.contentOrNull.orEmpty().take(300),
+                        )
+                        val tail = item["content"]?.jsonPrimitive?.contentOrNull.orEmpty().trim().takeLast(400)
+                        if (tail.isNotBlank()) put("ending", tail)
+                    })
+                }
+            })
+            putNovelContext(runId, manifest, this)
+        }
+        val raw = client.chatCompletion(
+            messages = listOf(
+                LlmClient.ChatMessage("system", loader.getFinalReviewPrompt()),
+                LlmClient.ChatMessage("user", input.toString()),
+            ),
+            temperature = 0.3,
+            maxTokens = 4096,
+        ).choices.firstOrNull()?.message?.content.orEmpty()
+        if (raw.isBlank()) throw IllegalStateException("模型没有返回终审结果，请稍后重试。")
+        return WritingToolParser.parseFinalReview(raw)
+    }
+
+    private fun chapterOutline(chapters: List<JsonObject>): String =
+        chapters.mapIndexed { index, item ->
+            val title = item["title"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val goal = item["goal"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            "第 ${index + 1} 章 $title：$goal"
+        }.joinToString("\n")
+
+    private fun storyCoreFile(runId: String): Path =
+        storage.getRunDirectory(runId) / STORY_CORE_FILE
+
     private fun storyBibleFile(runId: String): Path =
         storage.getRunDirectory(runId) / STORY_BIBLE_FILE
 
@@ -627,6 +963,10 @@ class ChapterManagementService(
         manifest: JsonObject?,
         input: kotlinx.serialization.json.JsonObjectBuilder,
     ) {
+        val core = readStoryCore(runId)
+        if (!core.isEmpty) {
+            input.put("story_core", json.encodeToJsonElement(core))
+        }
         val bible = readStoryBible(runId)
         if (!bible.isEmpty) {
             input.put("story_bible", json.encodeToJsonElement(bible))

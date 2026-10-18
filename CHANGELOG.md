@@ -6,6 +6,32 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.11.0] - 2026-10-19
+
+### 新增：人机协作写作链路（核心 → 扩写 → 重写 → 设定库 → 终审）
+
+写作助手扩展为五个页签：设定 / 类型 / 扩写 / 救援 / 检查。
+
+- **人定核心**：新增 `story_core.json` 与 `prompts/chapters/story_core.yaml`，
+  记录主题、人物欲望（want 与 obstacle 分离）、关键转折、结局；生成后先预览，确认才保存，
+  保存后自动注入后续大纲、正文与检查。
+- **场景卡**：新增 `scene_cards` 章节字段与 `prompts/chapters/scene_cards.yaml`，
+  把一章拆成 2~5 场戏（地点/时间/人物/目标/阻力/变化/离场）。
+- **多版本初稿**：`prompts/chapters/chapter_versions.yaml` 按场景卡写两版差异明显的初稿，
+  不落盘；用户展开对比后采用一版，覆盖前二次确认。
+- **局部重写**：`prompts/chapters/rewrite_selection.yaml` 对一段正文给三个改写版本
+  （克制 / 有性格 / 有画面），不改剧情与视角。
+- **设定库扩展**：设定集新增 `timeline`（时间线）与 `foreshadowings`（伏笔表，含埋设、回收与状态）。
+- **全书一致性**：`prompts/chapters/consistency_check.yaml` 跨章检查时间线、人物、伏笔与设定，
+  每条问题标注涉及章节。
+- **人工终审**：`prompts/chapters/final_review.yaml` 输出逻辑、情感、敏感内容、原创性四组问题，
+  只给建议；「可以发布」由人勾选，且每次打开重置。
+- 新增 `WritingToolParser` 对上述结构化输出的容错解析，并新增 6 条单测。
+
+### 验证
+
+`testDebugUnitTest`（632 用例）、`lintDebug`（0 error）、`assembleDebug` 全部通过。
+
 ## [2.10.0] - 2026-10-19
 
 ### 新增：写作助手（设定集 / 类型模版 / 卡文救援 / 润色检查）

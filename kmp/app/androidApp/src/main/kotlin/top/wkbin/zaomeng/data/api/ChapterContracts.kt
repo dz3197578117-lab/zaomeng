@@ -43,6 +43,8 @@ data class ChapterDto(
     @SerialName("last_session_id") val lastSessionId: String = "",
     /** 叙事视角（「第三人称限知」等）。AI 大纲创建章节时写入，成稿时沿用。 */
     val perspective: String = "",
+    /** 场景卡：这一章拆出来的几场戏；为空表示还没拆。 */
+    @SerialName("scene_cards") val sceneCards: List<SceneCardDto> = emptyList(),
     @SerialName("created_at") val createdAt: String = "",
     @SerialName("updated_at") val updatedAt: String = "",
 )

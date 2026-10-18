@@ -3,7 +3,12 @@ package top.wkbin.zaomeng.ktor.services
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import top.wkbin.zaomeng.data.api.ForeshadowDto
 import top.wkbin.zaomeng.data.api.StoryBibleDto
+import top.wkbin.zaomeng.data.api.StoryCoreDto
+import top.wkbin.zaomeng.data.api.StoryDesireDto
+import top.wkbin.zaomeng.data.api.StoryTurningPointDto
+import top.wkbin.zaomeng.data.api.TimelineEventDto
 import top.wkbin.zaomeng.data.api.StoryCharacterDto
 import top.wkbin.zaomeng.data.api.StoryConflictDto
 import top.wkbin.zaomeng.data.api.StoryFactionDto
@@ -112,5 +117,97 @@ class WritingToolParserTest {
     @Test
     fun `whitespace only bible counts as empty`() {
         assertTrue(StoryBibleDto(world = "   ").normalizedForStorage().isEmpty)
+    }
+}
+
+class WritingWorkflowParserTest {
+    @Test
+    fun `story core parses through fences`() {
+        val raw = """
+            ```json
+            {
+              "theme": "人为了不被忘记，会主动编造自己的过去。",
+              "desires": [{"name": "沈砚", "want": "找回妹妹的名字", "obstacle": "他改过自己的账"}],
+              "turning_points": [{"title": "烧掉第一本账", "description": "他烧掉能换回妹妹的账本，从此不可逆。", "chapter": "第 5 章"}],
+              "ending": "他把自己的名字写进账本，然后合上。"
+            }
+            ```
+        """.trimIndent()
+
+        val core = WritingToolParser.parseStoryCore(raw)
+
+        assertTrue(core.theme.contains("编造"))
+        assertEquals("沈砚", core.desires.first().name)
+        assertEquals("烧掉第一本账", core.turningPoints.first().title)
+        assertTrue(core.ending.contains("合上"))
+    }
+
+    @Test
+    fun `scene cards accept bare array and keep all fields`() {
+        val raw = """
+            [{"title":"雨夜码头","place":"码头","time":"子时","characters":["沈砚","阿棠"],
+              "goal":"换回账本","conflict":"港务司封了码头","turn":"账本落水","exit":"他手里只剩一页"}]
+        """.trimIndent()
+
+        val cards = WritingToolParser.parseSceneCards(raw)
+
+        assertEquals(1, cards.size)
+        assertEquals("码头", cards.first().place)
+        assertEquals(listOf("沈砚", "阿棠"), cards.first().characters)
+        assertEquals("他手里只剩一页", cards.first().exit)
+    }
+
+    @Test
+    fun `draft versions skip empty content`() {
+        val versions = WritingToolParser.parseDraftVersions(
+            """{"items":[{"label":"A","approach":"贴内心","content":"正文 A"},{"label":"B","approach":"空","content":"  "}]}""",
+        )
+
+        assertEquals(1, versions.size)
+        assertEquals("A", versions.first().label)
+    }
+
+    @Test
+    fun `final review keeps the four groups separate`() {
+        val review = WritingToolParser.parseFinalReview(
+            """{"logic":[{"quote":"他突然原谅","detail":"缺少铺垫","advice":"补一场对话"}],
+                "emotion":[],"sensitive":[],"originality":[{"quote":"失忆","detail":"常见桥段","advice":"换一个代价"}],
+                "verdict":"能发，先补动机。"}""",
+        )
+
+        assertEquals(1, review.logic.size)
+        assertTrue(review.emotion.isEmpty())
+        assertEquals(1, review.originality.size)
+        assertTrue(review.verdict.contains("能发"))
+    }
+
+    @Test
+    fun `story core normalization trims and caps`() {
+        val core = StoryCoreDto(
+            theme = "  主题  ",
+            desires = listOf(StoryDesireDto(name = " ", want = "x"), StoryDesireDto(name = " 沈砚 ", want = " 找回 ")),
+            turningPoints = listOf(StoryTurningPointDto(title = "", description = "x"), StoryTurningPointDto(title = " 转折 ")),
+            ending = "  结局  ",
+        ).normalizedForStorage()
+
+        assertEquals("主题", core.theme)
+        assertEquals(1, core.desires.size)
+        assertEquals("沈砚", core.desires.first().name)
+        assertEquals(1, core.turningPoints.size)
+        assertEquals("结局", core.ending)
+    }
+
+    @Test
+    fun `timeline and foreshadowing survive bible normalization`() {
+        val bible = StoryBibleDto(
+            world = "港城",
+            timeline = listOf(TimelineEventDto(time = "子时", place = "码头", event = "账本落水")),
+            foreshadowings = listOf(ForeshadowDto(content = "缺页的账本", plantedIn = "第 2 章", status = "open")),
+        ).normalizedForStorage()
+
+        assertEquals(1, bible.timeline.size)
+        assertEquals("账本落水", bible.timeline.first().event)
+        assertEquals(1, bible.foreshadowings.size)
+        assertEquals("open", bible.foreshadowings.first().status)
     }
 }
