@@ -5,6 +5,7 @@ import org.koin.dsl.module
 import top.wkbin.zaomeng.feature.bookshelf.BookshelfViewModel
 import top.wkbin.zaomeng.feature.cards.CardLibraryViewModel
 import top.wkbin.zaomeng.feature.chapters.ChaptersViewModel
+import top.wkbin.zaomeng.feature.creation.CreationViewModel
 import top.wkbin.zaomeng.feature.chat.ChatViewModel
 import top.wkbin.zaomeng.feature.crossover.CrossoverViewModel
 import top.wkbin.zaomeng.feature.importbook.ImportBookViewModel
@@ -29,6 +30,7 @@ import top.wkbin.zaomeng.feature.timeline.WorldTimelineViewModel
 
 internal fun sharedViewModelModule(platform: AppPlatform) = module {
     viewModel { BookshelfViewModel(get(), get(), get(), get()) }
+    viewModel { CreationViewModel(get()) }
     viewModel { SessionsViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { parameters ->
         ChaptersViewModel(

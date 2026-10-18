@@ -88,7 +88,11 @@ data class WorldTimelineDestination(val runId: String) : NavKey
 data class OriginalKnowledgeDestination(val runId: String) : NavKey
 
 @Serializable
-data class ChaptersDestination(val runId: String) : NavKey
+data class ChaptersDestination(val runId: String, val openCreation: Boolean = false) : NavKey
+
+/** 顶级「创作」页：选一本书卷，进入 AI 小说创作。 */
+@Serializable
+data object CreationDestination : NavKey
 
 @Serializable
 data object CardLibraryDestination : NavKey
@@ -138,6 +142,7 @@ fun destinationLabel(key: NavKey?): String = when (key) {
     is WorldTimelineDestination -> "世界时间线（${key.runId}）"
     is OriginalKnowledgeDestination -> "原文证据（${key.runId}）"
     is ChaptersDestination -> "章节（${key.runId}）"
+    is CreationDestination -> "创作"
     is CardLibraryDestination -> "卡片库"
     is PersonaDestination -> "人物档案（${key.character}）"
     is SessionsDestination -> "会话列表"

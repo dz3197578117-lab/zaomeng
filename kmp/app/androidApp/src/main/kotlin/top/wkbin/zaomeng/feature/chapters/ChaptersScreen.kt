@@ -74,6 +74,8 @@ fun ChaptersScreen(
     onBack: () -> Unit,
     onOpenChat: (String, String) -> Unit,
     onOpenPersona: (String, String) -> Unit,
+    /** 从「创作」页进来时直接展开 AI 创作弹层。 */
+    openCreation: Boolean = false,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<ChapterDto?>(null) }
@@ -113,6 +115,9 @@ fun ChaptersScreen(
                 if (exported.filename.endsWith(".md")) "text/markdown" else "text/plain",
             )
         }
+    }
+    LaunchedEffect(openCreation) {
+        if (openCreation) showNovelCreation = true
     }
     LaunchedEffect(state.outlineCreationCount) {
         // 大纲写入完成后收起弹层：继续停在「大纲」页会让用户以为还要再确认一次。

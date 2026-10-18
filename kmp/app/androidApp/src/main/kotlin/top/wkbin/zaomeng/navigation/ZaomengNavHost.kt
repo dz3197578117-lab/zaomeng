@@ -40,6 +40,7 @@ import top.wkbin.zaomeng.di.AppPlatform
 import top.wkbin.zaomeng.feature.bookshelf.BookshelfScreen
 import top.wkbin.zaomeng.feature.bookshelf.BookshelfViewModel
 import top.wkbin.zaomeng.feature.chapters.ChaptersScreen
+import top.wkbin.zaomeng.feature.creation.CreationScreen
 import top.wkbin.zaomeng.feature.chapters.ChaptersViewModel
 import top.wkbin.zaomeng.feature.chat.ChatScreen
 import top.wkbin.zaomeng.feature.chat.ChatViewModel
@@ -400,6 +401,15 @@ fun ZaomengNavHost(
                     onOpenPersona = { runId, character ->
                         backStack.add(PersonaDestination(runId, character))
                     },
+                    openCreation = destination.openCreation,
+                )
+            }
+            addEntryProvider(clazz = CreationDestination::class) { _ ->
+                CreationScreen(
+                    onOpenRun = { runId -> backStack.add(ChaptersDestination(runId, openCreation = true)) },
+                    onOpenBookshelf = {
+                        while (backStack.size > 1) backStack.removeLastOrNull()
+                    },
                 )
             }
             addEntryProvider(clazz = RelationsDestination::class) { destination ->
@@ -551,13 +561,13 @@ private fun AnimatedContentTransitionScope<*>.lightPredictivePopTransition(): Co
 /** 判断栈内条目是否为顶级导航目的地（侧栏 tab）。会话列表页视为顶级，书卷专属会话页不算。 */
 private fun NavKey.isTopLevelDestination(): Boolean = when (this) {
     BookshelfDestination,
+    CreationDestination,
     CardLibraryDestination,
     CrossoverDestination,
     OnlineLibraryDestination,
     ModelSettingsDestination,
     -> true
 
-    is SessionsDestination -> runId.isBlank()
     else -> false
 }
 

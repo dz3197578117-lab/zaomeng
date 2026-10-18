@@ -7,11 +7,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Settings
@@ -61,10 +63,10 @@ internal val topLevelRailItems = listOf(
         selectedIcon = Icons.AutoMirrored.Filled.MenuBook,
     ),
     TopLevelRailItem(
-        destination = SessionsDestination(),
-        label = "会话",
-        icon = Icons.Outlined.Forum,
-        selectedIcon = Icons.Filled.Forum,
+        destination = CreationDestination,
+        label = "创作",
+        icon = Icons.Outlined.EditNote,
+        selectedIcon = Icons.Filled.EditNote,
     ),
     TopLevelRailItem(
         destination = CardLibraryDestination,
