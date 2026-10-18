@@ -78,6 +78,12 @@ data class StoryCharacterDto(
     val secret: String = "",
     /** 说话方式：口癖、句长、称呼习惯。 */
     val voice: String = "",
+    /** 弧光起点：故事开始时他是什么状态。 */
+    @SerialName("arc_start") val arcStart: String = "",
+    /** 转变的触发事件：哪件事让他不能再原地不动。 */
+    @SerialName("arc_turn") val arcTurn: String = "",
+    /** 弧光终点：故事结束时他变成了什么样。 */
+    @SerialName("arc_end") val arcEnd: String = "",
 )
 
 @Serializable
@@ -114,6 +120,10 @@ data class WritingProfileDto(
     @SerialName("chapter_length") val chapterLength: Int = 2500,
     /** 额外节奏要求，例如「每三章一个小高潮」。 */
     val notes: String = "",
+    /** 作者自己的文风样本，用来抑制「正确但平庸」。 */
+    @SerialName("voice_sample") val voiceSample: String = "",
+    /** 不想出现的表达（套话、金句、口头禅），逗号或换行分隔。 */
+    val avoid: String = "",
 )
 
 @Serializable
@@ -234,6 +244,9 @@ internal fun StoryBibleDto.normalizedForStorage(): StoryBibleDto = StoryBibleDto
             desire = it.desire.trim().take(200),
             secret = it.secret.trim().take(200),
             voice = it.voice.trim().take(160),
+            arcStart = it.arcStart.trim().take(200),
+            arcTurn = it.arcTurn.trim().take(200),
+            arcEnd = it.arcEnd.trim().take(200),
         )
     }.filter { it.name.isNotBlank() }.take(12),
     factions = factions.map {

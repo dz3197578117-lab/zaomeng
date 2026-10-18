@@ -398,6 +398,31 @@ class ChaptersViewModel(
         }
     }
 
+    /** 人工编辑设定后直接落盘（不经过「生成提案」的确认流程）。 */
+    fun saveStoryBibleNow(bible: StoryBibleDto) {
+        if (state.value.savingBible) return
+        viewModelScope.launch {
+            mutableState.update { it.copy(savingBible = true, error = "", message = "") }
+            try {
+                val saved = chapters.saveStoryBible(runId, bible)
+                mutableState.update {
+                    it.copy(
+                        savingBible = false,
+                        storyBible = saved,
+                        storyBibleSaved = true,
+                        message = "设定已保存。",
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(savingBible = false, error = error.message ?: "保存设定失败。")
+                }
+            }
+        }
+    }
+
     fun saveWritingProfile(profile: WritingProfileDto) {
         if (state.value.savingProfile) return
         viewModelScope.launch {

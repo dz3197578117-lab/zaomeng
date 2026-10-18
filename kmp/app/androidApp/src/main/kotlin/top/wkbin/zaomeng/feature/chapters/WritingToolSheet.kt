@@ -84,6 +84,7 @@ internal fun WritingToolSheet(
     onLoad: () -> Unit,
     onGenerateBible: (String, String) -> Unit,
     onSaveBible: () -> Unit,
+    onSaveBibleNow: (StoryBibleDto) -> Unit,
     onSaveProfile: (WritingProfileDto) -> Unit,
     onRescueChapter: (String) -> Unit,
     onRescueProblem: (String) -> Unit,
@@ -177,6 +178,8 @@ internal fun WritingToolSheet(
                         StoryBibleSection(state, onGenerateBible, onSaveBible)
                         HorizontalDivider()
                         BibleExtraSection(state.storyBible)
+                        HorizontalDivider()
+                        BibleManageSection(state.storyBible, onSaveBibleNow)
                     }
                 }
 
@@ -595,6 +598,8 @@ private fun GenreSection(state: ChaptersUiState, onSave: (WritingProfileDto) -> 
         mutableIntStateOf(state.writingProfile.chapterLength)
     }
     var notes by rememberSaveable(state.writingProfile) { mutableStateOf(state.writingProfile.notes) }
+    var voiceSample by rememberSaveable(state.writingProfile) { mutableStateOf(state.writingProfile.voiceSample) }
+    var avoid by rememberSaveable(state.writingProfile) { mutableStateOf(state.writingProfile.avoid) }
     val selected = WritingGenres.byId(genreId)
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
         Text(
@@ -650,6 +655,24 @@ private fun GenreSection(state: ChaptersUiState, onSave: (WritingProfileDto) -> 
             minLines = 2,
             maxLines = 4,
         )
+        OutlinedTextField(
+            value = voiceSample,
+            onValueChange = { voiceSample = it.take(2000) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("文风样本（可选，贴一段你自己的文字）") },
+            placeholder = { Text("AI 会模仿它的句长、用词与节奏，而不是模仿内容") },
+            minLines = 3,
+            maxLines = 6,
+        )
+        OutlinedTextField(
+            value = avoid,
+            onValueChange = { avoid = it.take(400) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("不想出现的表达（可选）") },
+            placeholder = { Text("例如：心中一凛、空气仿佛凝固、眼眶一热") },
+            minLines = 2,
+            maxLines = 4,
+        )
         Button(
             onClick = {
                 onSave(
@@ -657,6 +680,8 @@ private fun GenreSection(state: ChaptersUiState, onSave: (WritingProfileDto) -> 
                         genre = genreId,
                         chapterLength = chapterLength,
                         notes = notes,
+                        voiceSample = voiceSample,
+                        avoid = avoid,
                     ),
                 )
             },

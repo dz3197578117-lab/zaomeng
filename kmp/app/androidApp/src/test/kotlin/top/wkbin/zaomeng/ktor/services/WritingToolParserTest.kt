@@ -9,6 +9,7 @@ import top.wkbin.zaomeng.data.api.StoryCoreDto
 import top.wkbin.zaomeng.data.api.StoryDesireDto
 import top.wkbin.zaomeng.data.api.StoryTurningPointDto
 import top.wkbin.zaomeng.data.api.TimelineEventDto
+import top.wkbin.zaomeng.data.api.WritingProfileDto
 import top.wkbin.zaomeng.data.api.StoryCharacterDto
 import top.wkbin.zaomeng.data.api.StoryConflictDto
 import top.wkbin.zaomeng.data.api.StoryFactionDto
@@ -209,5 +210,42 @@ class WritingWorkflowParserTest {
         assertEquals("账本落水", bible.timeline.first().event)
         assertEquals(1, bible.foreshadowings.size)
         assertEquals("open", bible.foreshadowings.first().status)
+    }
+}
+
+class WritingArcTest {
+    @Test
+    fun `character arc survives parsing and storage`() {
+        val raw = """
+            {"world":"港城","characters":[{"name":"沈砚","role":"匠人","desire":"找回妹妹",
+             "secret":"改过账","voice":"短句","arc_start":"只想活下去","arc_turn":"妹妹的名字被抹掉",
+             "arc_end":"把自己的名字写进账本"}]}
+        """.trimIndent()
+
+        val bible = WritingToolParser.parseStoryBible(raw).normalizedForStorage()
+        val character = bible.characters.first()
+
+        assertEquals("只想活下去", character.arcStart)
+        assertEquals("妹妹的名字被抹掉", character.arcTurn)
+        assertEquals("把自己的名字写进账本", character.arcEnd)
+    }
+
+    @Test
+    fun `old bible without arc still parses`() {
+        val bible = WritingToolParser.parseStoryBible(
+            """{"world":"港城","characters":[{"name":"沈砚","role":"匠人"}]}""",
+        )
+
+        assertEquals("", bible.characters.first().arcStart)
+        assertEquals("", bible.characters.first().arcTurn)
+    }
+
+    @Test
+    fun `voice sample and avoid list default to empty`() {
+        val profile = WritingProfileDto()
+
+        assertEquals("", profile.voiceSample)
+        assertEquals("", profile.avoid)
+        assertEquals(2500, profile.chapterLength)
     }
 }

@@ -6,6 +6,27 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.12.0] - 2026-10-19
+
+### 新增：设定圣经人工管理、人物弧光、文风样本
+
+针对长篇写作的四个漂移点（一致性、风格平庸、弧光不自然、伏笔不闭环）：
+
+- **设定人工管理**：`WritingBibleManager` 提供人物 / 时间线 / 伏笔的新增、编辑、删除，
+  伏笔可直接切换 `open / paid / dropped`；世界观可单独编辑。改动即时落盘
+  （新增 `ChapterRepository.saveStoryBibleNow` 路径），删除前二次确认。
+- **人物弧光**：`StoryCharacterDto` 新增 `arc_start / arc_turn / arc_end`，
+  设定生成与编辑都覆盖；大纲、正文、一致性检查均注入。
+- **文风样本与禁用表达**：`WritingProfileDto` 新增 `voice_sample` 与 `avoid`，
+  注入 `draft_chapter`、`chapter_versions`、`rewrite_selection` 三类提示词。
+- **检查更细**：`polish_review.yaml` 新增「风格」（套话、金句、抽象情绪、解释代替呈现）
+  与「情感」（事件很大、情绪很轻）两类；`consistency_check.yaml` 新增「人物弧光」检查。
+- 新增 3 条单测：弧光解析与落盘、旧设定向后兼容、文风字段默认值。
+
+### 验证
+
+`testDebugUnitTest`（635 用例）、`lintDebug`（0 error）、`assembleDebug` 全部通过。
+
 ## [2.11.0] - 2026-10-19
 
 ### 新增：人机协作写作链路（核心 → 扩写 → 重写 → 设定库 → 终审）

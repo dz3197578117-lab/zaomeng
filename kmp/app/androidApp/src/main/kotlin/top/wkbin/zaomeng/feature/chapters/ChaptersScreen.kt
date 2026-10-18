@@ -429,6 +429,7 @@ fun ChaptersScreen(
             onLoad = viewModel::loadWritingTools,
             onGenerateBible = viewModel::generateStoryBible,
             onSaveBible = viewModel::saveStoryBible,
+            onSaveBibleNow = viewModel::saveStoryBibleNow,
             onSaveProfile = viewModel::saveWritingProfile,
             onRescueChapter = viewModel::updateRescueChapter,
             onRescueProblem = viewModel::updateRescueProblem,

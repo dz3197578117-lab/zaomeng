@@ -472,6 +472,8 @@ class ChapterManagementService(
             genre = genre,
             chapterLength = profile.chapterLength.coerceIn(800, 6000),
             notes = profile.notes.trim().take(500),
+            voiceSample = profile.voiceSample.trim().take(2000),
+            avoid = profile.avoid.trim().take(400),
         )
         storage.writeBytesAtomically(writingProfileFile(runId), json.encodeToString(clean).encodeToByteArray())
         return clean
@@ -981,6 +983,8 @@ class ChapterManagementService(
                 }
                 put("chapter_length", profile.chapterLength)
                 if (profile.notes.isNotBlank()) put("notes", profile.notes)
+                if (profile.voiceSample.isNotBlank()) put("voice_sample", profile.voiceSample.take(1200))
+                if (profile.avoid.isNotBlank()) put("avoid", profile.avoid)
             })
         }
         if (bible.characters.isEmpty()) {
