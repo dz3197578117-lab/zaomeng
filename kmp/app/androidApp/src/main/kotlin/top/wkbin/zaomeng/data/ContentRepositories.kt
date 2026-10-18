@@ -20,7 +20,16 @@ import top.wkbin.zaomeng.data.api.SaveChapterRequest
 import top.wkbin.zaomeng.data.api.SearchResultDto
 import top.wkbin.zaomeng.data.api.DraftChapterRequest
 import top.wkbin.zaomeng.data.api.GenerateNovelOutlineRequest
+import top.wkbin.zaomeng.data.api.GenerateStoryBibleRequest
 import top.wkbin.zaomeng.data.api.NovelOutlineResponse
+import top.wkbin.zaomeng.data.api.ChapterReviewDto
+import top.wkbin.zaomeng.data.api.PolishChapterRequest
+import top.wkbin.zaomeng.data.api.RescueOptionDto
+import top.wkbin.zaomeng.data.api.RescueRequest
+import top.wkbin.zaomeng.data.api.SaveStoryBibleRequest
+import top.wkbin.zaomeng.data.api.SaveWritingProfileRequest
+import top.wkbin.zaomeng.data.api.StoryBibleDto
+import top.wkbin.zaomeng.data.api.WritingProfileDto
 
 class ChapterRepositoryImpl(
     private val chapters: ChapterClient,
@@ -58,6 +67,53 @@ class ChapterRepositoryImpl(
         instruction: String,
     ): ChapterDto = repositoryRequest {
         chapters.draftChapter(runId, chapterId, DraftChapterRequest(instruction))
+    }
+
+    override suspend fun readStoryBible(runId: String): StoryBibleDto = repositoryRequest {
+        chapters.readStoryBible(runId)
+    }
+
+    override suspend fun generateStoryBible(
+        runId: String,
+        request: GenerateStoryBibleRequest,
+    ): StoryBibleDto = repositoryRequest {
+        chapters.generateStoryBible(runId, request)
+    }
+
+    override suspend fun saveStoryBible(runId: String, bible: StoryBibleDto): StoryBibleDto =
+        repositoryRequest {
+            chapters.saveStoryBible(runId, SaveStoryBibleRequest(bible))
+        }
+
+    override suspend fun readWritingProfile(runId: String): WritingProfileDto = repositoryRequest {
+        chapters.readWritingProfile(runId)
+    }
+
+    override suspend fun saveWritingProfile(
+        runId: String,
+        profile: WritingProfileDto,
+    ): WritingProfileDto = repositoryRequest {
+        chapters.saveWritingProfile(runId, SaveWritingProfileRequest(profile))
+    }
+
+    override suspend fun rescue(
+        runId: String,
+        request: RescueRequest,
+    ): List<RescueOptionDto> = repositoryRequest {
+        chapters.rescue(runId, request).options
+    }
+
+    override suspend fun reviewChapter(runId: String, chapterId: String): ChapterReviewDto =
+        repositoryRequest {
+            chapters.reviewChapter(runId, chapterId)
+        }
+
+    override suspend fun polishChapter(
+        runId: String,
+        chapterId: String,
+        instruction: String,
+    ): ChapterDto = repositoryRequest {
+        chapters.polishChapter(runId, chapterId, PolishChapterRequest(instruction))
     }
 
     override suspend fun archiveSessionAsChapter(

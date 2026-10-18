@@ -1,0 +1,686 @@
+package top.wkbin.zaomeng.feature.chapters
+
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import top.wkbin.zaomeng.data.api.ChapterDto
+import top.wkbin.zaomeng.data.api.ChapterReviewDto
+import top.wkbin.zaomeng.data.api.RescueOptionDto
+import top.wkbin.zaomeng.data.api.StoryBibleDto
+import top.wkbin.zaomeng.data.api.WritingGenres
+import top.wkbin.zaomeng.data.api.WritingProfileDto
+import top.wkbin.zaomeng.platform.rememberClipboardTextWriter
+import kotlinx.coroutines.launch
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppCardVariant
+import top.wkbin.zaomeng.ui.theme.AppSpacing
+
+private val writingTabs = listOf("设定", "类型", "救援", "检查")
+private val rescueKinds = listOf(
+    "plot" to "情节走向",
+    "dialogue" to "对话",
+    "scene" to "场景",
+    "twist" to "反转",
+)
+private val chapterLengthOptions = listOf(1500, 2500, 3000, 3500)
+
+/**
+ * 写作助手：设定集、类型模版、卡文救援、润色检查。
+ *
+ * 四件事放在同一个弹层里，是因为它们服务于同一个动作——「把这一章写下去」。
+ * 拆成四个入口会让作者在章节页和工具页之间来回跳。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun WritingToolSheet(
+    state: ChaptersUiState,
+    onLoad: () -> Unit,
+    onGenerateBible: (String, String) -> Unit,
+    onSaveBible: () -> Unit,
+    onSaveProfile: (WritingProfileDto) -> Unit,
+    onRescueChapter: (String) -> Unit,
+    onRescueProblem: (String) -> Unit,
+    onRescueKind: (String) -> Unit,
+    onRescue: () -> Unit,
+    onSelectReviewChapter: (String) -> Unit,
+    onReviewChapter: (String) -> Unit,
+    onPolish: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { onLoad() }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        contentWindowInsets = { WindowInsets.navigationBars },
+    ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().navigationBarsPadding(),
+            contentPadding = PaddingValues(start = 20.dp, top = 4.dp, end = 20.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.md),
+        ) {
+            item(key = "writing-tools-header") {
+                Column {
+                    Text(
+                        text = "写作助手",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "设定 → 类型 → 卡文 → 检查，都在这本书里",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            item(key = "writing-tools-tabs") {
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    writingTabs.forEachIndexed { index, label ->
+                        FilterChip(
+                            selected = tab == index,
+                            onClick = { tab = index },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+            }
+            if (state.error.isNotBlank()) {
+                item(key = "writing-tools-error") {
+                    AppCard(
+                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        contentPadding = PaddingValues(AppSpacing.md),
+                    ) {
+                        Text(state.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+            if (state.message.isNotBlank()) {
+                item(key = "writing-tools-message") {
+                    Text(
+                        text = state.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            when (tab) {
+                0 -> item(key = "writing-tools-bible") {
+                    StoryBibleSection(state, onGenerateBible, onSaveBible)
+                }
+
+                1 -> item(key = "writing-tools-genre") {
+                    GenreSection(state, onSaveProfile)
+                }
+
+                2 -> item(key = "writing-tools-rescue") {
+                    RescueSection(
+                        state = state,
+                        onChapter = onRescueChapter,
+                        onProblem = onRescueProblem,
+                        onKind = onRescueKind,
+                        onRescue = onRescue,
+                    )
+                }
+
+                else -> item(key = "writing-tools-review") {
+                    ReviewSection(
+                        state = state,
+                        onSelectChapter = onSelectReviewChapter,
+                        onReviewChapter = onReviewChapter,
+                        onPolish = onPolish,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StoryBibleSection(
+    state: ChaptersUiState,
+    onGenerate: (String, String) -> Unit,
+    onSave: () -> Unit,
+) {
+    var premise by rememberSaveable { mutableStateOf("") }
+    var genreId by rememberSaveable(state.writingProfile.genre) { mutableStateOf(state.writingProfile.genre) }
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+        Text(
+            text = "生成一份可复用的设定集：世界观、人物小传、势力关系、冲突设计。保存后，大纲与正文都会带上它。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = premise,
+            onValueChange = { premise = it.take(800) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("一句话设定（可留空，用书名与已有章节目标代替）") },
+            minLines = 2,
+            maxLines = 4,
+            enabled = !state.generatingBible,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            WritingGenres.all.forEach { genre ->
+                FilterChip(
+                    selected = genreId == genre.id,
+                    onClick = { genreId = if (genreId == genre.id) "" else genre.id },
+                    label = { Text(genre.name) },
+                )
+            }
+        }
+        Button(
+            onClick = { onGenerate(premise, genreId) },
+            enabled = !state.generatingBible,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (state.generatingBible) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("正在生成…")
+            } else {
+                Icon(Icons.Rounded.AutoAwesome, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(if (state.storyBible.isEmpty) "生成设定集" else "重新生成")
+            }
+        }
+
+        if (!state.storyBible.isEmpty) {
+            HorizontalDivider()
+            if (!state.storyBibleSaved) {
+                Text(
+                    "这是提案，还没有保存；确认无误后点下面的「保存设定」。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            BibleBlock("世界观", state.storyBible)
+            val bible = state.storyBible
+            if (bible.characters.isNotEmpty()) {
+                Text("人物小传", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                bible.characters.forEach { character ->
+                    AppCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        variant = AppCardVariant.Outlined,
+                        contentPadding = PaddingValues(AppSpacing.md),
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(character.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            if (character.role.isNotBlank()) Text(character.role, style = MaterialTheme.typography.bodySmall)
+                            val detail = listOf(
+                                character.desire.takeIf { it.isNotBlank() }?.let { "想要：$it" },
+                                character.secret.takeIf { it.isNotBlank() }?.let { "秘密：$it" },
+                                character.voice.takeIf { it.isNotBlank() }?.let { "说话：$it" },
+                            ).filterNotNull()
+                            detail.forEach {
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            if (bible.factions.isNotEmpty()) {
+                Text("势力关系", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                bible.factions.forEach { faction ->
+                    AppCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        variant = AppCardVariant.Outlined,
+                        contentPadding = PaddingValues(AppSpacing.md),
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(faction.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            if (faction.goal.isNotBlank()) Text(faction.goal, style = MaterialTheme.typography.bodySmall)
+                            if (faction.relation.isNotBlank()) {
+                                Text(
+                                    faction.relation,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            if (bible.conflicts.isNotEmpty()) {
+                Text("冲突设计", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                bible.conflicts.forEach { conflict ->
+                    AppCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        variant = AppCardVariant.Outlined,
+                        contentPadding = PaddingValues(AppSpacing.md),
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(conflict.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                            if (conflict.stake.isNotBlank()) Text(conflict.stake, style = MaterialTheme.typography.bodySmall)
+                            if (conflict.escalation.isNotBlank()) {
+                                Text(
+                                    conflict.escalation,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Button(
+                onClick = onSave,
+                enabled = !state.storyBibleSaved && !state.savingBible,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (state.savingBible) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(if (state.storyBibleSaved) "已保存" else "保存设定")
+            }
+        }
+    }
+}
+
+@Composable
+private fun BibleBlock(title: String, bible: StoryBibleDto) {
+    Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+    AppCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        variant = AppCardVariant.Outlined,
+                        contentPadding = PaddingValues(AppSpacing.md),
+                    ) {
+        SelectionContainer {
+            Text(
+                text = bible.world.ifBlank { "（这一项为空）" },
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun GenreSection(state: ChaptersUiState, onSave: (WritingProfileDto) -> Unit) {
+    var genreId by rememberSaveable(state.writingProfile) { mutableStateOf(state.writingProfile.genre) }
+    var chapterLength by rememberSaveable(state.writingProfile) {
+        mutableIntStateOf(state.writingProfile.chapterLength)
+    }
+    var notes by rememberSaveable(state.writingProfile) { mutableStateOf(state.writingProfile.notes) }
+    val selected = WritingGenres.byId(genreId)
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+        Text(
+            text = "选一个类型，生成大纲和正文时会按它的节奏来；也可以只在备注里写自己的更新节奏。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        WritingGenres.all.forEach { genre ->
+            AppCard(
+                modifier = Modifier.fillMaxWidth(),
+                variant = if (genre.id == genreId) AppCardVariant.Filled else AppCardVariant.Outlined,
+                onClick = { genreId = if (genreId == genre.id) "" else genre.id },
+                contentPadding = PaddingValues(AppSpacing.md),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(genre.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            genre.tagline,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (genre.id == genreId) {
+                        Text("已选", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
+        if (selected != null) {
+            Text(
+                "节奏：${selected.beats}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Text("每章目标字数", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            chapterLengthOptions.forEach { length ->
+                FilterChip(
+                    selected = chapterLength == length,
+                    onClick = { chapterLength = length },
+                    label = { Text("$length 字") },
+                )
+            }
+        }
+        OutlinedTextField(
+            value = notes,
+            onValueChange = { notes = it.take(500) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("额外节奏要求（可选）") },
+            placeholder = { Text("例如：每三章一个小高潮；主角不许连续两章获胜") },
+            minLines = 2,
+            maxLines = 4,
+        )
+        Button(
+            onClick = {
+                onSave(
+                    WritingProfileDto(
+                        genre = genreId,
+                        chapterLength = chapterLength,
+                        notes = notes,
+                    ),
+                )
+            },
+            enabled = !state.savingProfile,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (state.savingProfile) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+            }
+            Text("保存类型设置")
+        }
+    }
+}
+
+@Composable
+private fun RescueSection(
+    state: ChaptersUiState,
+    onChapter: (String) -> Unit,
+    onProblem: (String) -> Unit,
+    onKind: (String) -> Unit,
+    onRescue: () -> Unit,
+) {
+    val clipboard = rememberClipboardTextWriter()
+    val scope = rememberCoroutineScope()
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+        Text(
+            text = "写到一半卡住时，给几个能立刻往下写的方案。方案只是提案，不会自动改正文。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        ChapterPicker(state.chapters, state.rescueChapterId, onChapter)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            rescueKinds.forEach { (id, label) ->
+                FilterChip(
+                    selected = state.rescueKind == id,
+                    onClick = { onKind(id) },
+                    label = { Text(label) },
+                )
+            }
+        }
+        OutlinedTextField(
+            value = state.rescueProblem,
+            onValueChange = onProblem,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("卡在哪里") },
+            placeholder = { Text("例如：主角已经知道真相，但我不知道该让他揭穿还是继续忍") },
+            minLines = 3,
+            maxLines = 5,
+            enabled = !state.rescuing,
+        )
+        Button(
+            onClick = onRescue,
+            enabled = !state.rescuing && state.rescueProblem.isNotBlank(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (state.rescuing) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("正在想…")
+            } else {
+                Text("给我几个方案")
+            }
+        }
+        state.rescueOptions.forEachIndexed { index, option ->
+            RescueOptionCard(
+                index = index,
+                option = option,
+                onCopy = { scope.launch { clipboard("${option.title}\n${option.idea}\n\n${option.snippet}") } },
+            )
+        }
+    }
+}
+
+@Composable
+private fun RescueOptionCard(index: Int, option: RescueOptionDto, onCopy: () -> Unit) {
+    AppCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        variant = AppCardVariant.Outlined,
+                        contentPadding = PaddingValues(AppSpacing.md),
+                    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                "方案 ${index + 1} · ${option.title}",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (option.idea.isNotBlank()) {
+                Text(option.idea, style = MaterialTheme.typography.bodySmall)
+            }
+            if (option.snippet.isNotBlank()) {
+                SelectionContainer {
+                    Text(
+                        option.snippet,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            TextButton(onClick = onCopy, modifier = Modifier.align(Alignment.End)) {
+                Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("复制方案")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReviewSection(
+    state: ChaptersUiState,
+    onSelectChapter: (String) -> Unit,
+    onReviewChapter: (String) -> Unit,
+    onPolish: (String) -> Unit,
+) {
+    var confirmPolish by remember { mutableStateOf(false) }
+    val review = state.review
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+        Text(
+            text = "检查语病、语气、前后矛盾与设定冲突，并生成本章摘要。润色只改表达，不改剧情。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        ChapterPicker(state.chapters, state.reviewChapterId, onSelectChapter)
+        Button(
+            onClick = {
+                onReviewChapter(
+                    state.reviewChapterId.ifBlank {
+                        state.chapters.firstOrNull { it.content.isNotBlank() }?.chapterId.orEmpty()
+                    },
+                )
+            },
+            enabled = !state.reviewing,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (state.reviewing) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("正在检查…")
+            } else {
+                Text("检查这一章")
+            }
+        }
+        if (review != null) {
+            ReviewReport(review)
+            OutlinedButton(
+                onClick = { confirmPolish = true },
+                enabled = state.polishingChapterId.isBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (state.polishingChapterId.isNotBlank()) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("正在润色…")
+                } else {
+                    Text("按建议润色这一章")
+                }
+            }
+        }
+    }
+    if (confirmPolish && review != null) {
+        AlertDialog(
+            onDismissRequest = { confirmPolish = false },
+            title = { Text("润色并覆盖正文？") },
+            text = {
+                Text("会按上面的检查结果改写本章正文并保存，原正文无法恢复。剧情不会改动。")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmPolish = false
+                        onPolish(state.reviewChapterId)
+                    },
+                ) { Text("润色并覆盖") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmPolish = false }) { Text("取消") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ReviewReport(review: ChapterReviewDto) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("本章摘要", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        AppCard(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            contentPadding = PaddingValues(AppSpacing.md),
+        ) {
+            SelectionContainer {
+                Text(review.summary.ifBlank { "（模型没有给摘要）" }, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        Text(
+            if (review.issues.isEmpty()) "没有发现明显问题。" else "发现 ${review.issues.size} 处可以改的地方",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        review.issues.forEach { issue ->
+            AppCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        variant = AppCardVariant.Outlined,
+                        contentPadding = PaddingValues(AppSpacing.md),
+                    ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        issue.kind.ifBlank { "建议" },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    if (issue.quote.isNotBlank()) {
+                        Text(
+                            "「${issue.quote}」",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(issue.advice, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChapterPicker(chapters: List<ChapterDto>, selectedId: String, onSelect: (String) -> Unit) {
+    val effective = selectedId.ifBlank {
+        chapters.firstOrNull { it.content.isNotBlank() }?.chapterId.orEmpty()
+    }
+    if (chapters.isEmpty()) {
+        Text(
+            "还没有章节，先在章节页新建一章。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(chapters, key = ChapterDto::chapterId) { chapter ->
+            FilterChip(
+                selected = chapter.chapterId == effective,
+                onClick = { onSelect(chapter.chapterId) },
+                label = {
+                    Text(
+                        text = chapter.title.ifBlank { "未命名章节" },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+            )
+        }
+    }
+    val current = chapters.firstOrNull { it.chapterId == effective }
+    if (current != null && current.content.isBlank()) {
+        Text(
+            "这一章还没有正文，检查与救援会缺少上下文。",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}

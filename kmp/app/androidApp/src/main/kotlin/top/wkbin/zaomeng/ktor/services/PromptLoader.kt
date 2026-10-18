@@ -177,6 +177,42 @@ class PromptLoader(private val source: PromptSource) {
         ).filter { it.isNotBlank() }.joinToString("\n\n")
     }
 
+    /** 设定集：世界观、人物小传、势力关系、冲突设计。输出 JSON 对象。 */
+    fun getStoryBiblePrompt(): String {
+        val config = loadPromptConfig("chapters", "story_bible")
+        return listOf(
+            config.getString("system_prompt"),
+            config.getString("output_rules"),
+        ).filter { it.isNotBlank() }.joinToString("\n\n")
+    }
+
+    /** 卡文救援：按卡点类型给多个可选方案。输出 JSON 对象。 */
+    fun getStuckRescuePrompt(): String {
+        val config = loadPromptConfig("chapters", "stuck_rescue")
+        return listOf(
+            config.getString("system_prompt"),
+            config.getString("output_rules"),
+        ).filter { it.isNotBlank() }.joinToString("\n\n")
+    }
+
+    /** 润色与检查：语病、语气、矛盾、设定一致性与摘要。输出 JSON 对象。 */
+    fun getPolishReviewPrompt(): String {
+        val config = loadPromptConfig("chapters", "polish_review")
+        return listOf(
+            config.getString("system_prompt"),
+            config.getString("output_rules"),
+        ).filter { it.isNotBlank() }.joinToString("\n\n")
+    }
+
+    /** 按检查建议改写正文；输出纯文本。 */
+    fun getPolishRewritePrompt(): String {
+        val config = loadPromptConfig("chapters", "polish_rewrite")
+        return listOf(
+            config.getString("system_prompt"),
+            config.getString("output_rules"),
+        ).filter { it.isNotBlank() }.joinToString("\n\n")
+    }
+
     /**
      * Get scene card generation prompt.
      */

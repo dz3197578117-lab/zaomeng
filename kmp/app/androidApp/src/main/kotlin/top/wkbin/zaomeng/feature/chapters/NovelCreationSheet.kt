@@ -115,7 +115,7 @@ internal fun NovelCreationSheet(
                 }
                 item(key = "novel-genre") {
                     ChoiceGroup(
-                        title = "类型",
+                        title = "题材",
                         options = novelGenres,
                         selected = genre,
                         onSelect = { genre = if (genre == it) "" else it },

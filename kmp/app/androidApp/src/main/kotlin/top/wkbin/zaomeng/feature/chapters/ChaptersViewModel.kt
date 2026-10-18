@@ -5,13 +5,19 @@ import androidx.lifecycle.viewModelScope
 import top.wkbin.zaomeng.data.ChapterRepository
 import top.wkbin.zaomeng.data.SessionRepository
 import top.wkbin.zaomeng.data.api.ChapterDto
+import top.wkbin.zaomeng.data.api.ChapterReviewDto
 import top.wkbin.zaomeng.data.api.DialogueSessionDto
 import top.wkbin.zaomeng.data.api.ExportedChapterManuscript
 import top.wkbin.zaomeng.data.api.GenerateNovelOutlineRequest
+import top.wkbin.zaomeng.data.api.GenerateStoryBibleRequest
 import top.wkbin.zaomeng.data.api.NovelOutlineChapterDto
+import top.wkbin.zaomeng.data.api.RescueOptionDto
+import top.wkbin.zaomeng.data.api.RescueRequest
 import top.wkbin.zaomeng.data.api.SaveChapterRequest
 import top.wkbin.zaomeng.data.api.SearchResultDto
 import top.wkbin.zaomeng.data.api.AskBookResponseDto
+import top.wkbin.zaomeng.data.api.StoryBibleDto
+import top.wkbin.zaomeng.data.api.WritingProfileDto
 import top.wkbin.zaomeng.platform.NovelConversionForeground
 import top.wkbin.zaomeng.platform.platformIoDispatcher
 import kotlinx.coroutines.CancellationException
@@ -55,6 +61,23 @@ data class ChaptersUiState(
     val draftingChapterId: String = "",
     /** 大纲写入成功的次数；界面据此收起创作弹层。 */
     val outlineCreationCount: Int = 0,
+    // ===== 创作工具：设定 / 类型 / 救援 / 检查 =====
+    val storyBible: StoryBibleDto = StoryBibleDto(),
+    /** 当前设定是否已落盘；false 表示还是未确认的提案。 */
+    val storyBibleSaved: Boolean = true,
+    val generatingBible: Boolean = false,
+    val savingBible: Boolean = false,
+    val writingProfile: WritingProfileDto = WritingProfileDto(),
+    val savingProfile: Boolean = false,
+    val rescueChapterId: String = "",
+    val rescueProblem: String = "",
+    val rescueKind: String = "plot",
+    val rescueOptions: List<RescueOptionDto> = emptyList(),
+    val rescuing: Boolean = false,
+    val reviewChapterId: String = "",
+    val review: ChapterReviewDto? = null,
+    val reviewing: Boolean = false,
+    val polishingChapterId: String = "",
     val error: String = "",
     val message: String = "",
 )
@@ -257,8 +280,206 @@ class ChaptersViewModel(
         }
     }
 
-    fun save(chapterId: String = "", title: String, goal: String, participants: String, content: String) {
-        if (state.value.saving) return
+    // ===== 创作工具 =====
+
+    /** 打开创作工具时读取设定集与类型偏好；文件不存在时返回空设定，不打扰用户。 */
+    fun loadWritingTools() {
+        viewModelScope.launch {
+            try {
+                val bible = chapters.readStoryBible(runId)
+                val profile = chapters.readWritingProfile(runId)
+                mutableState.update {
+                    it.copy(storyBible = bible, storyBibleSaved = true, writingProfile = profile)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                // 设定读不出来不该挡住写作；保留空设定即可。
+            }
+        }
+    }
+
+    fun generateStoryBible(premise: String, genre: String = state.value.writingProfile.genre) {
+        if (state.value.generatingBible) return
+        viewModelScope.launch {
+            mutableState.update { it.copy(generatingBible = true, error = "", message = "") }
+            try {
+                val bible = chapters.generateStoryBible(
+                    runId,
+                    GenerateStoryBibleRequest(
+                        premise = premise.trim(),
+                        genre = genre.trim(),
+                    ),
+                )
+                mutableState.update {
+                    it.copy(
+                        generatingBible = false,
+                        storyBible = bible,
+                        storyBibleSaved = false,
+                        message = "设定已生成，确认后保存才会用于创作。",
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(generatingBible = false, error = error.message ?: "生成设定失败。")
+                }
+            }
+        }
+    }
+
+    fun saveStoryBible() {
+        val bible = state.value.storyBible
+        if (bible.isEmpty || state.value.savingBible) return
+        viewModelScope.launch {
+            mutableState.update { it.copy(savingBible = true, error = "", message = "") }
+            try {
+                val saved = chapters.saveStoryBible(runId, bible)
+                mutableState.update {
+                    it.copy(
+                        savingBible = false,
+                        storyBible = saved,
+                        storyBibleSaved = true,
+                        message = "设定已保存，之后的大纲与正文都会带上它。",
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(savingBible = false, error = error.message ?: "保存设定失败。")
+                }
+            }
+        }
+    }
+
+    fun saveWritingProfile(profile: WritingProfileDto) {
+        if (state.value.savingProfile) return
+        viewModelScope.launch {
+            mutableState.update { it.copy(savingProfile = true, error = "", message = "") }
+            try {
+                val saved = chapters.saveWritingProfile(runId, profile)
+                mutableState.update {
+                    it.copy(
+                        savingProfile = false,
+                        writingProfile = saved,
+                        message = "写作类型已保存。",
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(savingProfile = false, error = error.message ?: "保存写作类型失败。")
+                }
+            }
+        }
+    }
+
+    fun updateRescueChapter(chapterId: String) {
+        mutableState.update { it.copy(rescueChapterId = chapterId, rescueOptions = emptyList()) }
+    }
+
+    fun updateRescueProblem(value: String) {
+        mutableState.update { it.copy(rescueProblem = value.take(500), rescueOptions = emptyList()) }
+    }
+
+    fun updateRescueKind(kind: String) {
+        mutableState.update { it.copy(rescueKind = kind, rescueOptions = emptyList()) }
+    }
+
+    fun rescue() {
+        val current = state.value
+        if (current.rescuing) return
+        val problem = current.rescueProblem.trim()
+        if (problem.isEmpty()) {
+            mutableState.update { it.copy(error = "先写一下卡在哪里。") }
+            return
+        }
+        val chapterId = current.rescueChapterId.ifBlank {
+            current.chapters.firstOrNull { it.content.isNotBlank() }?.chapterId.orEmpty()
+        }
+        viewModelScope.launch {
+            mutableState.update { it.copy(rescuing = true, error = "", message = "") }
+            try {
+                val options = chapters.rescue(
+                    runId,
+                    RescueRequest(chapterId = chapterId, problem = problem, kind = current.rescueKind, count = 3),
+                )
+                mutableState.update {
+                    it.copy(rescuing = false, rescueOptions = options, message = "给了 ${options.size} 个方案，挑一个往下写。")
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(rescuing = false, error = error.message ?: "生成方案失败。")
+                }
+            }
+        }
+    }
+
+    fun updateReviewChapter(chapterId: String) {
+        mutableState.update { it.copy(reviewChapterId = chapterId, review = null) }
+    }
+
+    fun reviewChapter(chapterId: String) {
+        if (state.value.reviewing) return
+        val target = chapterId.ifBlank {
+            state.value.chapters.firstOrNull { it.content.isNotBlank() }?.chapterId.orEmpty()
+        }
+        if (target.isBlank()) {
+            mutableState.update { it.copy(error = "先选一章有正文的章节。") }
+            return
+        }
+        viewModelScope.launch {
+            mutableState.update {
+                it.copy(reviewing = true, reviewChapterId = target, review = null, error = "", message = "")
+            }
+            try {
+                val review = chapters.reviewChapter(runId, target)
+                mutableState.update { it.copy(reviewing = false, review = review) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(reviewing = false, error = error.message ?: "检查失败。")
+                }
+            }
+        }
+    }
+
+    fun polishChapter(chapterId: String) {
+        if (state.value.polishingChapterId.isNotBlank()) return
+        val target = chapterId.ifBlank { state.value.reviewChapterId }
+        if (target.isBlank()) return
+        viewModelScope.launch {
+            mutableState.update {
+                it.copy(polishingChapterId = target, error = "", message = "")
+            }
+            try {
+                val polished = chapters.polishChapter(runId, target)
+                mutableState.update { current ->
+                    current.copy(
+                        polishingChapterId = "",
+                        chapters = current.chapters.map {
+                            if (it.chapterId == polished.chapterId) polished else it
+                        },
+                        message = "已按建议润色《${polished.title}》，可继续检查。",
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(polishingChapterId = "", error = error.message ?: "润色失败。")
+                }
+            }
+        }
+    }
+
+    fun save(chapterId: String = "", title: String, goal: String, participants: String, content: String) {        if (state.value.saving) return
         viewModelScope.launch {
             mutableState.update { it.copy(saving = true, error = "", message = "") }
             try {

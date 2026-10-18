@@ -22,6 +22,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Forum
@@ -83,6 +84,7 @@ fun ChaptersScreen(
     var showArchive by remember { mutableStateOf(false) }
     var pendingNovelConversion by remember { mutableStateOf<Pair<String, String>?>(null) }
     var showNovelCreation by remember { mutableStateOf(false) }
+    var showWritingTools by remember { mutableStateOf(false) }
     var pendingDraftChapter by remember { mutableStateOf<ChapterDto?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -180,6 +182,40 @@ fun ChaptersScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(AppSpacing.md),
         ) {
+            item {
+                AppCard(
+                    variant = AppCardVariant.Outlined,
+                    onClick = { showWritingTools = true },
+                    contentPadding = PaddingValues(AppSpacing.lg),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Rounded.AutoAwesome,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Spacer(Modifier.width(AppSpacing.md))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "写作助手",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            Text(
+                                "设定集 · 类型模版 · 卡文救援 · 润色检查",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
             item {
                 AppCard(contentPadding = PaddingValues(AppSpacing.lg)) {
                     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
@@ -385,6 +421,23 @@ fun ChaptersScreen(
             onCreateChapters = viewModel::createChaptersFromOutline,
             onClearOutline = viewModel::clearOutline,
             onDismiss = { showNovelCreation = false },
+        )
+    }
+    if (showWritingTools) {
+        WritingToolSheet(
+            state = state,
+            onLoad = viewModel::loadWritingTools,
+            onGenerateBible = viewModel::generateStoryBible,
+            onSaveBible = viewModel::saveStoryBible,
+            onSaveProfile = viewModel::saveWritingProfile,
+            onRescueChapter = viewModel::updateRescueChapter,
+            onRescueProblem = viewModel::updateRescueProblem,
+            onRescueKind = viewModel::updateRescueKind,
+            onRescue = viewModel::rescue,
+            onSelectReviewChapter = viewModel::updateReviewChapter,
+            onReviewChapter = viewModel::reviewChapter,
+            onPolish = viewModel::polishChapter,
+            onDismiss = { showWritingTools = false },
         )
     }
     pendingDraftChapter?.let { chapter ->

@@ -13,10 +13,19 @@ import top.wkbin.zaomeng.data.api.GenerateNovelOutlineRequest
 import top.wkbin.zaomeng.data.api.NovelOutlineResponse
 import top.wkbin.zaomeng.data.api.AskBookResponseDto
 import top.wkbin.zaomeng.data.api.ChapterDto
+import top.wkbin.zaomeng.data.api.ChapterReviewDto
 import top.wkbin.zaomeng.data.api.ChaptersResponse
 import top.wkbin.zaomeng.data.api.DialogueSessionDto
+import top.wkbin.zaomeng.data.api.GenerateStoryBibleRequest
+import top.wkbin.zaomeng.data.api.PolishChapterRequest
+import top.wkbin.zaomeng.data.api.RescueRequest
+import top.wkbin.zaomeng.data.api.RescueResponse
 import top.wkbin.zaomeng.data.api.SaveChapterRequest
+import top.wkbin.zaomeng.data.api.SaveStoryBibleRequest
+import top.wkbin.zaomeng.data.api.SaveWritingProfileRequest
 import top.wkbin.zaomeng.data.api.SearchResultDto
+import top.wkbin.zaomeng.data.api.StoryBibleDto
+import top.wkbin.zaomeng.data.api.WritingProfileDto
 import top.wkbin.zaomeng.ktor.services.ChapterManagementService
 import top.wkbin.zaomeng.ktor.services.StorageService
 
@@ -96,6 +105,39 @@ class ChapterClient(
         request: DraftChapterRequest,
     ): ChapterDto = decodeChapter(
         chapterManagement.draftChapter(runId, chapterId, request.instruction),
+    )
+
+    // ===== 创作工具 =====
+
+    suspend fun readStoryBible(runId: String): StoryBibleDto =
+        chapterManagement.readStoryBible(runId)
+
+    suspend fun generateStoryBible(
+        runId: String,
+        request: GenerateStoryBibleRequest,
+    ): StoryBibleDto = chapterManagement.generateStoryBible(runId, request)
+
+    suspend fun saveStoryBible(runId: String, request: SaveStoryBibleRequest): StoryBibleDto =
+        chapterManagement.saveStoryBible(runId, request.bible)
+
+    suspend fun readWritingProfile(runId: String): WritingProfileDto =
+        chapterManagement.readWritingProfile(runId)
+
+    suspend fun saveWritingProfile(runId: String, request: SaveWritingProfileRequest): WritingProfileDto =
+        chapterManagement.saveWritingProfile(runId, request.profile)
+
+    suspend fun rescue(runId: String, request: RescueRequest): RescueResponse =
+        RescueResponse(chapterManagement.rescue(runId, request))
+
+    suspend fun reviewChapter(runId: String, chapterId: String): ChapterReviewDto =
+        chapterManagement.reviewChapter(runId, chapterId)
+
+    suspend fun polishChapter(
+        runId: String,
+        chapterId: String,
+        request: PolishChapterRequest,
+    ): ChapterDto = decodeChapter(
+        chapterManagement.polishChapter(runId, chapterId, request.instruction),
     )
 
     suspend fun delete(runId: String, chapterId: String): JsonObject =

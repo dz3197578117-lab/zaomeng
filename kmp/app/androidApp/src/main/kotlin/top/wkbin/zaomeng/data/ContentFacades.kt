@@ -4,13 +4,19 @@ import kotlinx.serialization.json.JsonObject
 import okio.Path
 import top.wkbin.zaomeng.data.api.AskBookResponseDto
 import top.wkbin.zaomeng.data.api.ChapterDto
+import top.wkbin.zaomeng.data.api.ChapterReviewDto
 import top.wkbin.zaomeng.data.api.DialogueSessionDto
 import top.wkbin.zaomeng.data.api.ExportedChapterManuscript
 import top.wkbin.zaomeng.data.api.GenerateNovelOutlineRequest
+import top.wkbin.zaomeng.data.api.GenerateStoryBibleRequest
 import top.wkbin.zaomeng.data.api.NovelOutlineResponse
+import top.wkbin.zaomeng.data.api.RescueOptionDto
+import top.wkbin.zaomeng.data.api.RescueRequest
 import top.wkbin.zaomeng.data.api.ReusableCardDto
 import top.wkbin.zaomeng.data.api.SaveChapterRequest
 import top.wkbin.zaomeng.data.api.SearchResultDto
+import top.wkbin.zaomeng.data.api.StoryBibleDto
+import top.wkbin.zaomeng.data.api.WritingProfileDto
 
 interface ChapterRepository {
     suspend fun listChapters(runId: String): List<ChapterDto>
@@ -23,6 +29,24 @@ interface ChapterRepository {
 
     /** AI 小说创作：按大纲与前文写出本章正文。 */
     suspend fun draftChapter(runId: String, chapterId: String, instruction: String = ""): ChapterDto
+
+    // ===== 创作工具 =====
+
+    suspend fun readStoryBible(runId: String): StoryBibleDto
+    suspend fun generateStoryBible(runId: String, request: GenerateStoryBibleRequest): StoryBibleDto
+    suspend fun saveStoryBible(runId: String, bible: StoryBibleDto): StoryBibleDto
+
+    suspend fun readWritingProfile(runId: String): WritingProfileDto
+    suspend fun saveWritingProfile(runId: String, profile: WritingProfileDto): WritingProfileDto
+
+    /** 卡文救援：按卡点类型给多个可写方案，不落盘。 */
+    suspend fun rescue(runId: String, request: RescueRequest): List<RescueOptionDto>
+
+    /** 检查章节：语病、语气、矛盾、设定一致性与摘要。 */
+    suspend fun reviewChapter(runId: String, chapterId: String): ChapterReviewDto
+
+    /** 按检查建议改写并保存正文。 */
+    suspend fun polishChapter(runId: String, chapterId: String, instruction: String = ""): ChapterDto
     suspend fun archiveSessionAsChapter(runId: String, sessionId: String, title: String = ""): ChapterDto
     suspend fun convertSessionAsNovel(runId: String, sessionId: String, title: String = ""): ChapterDto
     suspend fun deleteChapter(runId: String, chapterId: String): JsonObject
