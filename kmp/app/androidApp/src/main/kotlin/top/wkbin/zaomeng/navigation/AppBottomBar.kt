@@ -26,7 +26,7 @@ import androidx.navigation3.runtime.NavKey
 /**
  * 窄屏（手机）底部导航：白色浮动胶囊。
  *
- * 五个目的地固定为：书卷架 / 创作 / 卡库 / 跨书卷 / 设置。
+ * 固定展示 [bottomBarItems] 五项：书卷架 / 创作 / 会话 / 卡库 / 设置。
  * 选中项用浅蓝胶囊托住图标，其余保持灰字，整条栏浮在页面之上，
  * 不再用 M3 默认的整条 NavigationBar 底色。
  */
@@ -53,8 +53,7 @@ fun AppBottomBar(
                 modifier = Modifier.height(66.dp).padding(horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                topLevelRailItems
-                    .filterNot { it.destination == OnlineLibraryDestination }
+                bottomBarItems
                     .forEach { item ->
                         val selected = selectedDestination?.let { it::class == item.destination::class } == true
                         Column(

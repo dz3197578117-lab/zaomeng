@@ -35,11 +35,21 @@
         android:roundIcon="@drawable/zaomeng_logo"
         android:supportsRtl="true"
         android:theme="@style/Theme.MyApplication">
+        <!--
+            为什么由 Activity 自己处理这些配置变更：
+            导航返回栈是 `remember` 出来的（见 navigation/ZaomengNavHost.kt:120），
+            而 MainActivity 一旦被「销毁—重建」，整个栈就回到书卷架，
+            对话里正在流式生成的那一轮、章节页与写作助手弹层里的页面级 ViewModel 一起蒸发。
+            实测表现就是「转个屏就回到首页」。
+            这些配置项 Compose 都能在重组时自己接住（主题由偏好驱动、
+            Density 来自 LocalDensity、文案方向来自 layoutDirection），不需要重建 Activity。
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:theme="@style/Theme.MyApplication"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density|fontScale|layoutDirection|locale">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

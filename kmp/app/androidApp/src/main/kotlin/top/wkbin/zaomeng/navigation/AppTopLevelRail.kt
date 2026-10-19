@@ -68,6 +68,14 @@ internal val topLevelRailItems = listOf(
         icon = Icons.Outlined.EditNote,
         selectedIcon = Icons.Filled.EditNote,
     ),
+    // 「全部会话」（runId 为空的那一版）必须有一个顶级入口，否则用户想找上周跟某个角色聊过的
+    // 那一段，只能先想起它属于哪本书、再进书卷详情。此前它唯一的活入口就在书卷详情里。
+    TopLevelRailItem(
+        destination = SessionsDestination(),
+        label = "会话",
+        icon = Icons.Outlined.Forum,
+        selectedIcon = Icons.Filled.Forum,
+    ),
     TopLevelRailItem(
         destination = CardLibraryDestination,
         label = "卡库",
@@ -93,6 +101,17 @@ internal val topLevelRailItems = listOf(
         selectedIcon = Icons.Filled.Settings,
     ),
 )
+
+/**
+ * 窄屏底部导航固定展示的条目。
+ *
+ * 8.5 英寸以下的手机放 7 个 tab 会挤成一排难以点中的小图标，所以底栏只保留最常用的五项；
+ * 「在线书库」与「跨书卷」在书卷架首屏都有入口卡片，不必各占一格。
+ * 底栏与侧栏共用同一份 [TopLevelRailItem]，不会出现两处入口不一致。
+ */
+internal val bottomBarItems: List<TopLevelRailItem> = topLevelRailItems.filterNot { item ->
+    item.destination == OnlineLibraryDestination || item.destination == CrossoverDestination
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

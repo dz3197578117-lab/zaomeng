@@ -498,7 +498,12 @@ fun ZaomengNavHost(
     } else {
         // 手机端：底部导航 + 内容区。只有在顶级目的地才显示底栏；
         // 书卷详情、对话、设置子页等把垂直空间完整还给内容。
-        val currentTopLevel = backStack.lastOrNull()?.takeIf { it.isTopLevelDestination() }
+        // 只有当前页确实属于底栏里的某一项时才显示底栏。
+        // 否则会出现「底栏还在、但五项全不高亮」的迷失感——在线书库与跨书卷就是这种
+        // 顶级目的地：它们在侧栏有一项，却因为底栏放不下而被过滤掉了。
+        val currentTopLevel = backStack.lastOrNull()?.takeIf { key ->
+            bottomBarItems.any { it.destination::class == key::class }
+        }
         Scaffold(
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
@@ -567,6 +572,10 @@ private fun NavKey.isTopLevelDestination(): Boolean = when (this) {
     OnlineLibraryDestination,
     ModelSettingsDestination,
     -> true
+
+    // 会话列表是带参目的地（runId 为空＝全部会话，非空＝某本书的会话），
+    // 所以只能按类型判断——此前注释写着「会话列表页视为顶级」，`when` 里却没有它。
+    is SessionsDestination -> true
 
     else -> false
 }
