@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -33,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import top.wkbin.zaomeng.data.api.OnDeviceModelDto
 import top.wkbin.zaomeng.data.api.OnDeviceStatusDto
 import top.wkbin.zaomeng.platform.rememberModelFileImporter
 import kotlin.math.roundToInt
@@ -162,6 +164,7 @@ internal fun OnDeviceModelContent(
                 status = status,
                 busy = busy,
                 applying = applying,
+                selectedModel = selectedModel,
                 contextSize = contextSize,
                 threads = threads,
                 gpuLayers = gpuLayers,
@@ -249,6 +252,8 @@ private fun OnDeviceModelPicker(
     onDeleteModel: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    // 删掉一个几 GB 的 GGUF 需要重新下载或重新导入才能再用，先弹一次确认
+    var pendingDelete by remember { mutableStateOf<OnDeviceModelDto?>(null) }
     val current = status.models.firstOrNull { it.fileName == selectedModel }
     val label = current?.let { "${it.displayName} · ${formatBytes(it.sizeBytes)}" }
         ?: if (status.models.isEmpty()) "还没有模型" else "选择模型"
@@ -314,12 +319,38 @@ private fun OnDeviceModelPicker(
                 modifier = Modifier.weight(1f),
             )
             TextButton(
-                onClick = { onDeleteModel(model.fileName) },
+                onClick = { pendingDelete = model },
                 enabled = enabled && status.modelFile != model.fileName,
             ) {
                 Text("删除")
             }
         }
+    }
+    pendingDelete?.let { model ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("删除本机模型？") },
+            text = {
+                Text(
+                    "将删除「${model.displayName.ifBlank { model.fileName }}」" +
+                        "（${formatBytes(model.sizeBytes)} · ${model.fileName}）。" +
+                        "删掉后要重新下载或重新导入才能再用，此操作无法撤销。",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDelete = null
+                        onDeleteModel(model.fileName)
+                    },
+                ) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = null }) { Text("取消") }
+            },
+        )
     }
 }
 
@@ -396,6 +427,7 @@ private fun OnDeviceRunControls(
     status: OnDeviceStatusDto,
     busy: Boolean,
     applying: Boolean,
+    selectedModel: String,
     contextSize: String,
     threads: String,
     gpuLayers: String,
@@ -408,12 +440,50 @@ private fun OnDeviceRunControls(
     onStop: () -> Unit,
     onApplyEndpoint: () -> Unit,
 ) {
+    // 这几项只在启动时作为命令行参数传给 llama-server，运行中改它们不会影响已经跑起来的进程。
+    // 不提示的话，用户换了模型却「感觉没差别」，只会得出「换模型没用」的错误结论。
+    val requestedContext = contextSize.trim().toIntOrNull() ?: 0
+    val effectiveContext = resolveOnDeviceContextSize(contextSize)
+    val contextClampHint = when {
+        requestedContext > MAX_ON_DEVICE_CONTEXT_SIZE ->
+            "超过上限，会按 $MAX_ON_DEVICE_CONTEXT_SIZE 生效。"
+        requestedContext in 1 until MIN_ON_DEVICE_CONTEXT_SIZE ->
+            "低于下限，会按 $MIN_ON_DEVICE_CONTEXT_SIZE 生效。"
+        else -> null
+    }
+    // 「关闭思考」不在运行状态快照里（OnDeviceStatusDto 没有这个字段），所以用「最近一次启动时它是多少」
+    // 推断：进程一起来（startedAt 变化）就把当时的开关值记为已生效。宁可漏报，也不误报。
+    val appliedDisableThinking by remember(status.startedAt) { mutableStateOf(disableThinking) }
+    val pendingChanges = if (!status.running) {
+        emptyList()
+    } else {
+        buildList {
+            if (selectedModel.isNotBlank() && selectedModel != status.modelFile) add("模型")
+            if (effectiveContext > 0 && effectiveContext != status.contextSize) add("上下文长度")
+            if ((threads.toIntOrNull() ?: 0) != status.threads) add("线程数")
+            if ((gpuLayers.toIntOrNull() ?: 0) != status.gpuLayers) add("GPU 层数")
+            if (disableThinking != appliedDisableThinking) add("关闭思考")
+        }
+    }
+
+    if (status.running) {
+        Text(
+            text = "以下设置在启动时生效（含「关闭思考」）：运行中修改不会作用到当前进程，" +
+                "要重新加载才生效——检测到改动时这里会出现「停止并重新加载」。",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
     EditorField(
         value = contextSize,
         onValueChange = onContextSizeChange,
         label = "上下文长度",
         placeholder = "0 = 自动（默认 8192）",
-        supportingText = "手机内存有限，不建议超过 8192；填 0 时按模型自带上限压到 8192。",
+        supportingText = buildString {
+            append("手机内存有限，不建议超过 8192；填 0 时按模型自带上限压到 8192。")
+            append(" 可填 ").append(MIN_ON_DEVICE_CONTEXT_SIZE).append("–").append(MAX_ON_DEVICE_CONTEXT_SIZE).append("。")
+            if (contextClampHint != null) append(' ').append(contextClampHint)
+        },
     )
     EditorField(
         value = threads,
@@ -444,6 +514,22 @@ private fun OnDeviceRunControls(
         }
         Switch(checked = disableThinking, onCheckedChange = onDisableThinkingChange)
     }
+    if (pendingChanges.isNotEmpty()) {
+        Text(
+            text = "已改动：${pendingChanges.joinToString("、")}。当前跑的仍是「${status.modelFile}」" +
+                "（上下文 ${status.contextSize} · 线程 ${status.threads} · GPU 层 ${status.gpuLayers}）。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.tertiary,
+        )
+        // 服务端的 start 会先停掉旧进程再拉起新的，所以「重新加载」直接用同一个动作即可。
+        Button(
+            onClick = onStart,
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (busy) "正在重新加载…" else "停止并重新加载（应用改动）")
+        }
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -464,6 +550,18 @@ private fun OnDeviceRunControls(
         ) {
             Text(if (applying) "启用中…" else "启用本机推理")
         }
+    }
+    if (!status.running && !status.starting && status.models.isNotEmpty()) {
+        // 停止/删除之后最容易踩的坑：`provider = local` 的档案还写着「已启用本机推理」，
+        // 但地址已经没人监听，下一个动作（对话、蒸馏）只会拿到 Connection refused。
+        // 这句话就贴在按钮下面——页面顶部的状态条在手机上要滚好几屏才看得到。
+        Text(
+            text = "本机推理当前未运行。若「模型设置」里的当前档案是本机端点，它记下的地址" +
+                "此刻已经没人监听：对话、摘要与蒸馏会直接连接失败——请先启动一个模型，" +
+                "或到「模型设置」切换到云端档案。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.tertiary,
+        )
     }
     Text(
         text = "「启用本机推理」会自动创建（或更新）一个指向本机端点的模型档案并设为当前模型，" +

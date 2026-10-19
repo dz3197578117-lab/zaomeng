@@ -23,6 +23,41 @@ internal fun onDeviceStem(fileName: String): String {
 }
 
 /**
+ * 端侧上下文长度的可填范围，与 `OnDeviceModelService.MIN_CONTEXT / MAX_CONTEXT` 保持一致
+ * （服务端仍会再夹一次，那是最后一道防线）。
+ *
+ * 为什么界面也要有：以前只有服务端静默夹取，用户填 99999、实际按 32768 跑，
+ * 输入框里还留着 99999 —— 数字是假的，出事时无从判断「我到底跑在多少」。
+ */
+internal const val MIN_ON_DEVICE_CONTEXT_SIZE = 512
+internal const val MAX_ON_DEVICE_CONTEXT_SIZE = 32_768
+
+/**
+ * 把输入框里的上下文长度解析成**实际会发给 llama-server** 的值。
+ *
+ * - 空 / 非数字 / `0` → `0`，表示「用模型自带长度」（服务端再压到 8192 上限）；
+ * - 正数 → 夹到 [MIN_ON_DEVICE_CONTEXT_SIZE]..[MAX_ON_DEVICE_CONTEXT_SIZE]。
+ *
+ * 抽成纯函数是为了让界面、ViewModel 与测试用同一套规则：以前只有服务端夹取，
+ * 界面显示的值和实际跑的值会不一致。
+ */
+internal fun resolveOnDeviceContextSize(input: String): Int {
+    val requested = input.trim().toIntOrNull() ?: 0
+    if (requested <= 0) return 0
+    return requested.coerceIn(MIN_ON_DEVICE_CONTEXT_SIZE, MAX_ON_DEVICE_CONTEXT_SIZE)
+}
+
+/**
+ * 是否还需要继续轮询端侧状态：只有「正在加载模型」或「正在下载」时才有必要。
+ *
+ * 以前这里靠 `repeat(600)`（1 秒一次）兜底，等于「10 分钟后就当它结束了」——而几 GB 的 GGUF
+ * 在手机上常常下得更久，第 10 分钟之后进度条与已下载字节数会**冻结**（服务端其实还在下），
+ * 看起来像卡死。现在只看状态本身：只要还在下载/加载就继续跟。
+ */
+internal fun shouldKeepPolling(status: OnDeviceStatusDto?): Boolean =
+    status != null && (status.starting || status.download?.active == true)
+
+/**
  * 独立「本机模型」页的状态。
  *
  * 端侧状态（运行状态、模型目录、下载/导入进度、日志）**只**归这里管，模型档案编辑页不再持有
@@ -89,8 +124,8 @@ class OnDeviceModelsViewModel(
         }
     }
 
-    private suspend fun refreshOnce() {
-        try {
+    private suspend fun refreshOnce(): Boolean {
+        return try {
             val status = repository.onDeviceStatus()
             mutableState.update { current ->
                 current.copy(
@@ -102,24 +137,38 @@ class OnDeviceModelsViewModel(
                         ?: status.models.firstOrNull()?.fileName.orEmpty(),
                 )
             }
+            true
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
             mutableState.update { it.copy(error = error.message ?: "端侧状态读取失败。") }
+            false
         }
     }
 
-    /** 只有在「正在加载模型」或「正在下载」时才有必要轮询。 */
+    /**
+     * 轮询「启动中 / 下载中」的进度。
+     *
+     * 循环条件只看 [shouldKeepPolling]——**不设次数上限**：以前是 `repeat(600)` + 1 秒间隔，
+     * 也就是 10 分钟。而一个 4 GB 的 GGUF 在手机上常常下得更久，第 10 分钟之后进度条和已下载
+     * 字节数就不再变化（服务端其实还在下），看起来像卡死；用户一旦点「取消下载」，
+     * 半成品 `.part` 会被清掉，重下又从零开始。
+     */
     private fun ensurePolling() {
         if (pollJob?.isActive == true) return
-        val status = state.value.onDevice ?: return
-        if (!status.starting && status.download?.active != true) return
+        if (!shouldKeepPolling(state.value.onDevice)) return
         pollJob = viewModelScope.launch {
-            repeat(POLL_LIMIT) {
+            var failures = 0
+            while (true) {
                 delay(POLL_INTERVAL_MS)
-                refreshOnce()
-                val latest = state.value.onDevice ?: return@launch
-                if (!latest.starting && latest.download?.active != true) return@launch
+                // 读不到状态时别无限空转（错误已经写进 state.error），但也要容忍一两次抖动：
+                // 一次瞬时失败就永久冻结进度，等于把「10 分钟上限」换成「一次失败上限」。
+                if (refreshOnce()) {
+                    failures = 0
+                } else if (++failures >= MAX_CONSECUTIVE_POLL_FAILURES) {
+                    return@launch
+                }
+                if (!shouldKeepPolling(state.value.onDevice)) return@launch
             }
         }
     }
@@ -315,13 +364,24 @@ class OnDeviceModelsViewModel(
         viewModelScope.launch {
             mutableState.update { it.copy(busy = true, error = "", message = "") }
             try {
+                // 删掉正在加载的那个模型时端侧会顺带停下（见 OnDeviceModelService.deleteModel）。
+                // 只有「这一删把端点真的弄停了」才需要提醒，否则只是少了一个可选模型。
+                val wasRunning = state.value.onDevice?.running == true
                 val status = repository.deleteOnDeviceModel(fileName)
+                val localProfile = if (wasRunning && !status.running) activeOnDeviceProfileLabel() else null
                 mutableState.update {
                     it.copy(
                         onDevice = status,
                         busy = false,
                         selectedModel = it.selectedModel.takeIf { selected -> selected != fileName }.orEmpty(),
-                        message = "已删除 $fileName。",
+                        message = buildString {
+                            append("已删除 ").append(fileName).append("。")
+                            if (localProfile != null) {
+                                append("当前模型「").append(localProfile)
+                                append("」是本机端点，删掉正在使用的模型后它的地址已失效：")
+                                append("请重新启动本机模型，或到「模型设置」切换到云端档案。")
+                            }
+                        },
                     )
                 }
             } catch (cancelled: CancellationException) {
@@ -344,20 +404,44 @@ class OnDeviceModelsViewModel(
             mutableState.update { it.copy(error = "请先选择一个本机模型。") }
             return
         }
+        // 上下文长度在**提交前**就夹到服务端认可的区间，并把最终生效值写回输入框：
+        // 只靠服务端静默夹取时，用户填 99999、实际按 32768 跑，界面上还显示 99999。
+        val requestedContext = current.contextSize.trim().toIntOrNull() ?: 0
+        val effectiveContext = resolveOnDeviceContextSize(current.contextSize)
+        val contextClamped = requestedContext > 0 && effectiveContext != requestedContext
         viewModelScope.launch {
-            mutableState.update { it.copy(busy = true, error = "", message = "") }
+            mutableState.update {
+                it.copy(
+                    busy = true,
+                    error = "",
+                    message = "",
+                    contextSize = if (effectiveContext > 0) effectiveContext.toString() else it.contextSize,
+                )
+            }
             try {
                 val started = repository.startOnDevice(
                     StartOnDeviceRequest(
                         modelFile = fileName,
-                        contextSize = current.contextSize.toIntOrNull() ?: 0,
+                        contextSize = effectiveContext,
                         threads = current.threads.toIntOrNull() ?: 0,
                         gpuLayers = current.gpuLayers.toIntOrNull() ?: 0,
                         disableThinking = current.disableThinking,
                     ),
                 )
                 mutableState.update {
-                    it.copy(onDevice = started, busy = false, message = "正在加载模型，首次加载需要十几秒到几分钟…")
+                    it.copy(
+                        onDevice = started,
+                        busy = false,
+                        message = buildString {
+                            // 服务端 start 会先停掉旧进程再拉起新的，所以这个按钮同时也是「重新加载」
+                            append("正在加载模型，首次加载需要十几秒到几分钟…")
+                            if (contextClamped) {
+                                append(" 上下文已按 ").append(effectiveContext)
+                                append(" 生效（可填 ").append(MIN_ON_DEVICE_CONTEXT_SIZE)
+                                append("–").append(MAX_ON_DEVICE_CONTEXT_SIZE).append("）。")
+                            }
+                        },
+                    )
                 }
                 ensurePolling()
             } catch (cancelled: CancellationException) {
@@ -374,7 +458,23 @@ class OnDeviceModelsViewModel(
             mutableState.update { it.copy(busy = true, error = "", message = "") }
             try {
                 val stopped = repository.stopOnDevice()
-                mutableState.update { it.copy(onDevice = stopped, busy = false) }
+                // 端侧一停，provider = local 的那份档案就没有可连的地址了（SettingsManagementService 的
+                // `configured` 也会随之变 false）。只把状态改成「未运行」的话，用户的下一个动作
+                // （对话/蒸馏）只会拿到 Connection refused。
+                val localProfile = activeOnDeviceProfileLabel()
+                mutableState.update {
+                    it.copy(
+                        onDevice = stopped,
+                        busy = false,
+                        message = if (localProfile != null) {
+                            "已停止端侧推理。当前模型「$localProfile」是本机端点，这个地址现在已失效：" +
+                                "对话、摘要与蒸馏都会直接连接失败。请重新启动本机模型，" +
+                                "或到「模型设置」切换到云端档案。"
+                        } else {
+                            "已停止端侧推理。"
+                        },
+                    )
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
@@ -382,6 +482,20 @@ class OnDeviceModelsViewModel(
             }
         }
     }
+
+    /**
+     * 当前**活动档案**若是本机端点，返回它的展示名（否则 null）。
+     *
+     * 端侧停止 / 删掉正在用的模型之后，这份档案的地址指向一个没人监听的端口；
+     * `SettingsManagementService` 会据此把 `configured` 判成 false（导入页、书卷架随之提示），
+     * 这里只负责把话说清楚：告诉用户是哪个档案失效了、下一步该点哪。
+     */
+    private suspend fun activeOnDeviceProfileLabel(): String? = runCatching {
+        val settings = repository.getModelSettings()
+        val active = settings.profiles.firstOrNull { it.profileId == settings.activeProfileId }
+        active?.takeIf { it.provider.trim().equals(LOCAL_PROVIDER, ignoreCase = true) }
+            ?.let { it.name.ifBlank { it.model } }
+    }.getOrNull()
 
     /**
      * 「启用本机推理」：把当前运行中的本机端点写成一个模型档案并设为当前档案。
@@ -437,7 +551,9 @@ class OnDeviceModelsViewModel(
 
     private companion object {
         const val POLL_INTERVAL_MS = 1_000L
-        const val POLL_LIMIT = 600
+        /** 连续读状态失败几次后放弃轮询（单次抖动不该把进度冻住）。 */
+        const val MAX_CONSECUTIVE_POLL_FAILURES = 3
+        // 刻意没有「轮询次数上限」：能不能停只看 shouldKeepPolling（在下载/在加载就继续跟）。
         const val LOCAL_PROVIDER = "local"
         const val LOCAL_PROFILE_NAME = "本机模型（端侧）"
     }

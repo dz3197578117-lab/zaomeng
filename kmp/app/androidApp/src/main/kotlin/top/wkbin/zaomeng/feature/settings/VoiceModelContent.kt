@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -16,6 +17,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -43,6 +48,9 @@ internal fun VoiceModelContent(
     onDelete: () -> Unit,
     onDismissMessage: () -> Unit,
 ) {
+    // 删除会同时关掉离线神经朗读（VoiceModelSettingsViewModel 里 persistSelection(enabled = false)），
+    // 所以必须先确认一次，并把「会关掉朗读」写进确认文案。
+    var pendingDelete by remember { mutableStateOf(false) }
     AppCard(
         modifier = Modifier.fillMaxWidth(),
         containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
@@ -201,10 +209,37 @@ internal fun VoiceModelContent(
                     TextButton(onClick = onCancelDownload) { Text("取消下载") }
                 }
                 if (state.selectedReady) {
-                    TextButton(onClick = onDelete) { Text("删除本地文件") }
+                    TextButton(onClick = { pendingDelete = true }) { Text("删除本地文件") }
                 }
             }
         }
+    }
+    if (pendingDelete) {
+        AlertDialog(
+            onDismissRequest = { pendingDelete = false },
+            title = { Text("删除本地语音模型？") },
+            text = {
+                Text(
+                    "将删除「${state.selectedModel.displayName}」的本地文件" +
+                        "（${formatMegabytes(state.selectedModel.totalBytes)}），" +
+                        "并同时关闭离线神经朗读——删完后朗读会退回系统 TTS，" +
+                        "要重新下载模型才能再用。此操作无法撤销。",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDelete = false
+                        onDelete()
+                    },
+                ) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDelete = false }) { Text("取消") }
+            },
+        )
     }
 }
 

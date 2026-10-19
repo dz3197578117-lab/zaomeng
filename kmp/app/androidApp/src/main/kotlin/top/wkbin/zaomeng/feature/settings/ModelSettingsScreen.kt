@@ -65,6 +65,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.platform.PlatformBackHandler
 import top.wkbin.zaomeng.platform.ProviderLogoMark
 import top.wkbin.zaomeng.data.api.ModelProfileDto
 
@@ -166,6 +167,12 @@ fun ModelProfileEditorScreen(
     fun requestBack() {
         if (state.isDirty && !state.saving && !state.deleting) showDiscardDialog = true else onBack()
     }
+
+    // 系统返回手势/返回键走与顶栏箭头同一条分支：有未保存的修改就弹确认，别静默丢弃。
+    PlatformBackHandler(
+        enabled = state.isDirty && !state.saving && !state.deleting,
+        onBack = ::requestBack,
+    )
 
     if (showDiscardDialog) {
         AlertDialog(
@@ -390,6 +397,16 @@ fun ModelProfileEditorScreen(
                                 }
                             },
                         )
+                        // 「拉取模型 / 检测能力」因为缺 Key 失败时，把提示放到**这个字段下面**：
+                        // 只在页面顶部报一句错，用户不知道该改哪里（原来还会被误报成「接口未返回可用模型」）。
+                        if (state.apiKeyAttention) {
+                            Text(
+                                text = "先填写这里的 API Key 才能拉取模型或检测能力。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     } else {
                         Text(
                             text = "该端点不需要 API Key，留空即可保存；请求不会携带鉴权头。",
@@ -579,8 +596,22 @@ private fun ModelProfileCard(
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "编辑")
             }
             Text("${profile.provider} · ${profile.model}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // 端侧档案的 configured 现在连带「本机端点是否在跑」：光写「尚未完成配置」会让人以为
+            // 自己漏填了 provider/model/Key。这里点名真正的原因，并说清为什么没有「设为当前」。
+            val onDeviceStopped = !profile.configured && profile.model.isNotBlank() && profile.isOnDeviceEndpoint()
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(if (profile.configured) "连接已配置" else "尚未完成配置", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = if (profile.configured) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                Text(
+                    if (profile.configured) {
+                        "连接已配置"
+                    } else if (onDeviceStopped) {
+                        "本机端点已停止：先到「本机模型（端侧）」启动一个模型，才能切换到这里"
+                    } else {
+                        "尚未完成配置"
+                    },
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (profile.configured) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                )
                 if (!active && profile.configured) {
                     TextButton(onClick = onActivate, enabled = !switching) {
                         if (switching) ProgressIcon()
@@ -874,6 +905,15 @@ private fun profileCatalogId(profile: ModelProfileDto): String =
         catalog.models.any { it.id == profile.model } && catalog.provider == profile.provider &&
             catalog.baseUrl.trimEnd('/') == profile.baseUrl.trimEnd('/')
     }?.id.orEmpty()
+
+/**
+ * 该档案是否指向本机 llama-server 端点（`provider = local`）。
+ *
+ * 与 `SettingsManagementService.ON_DEVICE_PROVIDER` 同值；判断本地档案为什么
+ * `configured == false` 时要靠它区分「本机端点没启动」与「真的漏填了字段」。
+ */
+private fun ModelProfileDto.isOnDeviceEndpoint(): Boolean =
+    provider.trim().equals("local", ignoreCase = true)
 
 @Composable
 private fun ProviderLogo(catalogId: String) {

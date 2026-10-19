@@ -31,6 +31,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -39,12 +41,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import top.wkbin.zaomeng.data.api.RedistillSegmentDto
 import top.wkbin.zaomeng.ui.components.AppCard
 import top.wkbin.zaomeng.ui.components.AppCardVariant
@@ -53,6 +57,19 @@ import org.koin.compose.koinInject
 import top.wkbin.zaomeng.platform.DistillationForeground
 import top.wkbin.zaomeng.platform.rememberDocumentPicker
 import top.wkbin.zaomeng.platform.rememberNotificationPermissionRequester
+
+/**
+ * 通知权限被拒绝时给用户看的话。
+ *
+ * 蒸馏要跑几十次模型调用、十几分钟起步，而进度唯一的页面外出口就是前台服务通知。
+ * 没有通知 = 用户切走就完全不知道任务在不在跑，所以这里选择**不启动**并说清下一步。
+ *
+ * 常量放在这里是因为两个入口都用同一句：`RedistillScreen`（继续蒸馏）与 `RunDetailScreen`
+ * （重新蒸馏 / 续跑）。两处各写一份文案必然漂移，不如共用。
+ */
+internal const val NOTIFICATION_DENIED_MESSAGE =
+    "通知权限未开启，蒸馏没有开始。请在系统设置里允许「造梦」发送通知后重试" +
+        "（应用内长任务的进度只通过通知显示）。"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,8 +84,19 @@ fun RedistillScreen(
     val documentPicker = rememberDocumentPicker { name, bytes ->
         viewModel.loadDocument(name, bytes)
     }
-    val requestNotificationPermission = rememberNotificationPermissionRequester {
-        viewModel.submit()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarScope = rememberCoroutineScope()
+    // 通知权限只影响「进度能不能在通知栏看到」，但蒸馏是几十次模型调用、十几分钟起步的长任务：
+    // 没有通知就没有任何页面外可见性。所以**拒绝即不启动**，并把「怎么才能开始」写清楚。
+    // 与 RunDetailScreen（重新蒸馏 / 续跑）保持同一行为——同一个按钮在两张页面上不能有两种结果。
+    val requestNotificationPermission = rememberNotificationPermissionRequester { granted ->
+        if (granted) {
+            viewModel.submit()
+        } else {
+            snackbarScope.launch {
+                snackbarHostState.showSnackbar(NOTIFICATION_DENIED_MESSAGE)
+            }
+        }
     }
 
     fun submitRedistill() {
@@ -122,6 +150,7 @@ fun RedistillScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {

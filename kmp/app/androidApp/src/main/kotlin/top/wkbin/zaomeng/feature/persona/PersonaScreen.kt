@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material3.AlertDialog
 import top.wkbin.zaomeng.platform.PlatformTts
+import top.wkbin.zaomeng.platform.PlatformBackHandler
 import top.wkbin.zaomeng.platform.rememberPlatformTts
 import top.wkbin.zaomeng.platform.SpeechEngineSelection
 import top.wkbin.zaomeng.platform.classifySpeechEmotion
@@ -158,6 +159,16 @@ fun PersonaContent(
         }
     }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    // 未保存的修改在返回时先确认：顶栏箭头与系统返回手势走同一条分支，
+    // 否则改了半页字段按一下返回手势就全没了（标题下的「有尚未保存的修改」只是提示，拦不住返回）。
+    var confirmDiscard by rememberSaveable { mutableStateOf(false) }
+    val hasUnsavedEdits = state.hasUnsavedChanges && !state.isBusy
+
+    fun requestBack() {
+        if (hasUnsavedEdits) confirmDiscard = true else onBack()
+    }
+
+    PlatformBackHandler(enabled = hasUnsavedEdits, onBack = ::requestBack)
     val tts = rememberPlatformTts(speechSelection)
     // 把全卷角色名单交给引擎，让试听的音色编号与聊天页一致。
     //
@@ -192,7 +203,7 @@ fun PersonaContent(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = ::requestBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回")
                     }
                 },
@@ -284,6 +295,28 @@ fun PersonaContent(
                 TextButton(onClick = { confirmDelete = false }, enabled = !state.isDeleting) {
                     Text("取消")
                 }
+            },
+        )
+    }
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("放弃未保存的修改？") },
+            text = {
+                Text(
+                    "返回后，本次对「${state.character.ifBlank { "人物资料" }}」的修改不会保存。",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDiscard = false
+                        onBack()
+                    },
+                ) { Text("放弃") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDiscard = false }) { Text("继续编辑") }
             },
         )
     }
