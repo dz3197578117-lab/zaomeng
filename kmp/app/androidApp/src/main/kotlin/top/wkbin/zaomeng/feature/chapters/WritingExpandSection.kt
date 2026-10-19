@@ -57,6 +57,9 @@ internal fun ExpandSection(
     onRewrite: () -> Unit,
 ) {
     var pendingVersion by remember { mutableStateOf<DraftVersionDto?>(null) }
+    // 已经拆出来但还没落盘的场景卡：重新拆之前必须先问一句，
+    // 否则 generateSceneCards 一开头就把它们清掉，攒到满意的四张卡白费。
+    var confirmRegenerate by remember { mutableStateOf(false) }
     val effective = state.expandChapterId.ifBlank {
         state.chapters.firstOrNull { it.content.isNotBlank() }?.chapterId.orEmpty()
     }
@@ -74,8 +77,14 @@ internal fun ExpandSection(
 
         Text("1. 场景卡", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
         Button(
-            onClick = { onGenerateSceneCards(effective) },
-            enabled = !state.generatingSceneCards && effective.isNotBlank(),
+            onClick = {
+                if (state.sceneCards.isNotEmpty()) {
+                    confirmRegenerate = true
+                } else {
+                    onGenerateSceneCards(effective)
+                }
+            },
+            enabled = !state.generatingSceneCards && !state.savingSceneCards && effective.isNotBlank(),
             modifier = Modifier.fillMaxWidth(),
         ) {
             if (state.generatingSceneCards) {
@@ -192,6 +201,29 @@ internal fun ExpandSection(
             },
             dismissButton = {
                 TextButton(onClick = { pendingVersion = null }) { Text("取消") }
+            },
+        )
+    }
+
+    if (confirmRegenerate) {
+        val pendingCards = state.sceneCards.size
+        val savedNote = if (savedCards.isEmpty()) "。" else "；已保存的那组不受影响。"
+        AlertDialog(
+            onDismissRequest = { confirmRegenerate = false },
+            title = { Text("丢弃未保存的场景卡并重新拆？") },
+            text = {
+                Text("现在这 $pendingCards 张场景卡还没保存，重新拆会直接丢掉它们$savedNote")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmRegenerate = false
+                        onGenerateSceneCards(effective)
+                    },
+                ) { Text("丢弃并重新拆") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRegenerate = false }) { Text("取消") }
             },
         )
     }

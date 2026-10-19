@@ -16,6 +16,7 @@ import top.wkbin.zaomeng.data.api.RunManifestDto
 import top.wkbin.zaomeng.data.api.SaveChapterRequest
 import top.wkbin.zaomeng.data.api.WritingGenres
 import top.wkbin.zaomeng.data.api.WritingProfileDto
+import top.wkbin.zaomeng.feature.chapters.outlineChapterTitle
 
 data class CreationUiState(
     val loading: Boolean = true,
@@ -31,6 +32,15 @@ data class CreationUiState(
     val plan: NovelPlanDto? = null,
     val planError: String = "",
     val creatingFromPlan: Boolean = false,
+    /**
+     * 「就按这个写」已经建好的书卷 id。
+     *
+     * 建卷与写章节是两次落盘；中途失败时保留它，重试只走「补写剩余章节」，
+     * 不会在书架上留下第二本同名书。新方案/清空方案时一律清零。
+     */
+    val planRunId: String = "",
+    /** 该书卷已按大纲写入的章数（配合 [planRunId] 做断点续写）。 */
+    val planWrittenChapters: Int = 0,
 )
 
 /**
@@ -146,7 +156,17 @@ class CreationViewModel(
             return
         }
         viewModelScope.launch {
-            mutableState.update { it.copy(planning = true, planError = "", plan = null) }
+            // 新方案 = 新的一本书：上一份方案留下的建卷/续写断点必须清零，
+            // 否则新方案的章节会被补写进旧书里。
+            mutableState.update {
+                it.copy(
+                    planning = true,
+                    planError = "",
+                    plan = null,
+                    planRunId = "",
+                    planWrittenChapters = 0,
+                )
+            }
             try {
                 val plan = chapters.planNovel(NovelPlanRequest(prompt, chapterCount.coerceIn(3, 15)))
                 mutableState.update { it.copy(planning = false, plan = plan) }
@@ -160,78 +180,169 @@ class CreationViewModel(
         }
     }
 
+    /**
+     * 丢掉当前方案（「改描述，重新生成」/「先不写」都要走这里）。
+     *
+     * 连建卷断点一起清：已建好的书还在书架与 [CreationUiState.runs] 里，
+     * 下次生成的是**另一本**书，不能把新大纲补写进旧书。
+     */
     fun clearPlan() {
-        mutableState.update { it.copy(plan = null, planError = "") }
+        mutableState.update {
+            it.copy(plan = null, planError = "", planRunId = "", planWrittenChapters = 0)
+        }
     }
 
-    /** 用户确认方案后，建卷 → 保存核心/设定/类型 → 写入章节。 */
+    /**
+     * 用户确认方案后，建卷 → 保存核心/设定/类型 → 逐章写入大纲。
+     *
+     * 建卷与写章节是两次落盘，中间任何一步失败都会留下「书已建好、章节只写了一半」的状态。
+     * 所以建卷成功就立刻把 [CreationUiState.planRunId] 记下、并把书放进 [CreationUiState.runs]，
+     * 之后重试只补写缺失的设定与剩余章节——不会再 createNovel 出第二本同名书。
+     */
     fun createFromPlan(onCreated: (String) -> Unit) {
         val plan = state.value.plan ?: return
         if (state.value.creatingFromPlan) return
         viewModelScope.launch {
+            val resumedRunId = state.value.planRunId
+            var written = state.value.planWrittenChapters
             mutableState.update { it.copy(creatingFromPlan = true, planError = "") }
             try {
-                val seed = buildString {
-                    append("《").append(plan.title).append("》\n")
-                    append("主角：").append(plan.lead).append("\n\n")
-                    if (plan.premise.isNotBlank()) append(plan.premise).append("\n\n")
-                    append("这是一本原创书卷，分章大纲已生成，可以直接开始写。")
-                }
-                val run = runs.createNovel(
-                    filename = "${safeNovelFileName(plan.title)}.md",
-                    bytes = seed.encodeToByteArray(),
-                    characters = listOf(plan.lead),
-                    maxSentences = 120,
-                    maxChars = 50_000,
-                    autoRun = false,
-                    origin = RunManifestDto.ORIGIN_ORIGINAL,
-                )
-                if (!plan.core.isEmpty) {
-                    runCatching { chapters.saveStoryCore(run.runId, plan.core) }
-                }
-                if (!plan.bible.isEmpty) {
-                    runCatching { chapters.saveStoryBible(run.runId, plan.bible) }
-                }
-                if (plan.genreId.isNotBlank()) {
-                    val genre = WritingGenres.byId(plan.genreId)
-                    runCatching {
-                        chapters.saveWritingProfile(
-                            run.runId,
-                            WritingProfileDto(
-                                genre = plan.genreId,
-                                chapterLength = genre?.defaultChapterLength ?: 2500,
-                            ),
+                val runId = if (resumedRunId.isNotBlank()) {
+                    resumedRunId
+                } else {
+                    val seed = buildString {
+                        append("《").append(plan.title).append("》\n")
+                        append("主角：").append(plan.lead).append("\n\n")
+                        if (plan.premise.isNotBlank()) append(plan.premise).append("\n\n")
+                        append("这是一本原创书卷，分章大纲已生成，可以直接开始写。")
+                    }
+                    val created = runs.createNovel(
+                        filename = "${safeNovelFileName(plan.title)}.md",
+                        bytes = seed.encodeToByteArray(),
+                        characters = listOf(plan.lead),
+                        maxSentences = 120,
+                        maxChars = 50_000,
+                        autoRun = false,
+                        origin = RunManifestDto.ORIGIN_ORIGINAL,
+                    )
+                    // 书卷此刻已经真实落盘：先记 id、先放进列表，
+                    // 后面章节写失败时重试才不会又建一本同名的。
+                    mutableState.update { current ->
+                        current.copy(
+                            planRunId = created.runId,
+                            runs = (listOf(created.copy(novelName = plan.title)) + current.runs)
+                                .distinctBy(RunManifestDto::runId),
                         )
                     }
+                    created.runId
                 }
-                plan.outline.forEachIndexed { index, item ->
+
+                val settingFailures = savePlanSettings(runId, plan)
+                if (settingFailures.isNotEmpty()) {
+                    // 设定缺一份就不往下写：章节一旦生成就要花额度重来，
+                    // 而这几份设定都是整份覆盖，重试代价几乎为零。
+                    failPlanCreation(plan, written, settingFailures, cause = null)
+                    return@launch
+                }
+
+                for (item in plan.outline.drop(written)) {
                     chapters.saveChapter(
-                        run.runId,
+                        runId,
                         "",
                         SaveChapterRequest(
-                            title = item.title.ifBlank { "第 ${index + 1} 章" },
+                            title = outlineChapterTitle(item, written + 1),
                             goal = item.goal,
                             perspective = "第三人称限知",
                         ),
                     )
+                    written++
                 }
                 mutableState.update { current ->
-                    val displayed = run.copy(novelName = plan.title)
                     current.copy(
                         creatingFromPlan = false,
                         plan = null,
-                        runs = (listOf(displayed) + current.runs).distinctBy(RunManifestDto::runId),
+                        planRunId = "",
+                        planWrittenChapters = 0,
                     )
                 }
-                onCreated(run.runId)
+                onCreated(runId)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                mutableState.update {
-                    it.copy(creatingFromPlan = false, planError = error.message ?: "按方案建书失败。")
-                }
+                failPlanCreation(plan, written, emptyList(), error.message)
             }
         }
+    }
+
+    /**
+     * 「就按这个写」失败时的收尾：方案与已建好的书卷都保留，只把进度与原因写进
+     * [CreationUiState.planError]，让人能就地重试（重试是幂等的：只补写缺失部分）。
+     */
+    private fun failPlanCreation(
+        plan: NovelPlanDto,
+        written: Int,
+        settingFailures: List<String>,
+        cause: String?,
+    ) {
+        mutableState.update {
+            it.copy(
+                creatingFromPlan = false,
+                planWrittenChapters = written,
+                planError = planCreationFailureText(
+                    bookTitle = plan.title,
+                    bookCreated = it.planRunId.isNotBlank(),
+                    writtenChapters = written,
+                    totalChapters = plan.outline.size,
+                    settingFailures = settingFailures,
+                    cause = cause,
+                ),
+            )
+        }
+    }
+
+    /**
+     * 把方案的设定写进书卷：故事核心、设定集、写作类型。
+     *
+     * 三份都是整份覆盖，重试再写一遍是安全的；失败**不再**被静默吞掉——
+     * 否则「书建成了却没有设定」，之后生成的大纲与正文都会缺上下文，用户却毫不知情。
+     */
+    private suspend fun savePlanSettings(runId: String, plan: NovelPlanDto): List<String> {
+        val failures = mutableListOf<String>()
+        if (!plan.core.isEmpty) {
+            try {
+                chapters.saveStoryCore(runId, plan.core)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                failures += "故事核心没存上（${error.message ?: "未知错误"}）"
+            }
+        }
+        if (!plan.bible.isEmpty) {
+            try {
+                chapters.saveStoryBible(runId, plan.bible)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                failures += "设定集没存上（${error.message ?: "未知错误"}）"
+            }
+        }
+        if (plan.genreId.isNotBlank()) {
+            val genre = WritingGenres.byId(plan.genreId)
+            try {
+                chapters.saveWritingProfile(
+                    runId,
+                    WritingProfileDto(
+                        genre = plan.genreId,
+                        chapterLength = genre?.defaultChapterLength ?: 2500,
+                    ),
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                failures += "写作类型没存上（${error.message ?: "未知错误"}）"
+            }
+        }
+        return failures
     }
 }
 
@@ -257,3 +368,46 @@ internal fun originalBookSeed(title: String, lead: String): String = buildString
 
 internal fun safeNovelFileName(title: String): String =
     title.replace(Regex("""[\\/\r\n\t]"""), " ").trim().take(60).ifBlank { "未命名书卷" }
+
+/**
+ * 「就按这个写」失败时的说明。
+ *
+ * 必须回答三件事，否则用户只能靠猜：书到底建了没有、大纲写到第几章、
+ * 再点一次是续写还是会再建一本。重试之所以安全，是因为
+ * [CreationViewModel.createFromPlan] 会在 [CreationUiState.planRunId] 非空时跳过建卷。
+ */
+internal fun planCreationFailureText(
+    bookTitle: String,
+    bookCreated: Boolean,
+    writtenChapters: Int,
+    totalChapters: Int,
+    settingFailures: List<String> = emptyList(),
+    cause: String? = null,
+): String {
+    val total = totalChapters.coerceAtLeast(0)
+    val written = writtenChapters.coerceIn(0, total)
+    val remaining = total - written
+    val failureCause = cause?.takeIf(String::isNotBlank) ?: "未知错误"
+    if (!bookCreated) {
+        return "建书失败：$failureCause。方案还在，可以再点一次「就按这个写」重试。"
+    }
+    val name = bookTitle.trim().ifBlank { "这本新书" }
+    val problems = buildList {
+        if (settingFailures.isNotEmpty()) {
+            add("有设定没存上：" + settingFailures.joinToString("；"))
+        }
+        // 只有真的写到章节了才提「第 N 章失败」：设定没存上时一章都还没开始写，
+        // 谎报一章失败会把用户引向错误的排查方向。
+        if (remaining > 0 && (cause != null || settingFailures.isEmpty())) {
+            add("第 ${written + 1} 章写入失败：$failureCause")
+        }
+    }
+    return buildString {
+        append("《").append(name).append("》已经建好（不会再建第二本），但")
+        append(problems.joinToString("；").ifBlank { "还有内容没写完" })
+        append("。已写入 ").append(written).append(" 章 / ").append(total).append(" 章")
+        if (remaining > 0) append("，还剩 ").append(remaining).append(" 章")
+        append("；再点「就按这个写」只补写缺失的部分，也不会再建一本。")
+        append("也可以关掉这里，从创作页直接打开这本书继续写。")
+    }
+}

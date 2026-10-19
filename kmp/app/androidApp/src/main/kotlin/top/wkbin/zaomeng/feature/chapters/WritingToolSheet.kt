@@ -32,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -42,7 +43,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -87,6 +88,13 @@ internal fun WritingToolSheet(
     onSaveBible: () -> Unit,
     onSaveBibleNow: (StoryBibleDto) -> Unit,
     onSaveProfile: (WritingProfileDto) -> Unit,
+    /**
+     * 编辑副本写回 [ChaptersUiState.writingDrafts]。
+     *
+     * 必填、故意不给默认空实现：默认空实现会让「打字→写回 UiState」静默失效，
+     * 表现为输入框打不进字，比丢字更难查。
+     */
+    onDraftsChange: (WritingDrafts) -> Unit,
     onRescueChapter: (String) -> Unit,
     onRescueProblem: (String) -> Unit,
     onRescueKind: (String) -> Unit,
@@ -109,12 +117,28 @@ internal fun WritingToolSheet(
     onPolish: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // 编辑副本以 UiState 为准：关掉弹层、旋屏、切后台回来都还在。
+    // 还没播种（理论上一打开就会 onLoad 播种）时按已保存值兜底，保证输入框永远有值。
+    val drafts = state.writingDrafts ?: writingDraftsSeededFrom(state.writingProfile)
+    val unsaved = hasUnsavedWritingDrafts(state.writingDrafts, state.writingProfile)
+    var confirmClose by remember { mutableStateOf(false) }
+    val unsavedLatest = rememberUpdatedState(unsaved)
+    val sheetScope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        // 有未保存的类型设置时，不许下滑/点空白把草稿扔掉；
+        // 出口是标题行的「关闭」，那里会先问一句。保存成功后 unsaved 变 false，下滑恢复。
+        confirmValueChange = { target -> target != SheetValue.Hidden || !unsavedLatest.value },
+    )
     var tab by remember(initialTab) { mutableIntStateOf(initialTab) }
     LaunchedEffect(Unit) { onLoad() }
 
+    val requestClose: () -> Unit = {
+        if (unsaved) confirmClose = true else onDismiss()
+    }
+
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = requestClose,
         sheetState = sheetState,
         contentWindowInsets = { WindowInsets.navigationBars },
     ) {
@@ -124,17 +148,31 @@ internal fun WritingToolSheet(
             verticalArrangement = Arrangement.spacedBy(AppSpacing.md),
         ) {
             item(key = "writing-tools-header") {
-                Column {
-                    Text(
-                        text = "写作助手",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = "设定 → 类型 → 卡文 → 检查，都在这本书里",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = "写作助手",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "设定 → 类型 → 卡文 → 检查，都在这本书里",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (unsaved) {
+                        Text(
+                            text = "未保存",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(end = AppSpacing.sm),
+                        )
+                    }
+                    TextButton(onClick = requestClose, enabled = !state.savingProfile) { Text("关闭") }
                 }
             }
             item(key = "writing-tools-tabs") {
@@ -174,9 +212,9 @@ internal fun WritingToolSheet(
             when (tab) {
                 0 -> item(key = "writing-tools-bible") {
                     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
-                        StoryCoreSection(state, onGenerateCore, onSaveCore)
+                        StoryCoreSection(state, drafts, onDraftsChange, onGenerateCore, onSaveCore)
                         HorizontalDivider()
-                        StoryBibleSection(state, onGenerateBible, onSaveBible)
+                        StoryBibleSection(state, drafts, onDraftsChange, onGenerateBible, onSaveBible)
                         HorizontalDivider()
                         BibleExtraSection(state.storyBible)
                         HorizontalDivider()
@@ -185,7 +223,7 @@ internal fun WritingToolSheet(
                 }
 
                 1 -> item(key = "writing-tools-genre") {
-                    GenreSection(state, onSaveProfile)
+                    GenreSection(state, drafts, onDraftsChange, onSaveProfile)
                 }
 
                 2 -> item(key = "writing-tools-expand") {
@@ -232,15 +270,46 @@ internal fun WritingToolSheet(
             }
         }
     }
+
+    if (confirmClose) {
+        AlertDialog(
+            onDismissRequest = { confirmClose = false },
+            title = { Text("类型设置还没保存") },
+            text = {
+                Text("现在的编辑只存在草稿里，生成大纲与正文仍按上次保存的设置走。丢弃草稿并关闭吗？")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmClose = false
+                        // 丢掉编辑副本：下次打开回到已保存的设置。
+                        onDraftsChange(writingDraftsSeededFrom(state.writingProfile))
+                        onDismiss()
+                    },
+                ) { Text("丢弃草稿并关闭") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        confirmClose = false
+                        // 某些系统返回键路径会先把弹层藏起来再回调 onDismissRequest，
+                        // 选择继续编辑时把它请回来，免得停在一个「看不见也关不掉」的弹层上。
+                        if (!sheetState.isVisible) sheetScope.launch { sheetState.show() }
+                    },
+                ) { Text("继续编辑") }
+            },
+        )
+    }
 }
 
 @Composable
 private fun StoryCoreSection(
     state: ChaptersUiState,
+    drafts: WritingDrafts,
+    onDraftsChange: (WritingDrafts) -> Unit,
     onGenerate: (String) -> Unit,
     onSave: () -> Unit,
 ) {
-    var premise by rememberSaveable { mutableStateOf("") }
     val core = state.storyCore
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
         Text("故事核心（人定）", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
@@ -250,8 +319,8 @@ private fun StoryCoreSection(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         OutlinedTextField(
-            value = premise,
-            onValueChange = { premise = it.take(800) },
+            value = drafts.corePremise,
+            onValueChange = { onDraftsChange(drafts.copy(corePremise = it.take(800))) },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("一句话设定（可留空，用书名与设定集）") },
             minLines = 2,
@@ -259,7 +328,7 @@ private fun StoryCoreSection(
             enabled = !state.generatingCore,
         )
         Button(
-            onClick = { onGenerate(premise) },
+            onClick = { onGenerate(drafts.corePremise) },
             enabled = !state.generatingCore,
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -430,11 +499,11 @@ private fun BibleExtraSection(bible: StoryBibleDto) {
 @Composable
 private fun StoryBibleSection(
     state: ChaptersUiState,
+    drafts: WritingDrafts,
+    onDraftsChange: (WritingDrafts) -> Unit,
     onGenerate: (String, String) -> Unit,
     onSave: () -> Unit,
 ) {
-    var premise by rememberSaveable { mutableStateOf("") }
-    var genreId by rememberSaveable(state.writingProfile.genre) { mutableStateOf(state.writingProfile.genre) }
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
         Text(
             text = "生成一份可复用的设定集：世界观、人物小传、势力关系、冲突设计。保存后，大纲与正文都会带上它。",
@@ -442,8 +511,8 @@ private fun StoryBibleSection(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         OutlinedTextField(
-            value = premise,
-            onValueChange = { premise = it.take(800) },
+            value = drafts.biblePremise,
+            onValueChange = { onDraftsChange(drafts.copy(biblePremise = it.take(800))) },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("一句话设定（可留空，用书名与已有章节目标代替）") },
             minLines = 2,
@@ -456,14 +525,17 @@ private fun StoryBibleSection(
         ) {
             WritingGenres.all.forEach { genre ->
                 FilterChip(
-                    selected = genreId == genre.id,
-                    onClick = { genreId = if (genreId == genre.id) "" else genre.id },
+                    selected = drafts.bibleGenreId == genre.id,
+                    onClick = {
+                        val next = if (drafts.bibleGenreId == genre.id) "" else genre.id
+                        onDraftsChange(drafts.copy(bibleGenreId = next))
+                    },
                     label = { Text(genre.name) },
                 )
             }
         }
         Button(
-            onClick = { onGenerate(premise, genreId) },
+            onClick = { onGenerate(drafts.biblePremise, drafts.bibleGenreId) },
             enabled = !state.generatingBible,
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -593,15 +665,14 @@ private fun BibleBlock(title: String, bible: StoryBibleDto) {
 }
 
 @Composable
-private fun GenreSection(state: ChaptersUiState, onSave: (WritingProfileDto) -> Unit) {
-    var genreId by rememberSaveable(state.writingProfile) { mutableStateOf(state.writingProfile.genre) }
-    var chapterLength by rememberSaveable(state.writingProfile) {
-        mutableIntStateOf(state.writingProfile.chapterLength)
-    }
-    var notes by rememberSaveable(state.writingProfile) { mutableStateOf(state.writingProfile.notes) }
-    var voiceSample by rememberSaveable(state.writingProfile) { mutableStateOf(state.writingProfile.voiceSample) }
-    var avoid by rememberSaveable(state.writingProfile) { mutableStateOf(state.writingProfile.avoid) }
-    val selected = WritingGenres.byId(genreId)
+private fun GenreSection(
+    state: ChaptersUiState,
+    drafts: WritingDrafts,
+    onDraftsChange: (WritingDrafts) -> Unit,
+    onSave: (WritingProfileDto) -> Unit,
+) {
+    val unsaved = hasUnsavedWritingDrafts(state.writingDrafts, state.writingProfile)
+    val selected = WritingGenres.byId(drafts.genre)
     Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
         Text(
             text = "选一个类型，生成大纲和正文时会按它的节奏来；也可以只在备注里写自己的更新节奏。",
@@ -609,10 +680,13 @@ private fun GenreSection(state: ChaptersUiState, onSave: (WritingProfileDto) -> 
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         WritingGenres.all.forEach { genre ->
+            val picked = genre.id == drafts.genre
             AppCard(
                 modifier = Modifier.fillMaxWidth(),
-                variant = if (genre.id == genreId) AppCardVariant.Filled else AppCardVariant.Filled,
-                onClick = { genreId = if (genreId == genre.id) "" else genre.id },
+                variant = if (picked) AppCardVariant.Filled else AppCardVariant.Filled,
+                onClick = {
+                    onDraftsChange(drafts.copy(genre = if (picked) "" else genre.id))
+                },
                 contentPadding = PaddingValues(AppSpacing.md),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -624,7 +698,7 @@ private fun GenreSection(state: ChaptersUiState, onSave: (WritingProfileDto) -> 
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    if (genre.id == genreId) {
+                    if (picked) {
                         Text("已选", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                     }
                 }
@@ -641,15 +715,15 @@ private fun GenreSection(state: ChaptersUiState, onSave: (WritingProfileDto) -> 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             chapterLengthOptions.forEach { length ->
                 FilterChip(
-                    selected = chapterLength == length,
-                    onClick = { chapterLength = length },
+                    selected = drafts.chapterLength == length,
+                    onClick = { onDraftsChange(drafts.copy(chapterLength = length)) },
                     label = { Text("$length 字") },
                 )
             }
         }
         OutlinedTextField(
-            value = notes,
-            onValueChange = { notes = it.take(500) },
+            value = drafts.notes,
+            onValueChange = { onDraftsChange(drafts.copy(notes = it.take(500))) },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("额外节奏要求（可选）") },
             placeholder = { Text("例如：每三章一个小高潮；主角不许连续两章获胜") },
@@ -657,8 +731,8 @@ private fun GenreSection(state: ChaptersUiState, onSave: (WritingProfileDto) -> 
             maxLines = 4,
         )
         OutlinedTextField(
-            value = voiceSample,
-            onValueChange = { voiceSample = it.take(2000) },
+            value = drafts.voiceSample,
+            onValueChange = { onDraftsChange(drafts.copy(voiceSample = it.take(2000))) },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("文风样本（可选，贴一段你自己的文字）") },
             placeholder = { Text("AI 会模仿它的句长、用词与节奏，而不是模仿内容") },
@@ -666,8 +740,8 @@ private fun GenreSection(state: ChaptersUiState, onSave: (WritingProfileDto) -> 
             maxLines = 6,
         )
         OutlinedTextField(
-            value = avoid,
-            onValueChange = { avoid = it.take(400) },
+            value = drafts.avoid,
+            onValueChange = { onDraftsChange(drafts.copy(avoid = it.take(400))) },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("不想出现的表达（可选）") },
             placeholder = { Text("例如：心中一凛、空气仿佛凝固、眼眶一热") },
@@ -675,17 +749,7 @@ private fun GenreSection(state: ChaptersUiState, onSave: (WritingProfileDto) -> 
             maxLines = 4,
         )
         Button(
-            onClick = {
-                onSave(
-                    WritingProfileDto(
-                        genre = genreId,
-                        chapterLength = chapterLength,
-                        notes = notes,
-                        voiceSample = voiceSample,
-                        avoid = avoid,
-                    ),
-                )
-            },
+            onClick = { onSave(writingDraftsProfile(drafts)) },
             enabled = !state.savingProfile,
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -693,7 +757,7 @@ private fun GenreSection(state: ChaptersUiState, onSave: (WritingProfileDto) -> 
                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(8.dp))
             }
-            Text("保存类型设置")
+            Text(if (unsaved) "保存类型设置（未保存）" else "保存类型设置")
         }
     }
 }

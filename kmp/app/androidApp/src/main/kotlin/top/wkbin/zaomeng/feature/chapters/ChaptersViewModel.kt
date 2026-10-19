@@ -72,6 +72,13 @@ data class ChaptersUiState(
     val draftingChapterId: String = "",
     /** 大纲写入成功的次数；界面据此收起创作弹层。 */
     val outlineCreationCount: Int = 0,
+    /**
+     * 这份大纲累计已写入的章数。
+     *
+     * 写入中途失败时 [outline] 会被裁成还没写的尾部，这里记下已经落盘的部分：
+     * 于是「再点一次」只补写剩下的章节，同一份大纲不会出现两套重复章节。
+     */
+    val outlineWrittenCount: Int = 0,
     // ===== 创作工具：设定 / 类型 / 救援 / 检查 =====
     val storyBible: StoryBibleDto = StoryBibleDto(),
     /** 当前设定是否已落盘；false 表示还是未确认的提案。 */
@@ -80,6 +87,15 @@ data class ChaptersUiState(
     val savingBible: Boolean = false,
     val writingProfile: WritingProfileDto = WritingProfileDto(),
     val savingProfile: Boolean = false,
+    /**
+     * 写作助手弹层的**编辑副本**：类型页的五个设置 + 两个生成用的一句话设定。
+     *
+     * 之前这些都活在弹层里的 `remember` 中，随手点空白关掉弹层或旋屏就全丢，
+     * 几百字的文风样本也一起没。现在提到 UiState：关掉弹层再打开、旋屏、切后台回来都还在。
+     * `null` 表示「还没开始编辑」，[ChaptersViewModel.loadWritingTools] 打开弹层时会用已保存的
+     * 设定播种（见 [writingDraftsSeededFrom]）。保存成功后重新播种，于是「未保存」标记自然清除。
+     */
+    val writingDrafts: WritingDrafts? = null,
     // ===== 人定核心 =====
     val storyCore: StoryCoreDto = StoryCoreDto(),
     val storyCoreSaved: Boolean = true,
@@ -118,6 +134,64 @@ data class ChaptersUiState(
     val error: String = "",
     val message: String = "",
 )
+
+/**
+ * 写作助手弹层的编辑副本。
+ *
+ * 之前这些输入全是弹层里的局部 `remember`，随手点空白关掉就会连同几百字文风样本一起消失，
+ * 所以提升成 UiState 里的一份 working copy：持久化仍然走 [WritingProfileDto]，
+ * 两者靠 [writingDraftsSeededFrom] / [writingDraftsProfile] 互转。
+ *
+ * 单独一个类型（而不是直接复用 [WritingProfileDto]）是因为弹层里还有两类
+ * **不进 profile** 的输入：生成设定集/核心用的一句话设定，以及设定集页临时选的题材。
+ * 它们同样需要活着离开弹层，但不该被当成「改了还没保存的设定」。
+ */
+data class WritingDrafts(
+    // 「类型」页：这五项就是 WritingProfileDto 的五个字段。
+    val genre: String = "",
+    val chapterLength: Int = 2500,
+    val notes: String = "",
+    val voiceSample: String = "",
+    val avoid: String = "",
+    // 「设定 / 核心」页：只用于发起一次生成，不进 profile。
+    val biblePremise: String = "",
+    val bibleGenreId: String = "",
+    val corePremise: String = "",
+)
+
+/** 用已保存的设定播种编辑副本；设定集页的题材默认跟随 profile。 */
+internal fun writingDraftsSeededFrom(profile: WritingProfileDto): WritingDrafts = WritingDrafts(
+    genre = profile.genre,
+    chapterLength = profile.chapterLength,
+    notes = profile.notes,
+    voiceSample = profile.voiceSample,
+    avoid = profile.avoid,
+    bibleGenreId = profile.genre,
+)
+
+/** 编辑副本 → 待保存的 profile（只带会落盘的那五项）。 */
+internal fun writingDraftsProfile(drafts: WritingDrafts): WritingProfileDto = WritingProfileDto(
+    genre = drafts.genre,
+    chapterLength = drafts.chapterLength,
+    notes = drafts.notes,
+    voiceSample = drafts.voiceSample,
+    avoid = drafts.avoid,
+)
+
+/**
+ * 有没有「改了但还没保存」的类型设置。
+ *
+ * 只比会落盘的那五项：一句话设定属于一次性的生成输入，草稿留着就不会丢，
+ * 拿它去拦「关闭」会变成每次关窗都要点一次确认。
+ */
+internal fun hasUnsavedWritingDrafts(drafts: WritingDrafts?, profile: WritingProfileDto): Boolean =
+    drafts != null && (
+        drafts.genre != profile.genre ||
+            drafts.chapterLength != profile.chapterLength ||
+            drafts.notes != profile.notes ||
+            drafts.voiceSample != profile.voiceSample ||
+            drafts.avoid != profile.avoid
+        )
 
 class ChaptersViewModel(
     private val chapters: ChapterRepository,
@@ -209,7 +283,16 @@ class ChaptersViewModel(
             return
         }
         viewModelScope.launch {
-            mutableState.update { it.copy(generatingOutline = true, error = "", message = "", outline = emptyList()) }
+            // 新大纲等于新的写入队列：上一份大纲的断点必须清零，否则会少写前面的章节。
+            mutableState.update {
+                it.copy(
+                    generatingOutline = true,
+                    error = "",
+                    message = "",
+                    outline = emptyList(),
+                    outlineWrittenCount = 0,
+                )
+            }
             try {
                 val response = chapters.generateNovelOutline(
                     runId,
@@ -238,8 +321,9 @@ class ChaptersViewModel(
         }
     }
 
+    /** 「重新设定」：连写入断点和上一次的失败原因一起清，弹层回到输入态时不该还挂着旧错误。 */
     fun clearOutline() {
-        mutableState.update { it.copy(outline = emptyList()) }
+        mutableState.update { it.copy(outline = emptyList(), outlineWrittenCount = 0, error = "") }
     }
 
     /**
@@ -247,20 +331,25 @@ class ChaptersViewModel(
      *
      * 逐章保存而不是批量接口：现有 [saveChapter] 已经是原子的单章写入，
      * 失败时能明确告诉用户「写到了第几章」，已写入的部分也不会回滚成半截数据。
+     *
+     * 失败后把已落盘的那几章从 [ChaptersUiState.outline] 里摘掉，并把累计章数记进
+     * [ChaptersUiState.outlineWrittenCount]；因此「再点一次」只写剩下的尾部，
+     * 同一份大纲连点两次不会出现两套重复章节，章号也不会从 1 重新数。
      */
     fun createChaptersFromOutline(perspective: String) {
-        val outline = state.value.outline
-        if (outline.isEmpty() || state.value.creatingFromOutline) return
+        val pending = state.value.outline
+        if (pending.isEmpty() || state.value.creatingFromOutline) return
+        val alreadyWritten = state.value.outlineWrittenCount
         viewModelScope.launch {
             mutableState.update { it.copy(creatingFromOutline = true, error = "", message = "") }
             var created = 0
             try {
-                for (item in outline) {
+                for (item in pending) {
                     chapters.saveChapter(
                         runId,
                         "",
                         SaveChapterRequest(
-                            title = item.title.ifBlank { "第 ${created + 1} 章" },
+                            title = outlineChapterTitle(item, alreadyWritten + created + 1),
                             goal = item.goal,
                             content = "",
                             perspective = perspective,
@@ -269,25 +358,43 @@ class ChaptersViewModel(
                     created++
                 }
                 val list = chapters.listChapters(runId)
+                val totalWritten = alreadyWritten + created
                 mutableState.update {
                     it.copy(
                         creatingFromOutline = false,
                         outline = emptyList(),
+                        outlineWrittenCount = 0,
                         chapters = list,
                         outlineCreationCount = it.outlineCreationCount + 1,
-                        message = "已写入 $created 章大纲，点章节里的「AI 成稿」开始写正文。",
+                        message = outlineWriteSuccessText(totalWritten),
                     )
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
+                val progress = outlineWriteProgress(pending, created, alreadyWritten)
                 val refreshed = runCatching { chapters.listChapters(runId) }.getOrDefault(state.value.chapters)
                 mutableState.update {
-                    it.copy(
-                        creatingFromOutline = false,
-                        chapters = refreshed,
-                        error = "第 ${created + 1} 章写入失败：${error.message ?: "未知错误"}（已写入 $created 章）",
-                    )
+                    if (progress.isDone) {
+                        // 章节其实都写进去了，失败的只是最后那次重读列表：
+                        // 按「已写完」收尾，否则界面会停在「还剩 0 章」的待写状态上骗人再点一次。
+                        it.copy(
+                            creatingFromOutline = false,
+                            outline = emptyList(),
+                            outlineWrittenCount = 0,
+                            chapters = refreshed,
+                            outlineCreationCount = it.outlineCreationCount + 1,
+                            message = outlineWriteSuccessText(progress.written),
+                        )
+                    } else {
+                        it.copy(
+                            creatingFromOutline = false,
+                            chapters = refreshed,
+                            outline = progress.remaining,
+                            outlineWrittenCount = progress.written,
+                            error = outlineWriteFailureText(progress, error.message),
+                        )
+                    }
                 }
             }
         }
@@ -333,6 +440,8 @@ class ChaptersViewModel(
                         writingProfile = profile,
                         storyCore = core,
                         storyCoreSaved = true,
+                        // 只在还没开始编辑时播种：已经改过的草稿不能被重新载入的设定覆盖。
+                        writingDrafts = it.writingDrafts ?: writingDraftsSeededFrom(profile),
                     )
                 }
             } catch (cancelled: CancellationException) {
@@ -341,6 +450,15 @@ class ChaptersViewModel(
                 // 设定读不出来不该挡住写作；保留空设定即可。
             }
         }
+    }
+
+    /**
+     * 写作助手弹层里的一次编辑：写回 [ChaptersUiState.writingDrafts]。
+     *
+     * 提到 UiState 而不是弹层局部状态，是为了「关掉弹层 / 旋屏 / 切后台回来」都不丢字。
+     */
+    fun updateWritingDrafts(drafts: WritingDrafts) {
+        mutableState.update { it.copy(writingDrafts = drafts) }
     }
 
     fun generateStoryBible(premise: String, genre: String = state.value.writingProfile.genre) {
@@ -433,6 +551,8 @@ class ChaptersViewModel(
                     it.copy(
                         savingProfile = false,
                         writingProfile = saved,
+                        // 落盘成功 = 草稿与已保存内容一致：重新播种，清掉「未保存」标记。
+                        writingDrafts = writingDraftsSeededFrom(saved),
                         message = "写作类型已保存。",
                     )
                 }
@@ -979,4 +1099,57 @@ class ChaptersViewModel(
         mutableState.update { it.copy(exported = null) }
         runCatching { FileSystem.SYSTEM.delete(file) }
     }
+}
+
+/**
+ * 大纲写入的断点状态：这份大纲累计写了多少章、还剩哪几章。
+ *
+ * 纯逻辑，不依赖 ViewModel/仓库：失败后靠它决定「哪些章节还该留在待写队列里」，
+ * 保证重试只补写尾部、不会重复建章。
+ */
+internal data class OutlineWriteProgress(
+    /** 这份大纲累计已落盘的章数（跨多次重试累加）。 */
+    val written: Int,
+    /** 还没写的尾部；为空表示这份大纲已经写完。 */
+    val remaining: List<NovelOutlineChapterDto>,
+) {
+    val isDone: Boolean get() = remaining.isEmpty()
+
+    /** 失败时正在写的是第几章（从 1 数，含此前几轮已写好的部分）。 */
+    val failedOrdinal: Int get() = written + 1
+}
+
+/**
+ * 由「本轮开始前还待写的 [pending]」「本轮写成了 [created] 章」推出新的断点。
+ *
+ * [alreadyWritten] 是此前几轮累计写好的章数，续写时章号与提示文案都要带上它。
+ */
+internal fun outlineWriteProgress(
+    pending: List<NovelOutlineChapterDto>,
+    created: Int,
+    alreadyWritten: Int = 0,
+): OutlineWriteProgress {
+    val safeCreated = created.coerceIn(0, pending.size)
+    return OutlineWriteProgress(
+        written = alreadyWritten.coerceAtLeast(0) + safeCreated,
+        remaining = pending.drop(safeCreated),
+    )
+}
+
+/** 章标题为空时按**绝对**章号补一个；续写时才不会又从「第 1 章」重新数起。 */
+internal fun outlineChapterTitle(chapter: NovelOutlineChapterDto, ordinal: Int): String =
+    chapter.title.ifBlank { "第 $ordinal 章" }
+
+internal fun outlineWriteSuccessText(totalWritten: Int): String =
+    "已写入 $totalWritten 章大纲，点章节里的「AI 成稿」开始写正文。"
+
+/**
+ * 失败文案要说清三件事：卡在第几章、已写入多少、再点一次会不会重复。
+ * 只说「写入失败」会让人以为得从头再来。
+ */
+internal fun outlineWriteFailureText(progress: OutlineWriteProgress, cause: String?): String = buildString {
+    append("第 ").append(progress.failedOrdinal).append(" 章写入失败：")
+    append(cause?.takeIf(String::isNotBlank) ?: "未知错误")
+    append("（已写入 ").append(progress.written).append(" 章，还剩 ")
+    append(progress.remaining.size).append(" 章；再点一次只补写剩下的部分，不会重复建章）")
 }

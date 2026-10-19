@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import top.wkbin.zaomeng.data.api.NovelOutlineChapterDto
+import top.wkbin.zaomeng.ui.components.AppCard
 import top.wkbin.zaomeng.ui.theme.AppSpacing
 
 private val novelGenres = listOf("都市", "古风", "悬疑", "科幻", "奇幻", "言情")
@@ -85,17 +86,29 @@ internal fun NovelCreationSheet(
             verticalArrangement = Arrangement.spacedBy(AppSpacing.md),
         ) {
             item(key = "novel-header") {
-                Column {
-                    Text(
-                        text = "AI 小说创作",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = "一句设定 → 分章大纲 → 逐章成稿",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = "AI 小说创作",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = "一句设定 → 分章大纲 → 逐章成稿",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    // 弹层需要一条明面上的出口：它经常在「刚建完书」时自动展开，
+                    // 只能靠下滑/返回键退出会让人以为是流程卡住了。
+                    // 关闭只是收起弹层，大纲与输入都还在，重新打开接着用。
+                    TextButton(
+                        onClick = onDismiss,
+                        enabled = !state.creatingFromOutline,
+                    ) { Text("关闭") }
                 }
             }
 
@@ -171,6 +184,10 @@ internal fun NovelCreationSheet(
                         }
                     }
                 }
+                // 失败原因贴着「刚点的那个按钮」放：写在弹层外面等于没提示。
+                if (state.error.isNotBlank()) {
+                    item(key = "novel-error") { NovelErrorCard(state.error) }
+                }
                 item(key = "novel-hint") {
                     Text(
                         text = "大纲不会直接写入：确认后才会创建章节，避免不满意的结果留在书卷里。",
@@ -199,7 +216,14 @@ internal fun NovelCreationSheet(
                     }
                 }
                 itemsIndexed(state.outline, key = { index, _ -> "outline-$index" }) { index, chapter ->
-                    OutlineRow(index = index, chapter = chapter)
+                    // 断点续写时 outline 只剩没写的尾部，编号要接上已写入的章数，
+                    // 否则「还剩的第 5 章」会被显示成「第 1 章」，看起来像重排了章节。
+                    OutlineRow(index = state.outlineWrittenCount + index, chapter = chapter)
+                }
+                // 部分写入失败后这里会显示「已写入 N 章 / 还剩 M 章」，
+                // 紧挨着下面的「写入 M 章大纲」——用户不必关掉弹层才知道发生了什么。
+                if (state.error.isNotBlank()) {
+                    item(key = "outline-error") { NovelErrorCard(state.error) }
                 }
                 item(key = "outline-actions") {
                     Button(
@@ -225,6 +249,17 @@ internal fun NovelCreationSheet(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun NovelErrorCard(message: String) {
+    AppCard(
+        containerColor = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        contentPadding = PaddingValues(AppSpacing.md),
+    ) {
+        Text(message, style = MaterialTheme.typography.bodySmall)
     }
 }
 

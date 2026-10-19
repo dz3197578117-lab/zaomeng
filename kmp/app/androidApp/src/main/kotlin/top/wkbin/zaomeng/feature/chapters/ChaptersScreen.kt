@@ -99,6 +99,12 @@ fun ChaptersScreen(
     var showMoreMenu by remember { mutableStateOf(false) }
     var writingToolTab by remember { mutableIntStateOf(0) }
     var pendingDraftChapter by remember { mutableStateOf<ChapterDto?>(null) }
+    // 章节删除是不可逆的（服务端硬删除、没有回收站），必须先确认再动手。
+    var pendingDeleteChapter by remember { mutableStateOf<ChapterDto?>(null) }
+    // 编辑弹层只在**保存成功**后才关闭：失败时留在原地显示原因，
+    // 否则刚敲进去的正文会随着弹层一起消失（此前就是这样丢的）。
+    var editorSaveInFlight by remember { mutableStateOf(false) }
+    var editorError by remember { mutableStateOf("") }
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     val requestNotificationPermission = rememberNotificationPermissionRequester { granted ->
@@ -131,15 +137,23 @@ fun ChaptersScreen(
             )
         }
     }
-    LaunchedEffect(openCreation) {
-        if (openCreation) showNovelCreation = true
+    LaunchedEffect(openCreation, state.loading, state.chapters.size) {
+        // 只有「刚建好、还是空的」书卷才自动摊开创作弹层。
+        // 此前从创作页打开任何一本书都会先盖一层空白表单——尤其是刚用「就按这个写」
+        // 建完书、大纲已经写进章节的情况，落地又是同一张空表单，很容易被当成没成功再来一次。
+        if (openCreation && !state.loading && state.chapters.isEmpty()) showNovelCreation = true
     }
     LaunchedEffect(state.outlineCreationCount) {
         // 大纲写入完成后收起弹层：继续停在「大纲」页会让用户以为还要再确认一次。
         if (state.outlineCreationCount > 0) showNovelCreation = false
     }
-    LaunchedEffect(state.navigationSessionId) {
-        val sessionId = state.navigationSessionId
+    // 失败提示此前只写进列表中部那张错误卡：它固定排在搜索卡与问书卷卡之后，
+    // 用户当前滚到哪儿都看不见，表现就是「按钮转圈停下，什么也没发生」。
+    LaunchedEffect(state.error) {
+        val error = state.error
+        if (error.isNotBlank()) snackbarHostState.showSnackbar(error)
+    }
+    LaunchedEffect(state.navigationSessionId) {        val sessionId = state.navigationSessionId
         if (sessionId.isNotBlank()) {
             viewModel.consumeNavigationSession()
             onOpenChat(viewModel.runId, sessionId)
@@ -446,7 +460,7 @@ fun ChaptersScreen(
                     onMoveUp = { viewModel.move(chapter.chapterId, chapter.order - 1) },
                     onMoveDown = { viewModel.move(chapter.chapterId, chapter.order + 1) },
                     onEdit = { editing = chapter },
-                    onDelete = { viewModel.delete(chapter.chapterId) },
+                    onDelete = { pendingDeleteChapter = chapter },
                 )
             }
             if (state.chapters.isNotEmpty()) item {
@@ -456,14 +470,38 @@ fun ChaptersScreen(
             }
         }
     }
-    if (showCreate) ChapterEditorDialog(onDismiss = { showCreate = false }) { title, goal, participants, content ->
+    if (showCreate) ChapterEditorDialog(
+        onDismiss = { showCreate = false },
+        saveEnabled = !state.saving,
+        error = editorError,
+    ) { title, goal, participants, content ->
+        editorSaveInFlight = true
+        editorError = ""
         viewModel.save(title = title, goal = goal, participants = participants, content = content)
-        showCreate = false
     }
-    editing?.let { chapter -> ChapterEditorDialog(chapter = chapter, onDismiss = { editing = null }) { title, goal, participants, content ->
+    editing?.let { chapter -> ChapterEditorDialog(
+        chapter = chapter,
+        onDismiss = { editing = null },
+        saveEnabled = !state.saving,
+        error = editorError,
+    ) { title, goal, participants, content ->
+        editorSaveInFlight = true
+        editorError = ""
         viewModel.save(chapter.chapterId, title, goal, participants, content)
-        editing = null
     } }
+
+    // 保存结果回来后才决定关不关弹层：成功关闭，失败留在原地并显示原因。
+    LaunchedEffect(state.saving) {
+        if (editorSaveInFlight && !state.saving) {
+            editorSaveInFlight = false
+            if (state.error.isBlank()) {
+                showCreate = false
+                editing = null
+            } else {
+                editorError = state.error
+            }
+        }
+    }
     if (showNovelCreation) {
         NovelCreationSheet(
             state = state,
@@ -482,6 +520,8 @@ fun ChaptersScreen(
             onSaveBible = viewModel::saveStoryBible,
             onSaveBibleNow = viewModel::saveStoryBibleNow,
             onSaveProfile = viewModel::saveWritingProfile,
+            // 弹层里的编辑要写回 UiState：否则关掉弹层/旋屏就整段消失（见 #23）。
+            onDraftsChange = viewModel::updateWritingDrafts,
             onRescueChapter = viewModel::updateRescueChapter,
             onRescueProblem = viewModel::updateRescueProblem,
             onRescueKind = viewModel::updateRescueKind,
@@ -523,6 +563,31 @@ fun ChaptersScreen(
             },
             dismissButton = {
                 TextButton(onClick = { pendingDraftChapter = null }) { Text("取消") }
+            },
+        )
+    }
+    pendingDeleteChapter?.let { chapter ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteChapter = null },
+            title = { Text("删除《${chapter.title}》？") },
+            text = {
+                Text(
+                    "这一章有 ${chapter.content.length} 字正文。删除后无法撤销，也没有回收站；" +
+                        "如果你只是想重写，可以改用「AI 重写」或「编辑」。",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !state.saving,
+                    onClick = {
+                        val chapterId = chapter.chapterId
+                        pendingDeleteChapter = null
+                        viewModel.delete(chapterId)
+                    },
+                ) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteChapter = null }) { Text("取消") }
             },
         )
     }
@@ -644,11 +709,22 @@ private fun ChapterCard(
 }
 
 @Composable
-private fun ChapterEditorDialog(chapter: ChapterDto? = null, onDismiss: () -> Unit, onSave: (String, String, String, String) -> Unit) {
-    var title by remember(chapter) { mutableStateOf(chapter?.title.orEmpty()) }
-    var goal by remember(chapter) { mutableStateOf(chapter?.goal.orEmpty()) }
-    var participants by remember(chapter) { mutableStateOf(chapter?.participants?.joinToString("、").orEmpty()) }
-    var content by remember(chapter) { mutableStateOf(chapter?.content.orEmpty()) }
+private fun ChapterEditorDialog(
+    chapter: ChapterDto? = null,
+    onDismiss: () -> Unit,
+    /** 另有保存/删除正在进行时禁用保存：`save()` 会静默 return，用户却会以为存上了。 */
+    saveEnabled: Boolean = true,
+    /** 上一次保存失败的原因；非空时显示在弹层里，弹层保持打开。 */
+    error: String = "",
+    onSave: (String, String, String, String) -> Unit,
+) {
+    // 用 rememberSaveable：旋转屏幕/重建后不能把正在写的整章正文清空。
+    var title by rememberSaveable(chapter?.chapterId) { mutableStateOf(chapter?.title.orEmpty()) }
+    var goal by rememberSaveable(chapter?.chapterId) { mutableStateOf(chapter?.goal.orEmpty()) }
+    var participants by rememberSaveable(chapter?.chapterId) {
+        mutableStateOf(chapter?.participants?.joinToString("、").orEmpty())
+    }
+    var content by rememberSaveable(chapter?.chapterId) { mutableStateOf(chapter?.content.orEmpty()) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (chapter == null) "新建章节" else "编辑章节") },
@@ -661,9 +737,21 @@ private fun ChapterEditorDialog(chapter: ChapterDto? = null, onDismiss: () -> Un
             OutlinedTextField(goal, { goal = it }, label = { Text("本章目标") })
             OutlinedTextField(participants, { participants = it }, label = { Text("出场人物（用顿号或逗号分隔）") })
             OutlinedTextField(content, { content = it }, label = { Text("草稿内容") }, minLines = 6)
+            if (error.isNotBlank()) {
+                Text(
+                    error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             }
         },
-        confirmButton = { Button(onClick = { onSave(title, goal, participants, content) }, enabled = title.isNotBlank()) { Text("保存") } },
+        confirmButton = {
+            Button(
+                onClick = { onSave(title, goal, participants, content) },
+                enabled = saveEnabled && title.isNotBlank(),
+            ) { Text(if (saveEnabled) "保存" else "保存中…") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
