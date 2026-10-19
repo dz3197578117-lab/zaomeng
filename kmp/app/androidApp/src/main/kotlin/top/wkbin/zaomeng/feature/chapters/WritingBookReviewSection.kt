@@ -141,7 +141,7 @@ internal fun BookReviewSection(
 private fun ConsistencyIssueItem(issue: ConsistencyIssueDto) {
     AppCard(
         modifier = Modifier.fillMaxWidth(),
-        variant = AppCardVariant.Outlined,
+        variant = AppCardVariant.Filled,
         contentPadding = PaddingValues(AppSpacing.md),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -181,7 +181,7 @@ private fun FinalReviewGroup(
         issues.forEach { issue ->
             AppCard(
                 modifier = Modifier.fillMaxWidth(),
-                variant = AppCardVariant.Outlined,
+                variant = AppCardVariant.Filled,
                 contentPadding = PaddingValues(AppSpacing.md),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {

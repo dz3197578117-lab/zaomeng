@@ -48,12 +48,12 @@ val Typography = Typography(
     displaySmall = serifStyle(34, 44, FontWeight.Bold, -0.3),
 
     // 标题级：页面主标题、卡片大标题
-    headlineLarge = serifStyle(30, 40),
-    headlineMedium = serifStyle(26, 36),
-    headlineSmall = serifStyle(22, 32),
+    headlineLarge = sansStyle(30, 40, FontWeight.Bold),
+    headlineMedium = sansStyle(26, 36, FontWeight.Bold),
+    headlineSmall = sansStyle(22, 32, FontWeight.SemiBold),
 
     // 小标题：AppBar 标题、列表分组名
-    titleLarge = serifStyle(20, 28),
+    titleLarge = sansStyle(20, 28, FontWeight.SemiBold),
     titleMedium = sansStyle(16, 24, FontWeight.SemiBold, 0.1),
     titleSmall = sansStyle(14, 20, FontWeight.Medium, 0.1),
 

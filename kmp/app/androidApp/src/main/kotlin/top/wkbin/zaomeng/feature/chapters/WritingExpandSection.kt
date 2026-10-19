@@ -201,7 +201,7 @@ internal fun ExpandSection(
 private fun SceneCardItem(index: Int, card: SceneCardDto) {
     AppCard(
         modifier = Modifier.fillMaxWidth(),
-        variant = AppCardVariant.Outlined,
+        variant = AppCardVariant.Filled,
         contentPadding = PaddingValues(AppSpacing.md),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -241,7 +241,7 @@ private fun DraftVersionItem(version: DraftVersionDto, applying: Boolean, onAppl
     var expanded by remember(version.label) { mutableStateOf(false) }
     AppCard(
         modifier = Modifier.fillMaxWidth(),
-        variant = AppCardVariant.Outlined,
+        variant = AppCardVariant.Filled,
         contentPadding = PaddingValues(AppSpacing.md),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -279,7 +279,7 @@ private fun RewriteOptionItem(label: String, content: String) {
     val scope = rememberCoroutineScope()
     AppCard(
         modifier = Modifier.fillMaxWidth(),
-        variant = AppCardVariant.Outlined,
+        variant = AppCardVariant.Filled,
         contentPadding = PaddingValues(AppSpacing.md),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

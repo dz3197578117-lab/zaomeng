@@ -6,6 +6,25 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.13.0] - 2026-10-19
+
+### 界面：创作相关页面换成「工作台」，全局配色换为冷灰 + 靛蓝
+
+- **设计 token**：`Color.kt` 重写为冷灰纸（`#F3F5F8`）与靛蓝（`#3D5AFE`）体系，明暗双套；
+  `Shapes` 放大到 22/16/12/8；`Typography` 的 headline/titleLarge 改为无衬线粗体，
+  display 仍保留衬线给书名与空状态。
+- **创作首页**：统计卡（本书 / 人物 / 待蒸馏）、渐变封面书卡、人物档案完成度进度条、
+  「继续写」；新建按钮改为右上角圆形 FAB。
+- **章节工作台**：顶栏与页面同色；新增「已写 N/M 章」进度卡；
+  写作助手入口改为 2×2 工具网格（设定 / 扩写 / 卡文救援 / 检查终审），
+  点击直达对应页签（`WritingToolSheet.initialTab`）。
+- **写作助手**：卡片由描边改为白色填充，靠间距与阴影分层。
+- 旧书卷、旧设定、旧章节数据不受影响；深色模式同步更新。
+
+### 验证
+
+`testDebugUnitTest`（635 用例）、`lintDebug`（0 error）、`assembleDebug` 全部通过。
+
 ## [2.12.0] - 2026-10-19
 
 ### 新增：设定圣经人工管理、人物弧光、文风样本

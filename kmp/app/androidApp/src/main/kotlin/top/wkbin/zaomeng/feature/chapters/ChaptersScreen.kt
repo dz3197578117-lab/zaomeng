@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -28,7 +29,11 @@ import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.outlined.FactCheck
+import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.MenuBook
+import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.ViewAgenda
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -38,7 +43,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -49,6 +56,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -85,6 +93,7 @@ fun ChaptersScreen(
     var pendingNovelConversion by remember { mutableStateOf<Pair<String, String>?>(null) }
     var showNovelCreation by remember { mutableStateOf(false) }
     var showWritingTools by remember { mutableStateOf(false) }
+    var writingToolTab by remember { mutableIntStateOf(0) }
     var pendingDraftChapter by remember { mutableStateOf<ChapterDto?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -139,7 +148,7 @@ fun ChaptersScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("章节工作台", style = MaterialTheme.typography.titleLarge)
+                        Text("章节工作台", style = MaterialTheme.typography.headlineSmall)
                         Text(
                             text = if (state.chapters.isEmpty()) {
                                 "把会话沉淀为草稿"
@@ -167,7 +176,7 @@ fun ChaptersScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
+                    containerColor = MaterialTheme.colorScheme.background,
                 ),
             )
         },
@@ -182,36 +191,53 @@ fun ChaptersScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(AppSpacing.md),
         ) {
-            item {
-                AppCard(
-                    variant = AppCardVariant.Outlined,
-                    onClick = { showWritingTools = true },
-                    contentPadding = PaddingValues(AppSpacing.lg),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Rounded.AutoAwesome,
-                            contentDescription = null,
-                            modifier = Modifier.size(22.dp),
-                            tint = MaterialTheme.colorScheme.primary,
+            item(key = "chapter-progress") {
+                ChapterProgressCard(state.chapters)
+            }
+            item(key = "writing-tools") {
+                Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+                        ToolCard(
+                            title = "设定",
+                            subtitle = "核心 · 人物 · 伏笔",
+                            icon = Icons.Outlined.Tune,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                writingToolTab = 0
+                                showWritingTools = true
+                            },
                         )
-                        Spacer(Modifier.width(AppSpacing.md))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                "写作助手",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                            )
-                            Text(
-                                "设定集 · 类型模版 · 卡文救援 · 润色检查",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        Icon(
-                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ToolCard(
+                            title = "扩写",
+                            subtitle = "场景卡 · 两版初稿",
+                            icon = Icons.Outlined.ViewAgenda,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                writingToolTab = 2
+                                showWritingTools = true
+                            },
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(AppSpacing.md)) {
+                        ToolCard(
+                            title = "卡文救援",
+                            subtitle = "三个可写方案",
+                            icon = Icons.Outlined.Lightbulb,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                writingToolTab = 3
+                                showWritingTools = true
+                            },
+                        )
+                        ToolCard(
+                            title = "检查终审",
+                            subtitle = "一致性 · 四项",
+                            icon = Icons.Outlined.FactCheck,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                writingToolTab = 4
+                                showWritingTools = true
+                            },
                         )
                     }
                 }
@@ -426,6 +452,7 @@ fun ChaptersScreen(
     if (showWritingTools) {
         WritingToolSheet(
             state = state,
+            initialTab = writingToolTab,
             onLoad = viewModel::loadWritingTools,
             onGenerateBible = viewModel::generateStoryBible,
             onSaveBible = viewModel::saveStoryBible,
@@ -657,4 +684,99 @@ private fun ArchiveSessionDialog(sessions: List<top.wkbin.zaomeng.data.api.Dialo
         confirmButton = {},
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
+}
+
+@Composable
+private fun ChapterProgressCard(chapters: List<ChapterDto>) {
+    val total = chapters.size
+    val written = chapters.count { it.content.isNotBlank() }
+    val words = chapters.sumOf { it.content.length }
+    val ratio = if (total > 0) written.toFloat() / total else 0f
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 2.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(AppSpacing.lg),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "已写 $written / $total 章",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    if (words > 0) "约 $words 字" else "还没有正文",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            LinearProgressIndicator(
+                progress = { ratio },
+                modifier = Modifier.fillMaxWidth().height(6.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            )
+            Text(
+                text = if (total == 0) {
+                    "先新建一章，或者让 AI 生成大纲。"
+                } else {
+                    "${total - written} 章待写 · 选中章节可拆场景卡、写两版初稿。"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ToolCard(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 2.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(AppSpacing.lg),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .background(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.shapes.small),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(17.dp),
+                )
+            }
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }

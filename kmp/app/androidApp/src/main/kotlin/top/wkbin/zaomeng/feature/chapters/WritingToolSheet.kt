@@ -81,6 +81,7 @@ private val chapterLengthOptions = listOf(1500, 2500, 3000, 3500)
 @Composable
 internal fun WritingToolSheet(
     state: ChaptersUiState,
+    initialTab: Int = 0,
     onLoad: () -> Unit,
     onGenerateBible: (String, String) -> Unit,
     onSaveBible: () -> Unit,
@@ -109,7 +110,7 @@ internal fun WritingToolSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var tab by remember(initialTab) { mutableIntStateOf(initialTab) }
     LaunchedEffect(Unit) { onLoad() }
 
     ModalBottomSheet(
@@ -282,7 +283,7 @@ private fun StoryCoreSection(
                 Text("主题", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 AppCard(
                     modifier = Modifier.fillMaxWidth(),
-                    variant = AppCardVariant.Outlined,
+                    variant = AppCardVariant.Filled,
                     contentPadding = PaddingValues(AppSpacing.md),
                 ) {
                     SelectionContainer { Text(core.theme, style = MaterialTheme.typography.bodySmall) }
@@ -293,7 +294,7 @@ private fun StoryCoreSection(
                 core.desires.forEach { desire ->
                     AppCard(
                         modifier = Modifier.fillMaxWidth(),
-                        variant = AppCardVariant.Outlined,
+                        variant = AppCardVariant.Filled,
                         contentPadding = PaddingValues(AppSpacing.md),
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -317,7 +318,7 @@ private fun StoryCoreSection(
                 core.turningPoints.forEachIndexed { index, point ->
                     AppCard(
                         modifier = Modifier.fillMaxWidth(),
-                        variant = AppCardVariant.Outlined,
+                        variant = AppCardVariant.Filled,
                         contentPadding = PaddingValues(AppSpacing.md),
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -337,7 +338,7 @@ private fun StoryCoreSection(
                 Text("结局", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 AppCard(
                     modifier = Modifier.fillMaxWidth(),
-                    variant = AppCardVariant.Outlined,
+                    variant = AppCardVariant.Filled,
                     contentPadding = PaddingValues(AppSpacing.md),
                 ) {
                     SelectionContainer { Text(core.ending, style = MaterialTheme.typography.bodySmall) }
@@ -372,7 +373,7 @@ private fun BibleExtraSection(bible: StoryBibleDto) {
             bible.timeline.forEach { event ->
                 AppCard(
                     modifier = Modifier.fillMaxWidth(),
-                    variant = AppCardVariant.Outlined,
+                    variant = AppCardVariant.Filled,
                     contentPadding = PaddingValues(AppSpacing.md),
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -404,7 +405,7 @@ private fun BibleExtraSection(bible: StoryBibleDto) {
             bible.foreshadowings.forEach { item ->
                 AppCard(
                     modifier = Modifier.fillMaxWidth(),
-                    variant = AppCardVariant.Outlined,
+                    variant = AppCardVariant.Filled,
                     contentPadding = PaddingValues(AppSpacing.md),
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -493,7 +494,7 @@ private fun StoryBibleSection(
                 bible.characters.forEach { character ->
                     AppCard(
                         modifier = Modifier.fillMaxWidth(),
-                        variant = AppCardVariant.Outlined,
+                        variant = AppCardVariant.Filled,
                         contentPadding = PaddingValues(AppSpacing.md),
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -520,7 +521,7 @@ private fun StoryBibleSection(
                 bible.factions.forEach { faction ->
                     AppCard(
                         modifier = Modifier.fillMaxWidth(),
-                        variant = AppCardVariant.Outlined,
+                        variant = AppCardVariant.Filled,
                         contentPadding = PaddingValues(AppSpacing.md),
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -542,7 +543,7 @@ private fun StoryBibleSection(
                 bible.conflicts.forEach { conflict ->
                     AppCard(
                         modifier = Modifier.fillMaxWidth(),
-                        variant = AppCardVariant.Outlined,
+                        variant = AppCardVariant.Filled,
                         contentPadding = PaddingValues(AppSpacing.md),
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -579,7 +580,7 @@ private fun BibleBlock(title: String, bible: StoryBibleDto) {
     Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
     AppCard(
                         modifier = Modifier.fillMaxWidth(),
-                        variant = AppCardVariant.Outlined,
+                        variant = AppCardVariant.Filled,
                         contentPadding = PaddingValues(AppSpacing.md),
                     ) {
         SelectionContainer {
@@ -610,7 +611,7 @@ private fun GenreSection(state: ChaptersUiState, onSave: (WritingProfileDto) -> 
         WritingGenres.all.forEach { genre ->
             AppCard(
                 modifier = Modifier.fillMaxWidth(),
-                variant = if (genre.id == genreId) AppCardVariant.Filled else AppCardVariant.Outlined,
+                variant = if (genre.id == genreId) AppCardVariant.Filled else AppCardVariant.Filled,
                 onClick = { genreId = if (genreId == genre.id) "" else genre.id },
                 contentPadding = PaddingValues(AppSpacing.md),
             ) {
@@ -760,7 +761,7 @@ private fun RescueSection(
 private fun RescueOptionCard(index: Int, option: RescueOptionDto, onCopy: () -> Unit) {
     AppCard(
                         modifier = Modifier.fillMaxWidth(),
-                        variant = AppCardVariant.Outlined,
+                        variant = AppCardVariant.Filled,
                         contentPadding = PaddingValues(AppSpacing.md),
                     ) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -885,7 +886,7 @@ private fun ReviewReport(review: ChapterReviewDto) {
         review.issues.forEach { issue ->
             AppCard(
                         modifier = Modifier.fillMaxWidth(),
-                        variant = AppCardVariant.Outlined,
+                        variant = AppCardVariant.Filled,
                         contentPadding = PaddingValues(AppSpacing.md),
                     ) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
