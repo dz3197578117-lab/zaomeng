@@ -1,23 +1,34 @@
 package top.wkbin.zaomeng.navigation
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.NavKey
 
 /**
- * 窄屏（手机）底部导航。
+ * 窄屏（手机）底部导航：白色浮动胶囊。
  *
- * 改造前手机端**没有底部导航**：书卷架 / 会话 / 卡库 三个入口挤在 TopAppBar 的三个图标里，
- * 跨书卷与在线书库则藏在二级页面。现在把最高频的 5 个目的地平铺到底栏：
- * 书卷架 / 创作 / 卡库 / 跨书卷 / 设置。会话改为书卷架顶栏与书卷详情里的内容页入口。
- *
- * 「在线书库」不占底栏位（M3 建议 3–5 项），它仍可从「导入小说 → 在线书库」进入。
+ * 五个目的地固定为：书卷架 / 创作 / 卡库 / 跨书卷 / 设置。
+ * 选中项用浅蓝胶囊托住图标，其余保持灰字，整条栏浮在页面之上，
+ * 不再用 M3 默认的整条 NavigationBar 底色。
  */
 @Composable
 fun AppBottomBar(
@@ -25,31 +36,67 @@ fun AppBottomBar(
     onSelectDestination: (NavKey) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    NavigationBar(modifier = modifier) {
-        topLevelRailItems
-            .filterNot { it.destination == OnlineLibraryDestination }
-            .forEach { item ->
-                val selected = selectedDestination?.let { it::class == item.destination::class } == true
-                NavigationBarItem(
-                    selected = selected,
-                    onClick = { onSelectDestination(item.destination) },
-                    icon = {
-                        Icon(
-                            imageVector = if (selected) item.selectedIcon else item.icon,
-                            contentDescription = item.label,
-                        )
-                    },
-                    label = {
-                        Text(item.label, style = MaterialTheme.typography.labelSmall)
-                    },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                        selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                        indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
-                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-                )
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 10.dp,
+        ) {
+            Row(
+                modifier = Modifier.height(66.dp).padding(horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                topLevelRailItems
+                    .filterNot { it.destination == OnlineLibraryDestination }
+                    .forEach { item ->
+                        val selected = selectedDestination?.let { it::class == item.destination::class } == true
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(16.dp))
+                                .clickable { onSelectDestination(item.destination) }
+                                .padding(vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                                        RoundedCornerShape(12.dp),
+                                    )
+                                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                            ) {
+                                Icon(
+                                    imageVector = if (selected) item.selectedIcon else item.icon,
+                                    contentDescription = item.label,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = if (selected) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+                            }
+                            Text(
+                                item.label,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (selected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.padding(top = 2.dp),
+                            )
+                        }
+                    }
             }
+        }
     }
 }

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Search
@@ -38,6 +39,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -93,6 +96,7 @@ fun ChaptersScreen(
     var pendingNovelConversion by remember { mutableStateOf<Pair<String, String>?>(null) }
     var showNovelCreation by remember { mutableStateOf(false) }
     var showWritingTools by remember { mutableStateOf(false) }
+    var showMoreMenu by remember { mutableStateOf(false) }
     var writingToolTab by remember { mutableIntStateOf(0) }
     var pendingDraftChapter by remember { mutableStateOf<ChapterDto?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -165,14 +169,34 @@ fun ChaptersScreen(
                     IconButton(onClick = { showNovelCreation = true }, enabled = !state.saving) {
                         Icon(Icons.Rounded.AutoAwesome, contentDescription = "AI 小说创作")
                     }
-                    IconButton(onClick = { showArchive = true }, enabled = state.sessions.isNotEmpty() && !state.saving) {
-                        Icon(Icons.Default.Forum, "转为小说")
-                    }
-                    IconButton(onClick = { viewModel.export("markdown") }, enabled = !state.exporting) {
-                        Icon(Icons.Default.FileDownload, "导出 Markdown")
-                    }
                     IconButton(onClick = { showCreate = true }, enabled = !state.saving) {
                         Icon(Icons.Default.Add, "新建章节")
+                    }
+                    Box {
+                        IconButton(onClick = { showMoreMenu = true }) {
+                            Icon(Icons.Default.MoreVert, "更多")
+                        }
+                        DropdownMenu(
+                            expanded = showMoreMenu,
+                            onDismissRequest = { showMoreMenu = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("把会话转为小说") },
+                                enabled = state.sessions.isNotEmpty() && !state.saving,
+                                onClick = {
+                                    showMoreMenu = false
+                                    showArchive = true
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("导出 Markdown") },
+                                enabled = !state.exporting,
+                                onClick = {
+                                    showMoreMenu = false
+                                    viewModel.export("markdown")
+                                },
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

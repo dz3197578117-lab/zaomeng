@@ -21,6 +21,8 @@ import top.wkbin.zaomeng.data.api.ExportedChapterManuscript
 import top.wkbin.zaomeng.data.api.GenerateNovelOutlineRequest
 import top.wkbin.zaomeng.data.api.GenerateStoryBibleRequest
 import top.wkbin.zaomeng.data.api.NovelOutlineResponse
+import top.wkbin.zaomeng.data.api.NovelPlanDto
+import top.wkbin.zaomeng.data.api.NovelPlanRequest
 import top.wkbin.zaomeng.data.api.RescueOptionDto
 import top.wkbin.zaomeng.data.api.RescueRequest
 import top.wkbin.zaomeng.data.api.ReusableCardDto
@@ -58,6 +60,9 @@ interface ChapterRepository {
 
     /** 按检查建议改写并保存正文。 */
     suspend fun polishChapter(runId: String, chapterId: String, instruction: String = ""): ChapterDto
+
+    /** 一句话生成小说：只出方案，不建书。 */
+    suspend fun planNovel(request: NovelPlanRequest): NovelPlanDto
 
     // ===== 人定核心 =====
 

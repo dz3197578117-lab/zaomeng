@@ -231,6 +231,9 @@ class PromptLoader(private val source: PromptSource) {
     /** 人工终审：逻辑、情感、敏感内容、原创性。 */
     fun getFinalReviewPrompt(): String = chapterPrompt("final_review")
 
+    /** 一句话生成小说：一次给出书名、核心、设定与分章大纲。 */
+    fun getNovelPlanPrompt(): String = chapterPrompt("novel_plan")
+
     private fun chapterPrompt(name: String): String {
         val config = loadPromptConfig("chapters", name)
         return listOf(

@@ -249,3 +249,53 @@ class WritingArcTest {
         assertEquals(2500, profile.chapterLength)
     }
 }
+
+class NovelPlanParserTest {
+    @Test
+    fun `plan parses core bible and outline in one shot`() {
+        val raw = """
+            ```json
+            {
+              "title": "长夜账本",
+              "lead": "沈砚",
+              "genre_id": "web_serial",
+              "premise": "能听见旧书低语的修补匠，接到一本会自己增页的账本。",
+              "core": {
+                "theme": "人为了不被忘记，会主动编造自己的过去。",
+                "desires": [{"name": "沈砚", "want": "找回妹妹的名字", "obstacle": "他改过自己的账"}]
+              },
+              "bible": {
+                "world": "海雾港城，名字写进账本就会成真。",
+                "characters": [{"name": "沈砚", "role": "修补匠", "arc_start": "只想活下去"}]
+              },
+              "outline": [
+                {"title": "雨夜码头", "goal": "用半本账换回妹妹的名字。"},
+                {"title": "缺页", "goal": "他发现少的那页写着自己。"}
+              ]
+            }
+            ```
+        """.trimIndent()
+
+        val plan = WritingToolParser.parseNovelPlan(raw)
+
+        assertEquals("长夜账本", plan.title)
+        assertEquals("沈砚", plan.lead)
+        assertEquals("web_serial", plan.genreId)
+        assertTrue(plan.core.theme.contains("编造"))
+        assertEquals("海雾港城，名字写进账本就会成真。", plan.bible.world)
+        assertEquals(2, plan.outline.size)
+        assertEquals("缺页", plan.outline[1].title)
+    }
+
+    @Test
+    fun `plan tolerates missing optional blocks`() {
+        val plan = WritingToolParser.parseNovelPlan(
+            """{"title":"无题","lead":"阿棠","outline":[{"title":"第一场","goal":"她决定离港"}]}""",
+        )
+
+        assertEquals("无题", plan.title)
+        assertTrue(plan.core.isEmpty)
+        assertTrue(plan.bible.isEmpty)
+        assertEquals(1, plan.outline.size)
+    }
+}

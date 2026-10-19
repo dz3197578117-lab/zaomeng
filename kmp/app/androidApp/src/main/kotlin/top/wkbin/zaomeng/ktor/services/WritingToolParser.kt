@@ -11,6 +11,7 @@ import top.wkbin.zaomeng.data.api.ChapterReviewDto
 import top.wkbin.zaomeng.data.api.ConsistencyReportDto
 import top.wkbin.zaomeng.data.api.DraftVersionDto
 import top.wkbin.zaomeng.data.api.FinalReviewDto
+import top.wkbin.zaomeng.data.api.NovelPlanDto
 import top.wkbin.zaomeng.data.api.RescueOptionDto
 import top.wkbin.zaomeng.data.api.RewriteOptionDto
 import top.wkbin.zaomeng.data.api.SceneCardDto
@@ -78,6 +79,11 @@ internal object WritingToolParser {
 
     fun parseConsistency(raw: String): ConsistencyReportDto {
         val element = extractJson(raw) ?: throw IllegalStateException("模型没有返回可解析的一致性报告，请重试。")
+        return json.decodeFromJsonElement(element)
+    }
+
+    fun parseNovelPlan(raw: String): NovelPlanDto {
+        val element = extractJson(raw) ?: throw IllegalStateException("模型没有返回可解析的方案，请重试。")
         return json.decodeFromJsonElement(element)
     }
 

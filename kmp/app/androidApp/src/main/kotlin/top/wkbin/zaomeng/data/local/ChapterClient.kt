@@ -11,6 +11,8 @@ import top.wkbin.zaomeng.data.api.ArchiveDialogueChapterRequest
 import top.wkbin.zaomeng.data.api.DraftChapterRequest
 import top.wkbin.zaomeng.data.api.GenerateNovelOutlineRequest
 import top.wkbin.zaomeng.data.api.NovelOutlineResponse
+import top.wkbin.zaomeng.data.api.NovelPlanDto
+import top.wkbin.zaomeng.data.api.NovelPlanRequest
 import top.wkbin.zaomeng.data.api.AskBookResponseDto
 import top.wkbin.zaomeng.data.api.ApplyChapterContentRequest
 import top.wkbin.zaomeng.data.api.ChapterDto
@@ -155,6 +157,9 @@ class ChapterClient(
     )
 
     // ===== 人定核心 / 扩写 / 重写 / 全书检查 =====
+
+    suspend fun planNovel(request: NovelPlanRequest): NovelPlanDto =
+        chapterManagement.planNovel(request)
 
     suspend fun readStoryCore(runId: String): StoryCoreDto =
         chapterManagement.readStoryCore(runId)

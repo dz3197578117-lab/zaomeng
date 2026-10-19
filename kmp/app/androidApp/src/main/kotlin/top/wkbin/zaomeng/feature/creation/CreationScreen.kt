@@ -19,7 +19,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.outlined.AutoStories
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -50,6 +52,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.viewmodel.koinViewModel
 import top.wkbin.zaomeng.data.api.RunManifestDto
+import top.wkbin.zaomeng.ui.components.AppCard
+import top.wkbin.zaomeng.ui.components.AppCardVariant
 import top.wkbin.zaomeng.ui.components.AppEmptyState
 import top.wkbin.zaomeng.ui.format.toLocalDateTimeDisplay
 import top.wkbin.zaomeng.ui.theme.AppSpacing
@@ -69,6 +73,7 @@ fun CreationScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var showNewBook by rememberSaveable { mutableStateOf(false) }
+    var showPlanSheet by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { innerPadding ->
         LazyColumn(
@@ -123,6 +128,12 @@ fun CreationScreen(
                                     showNewBook = true
                                 }) { Text("新建原创书卷") }
                                 TextButton(onClick = onOpenBookshelf) { Text("去书卷架蒸馏") }
+                                TextButton(
+                                    onClick = {
+                                        viewModel.clearPlan()
+                                        showPlanSheet = true
+                                    },
+                                ) { Text("✨ 一句话生成") }
                             }
                         },
                     )
@@ -130,6 +141,12 @@ fun CreationScreen(
 
                 else -> {
                     item(key = "creation-stats") { CreationStats(state.runs) }
+                    item(key = "creation-plan-entry") {
+                        PlanEntryCard {
+                            viewModel.clearPlan()
+                            showPlanSheet = true
+                        }
+                    }
                     item(key = "creation-section") {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = AppSpacing.xl),
@@ -167,6 +184,22 @@ fun CreationScreen(
         }
     }
 
+    if (showPlanSheet) {
+        NovelPlanSheet(
+            state = state,
+            onPromptChange = viewModel::updatePlanPrompt,
+            onPlan = viewModel::planNovel,
+            onClear = viewModel::clearPlan,
+            onCreate = {
+                viewModel.createFromPlan { runId ->
+                    showPlanSheet = false
+                    onOpenRun(runId)
+                }
+            },
+            onDismiss = { showPlanSheet = false },
+        )
+    }
+
     if (showNewBook) {
         NewBookDialog(
             creating = state.creating,
@@ -182,6 +215,42 @@ fun CreationScreen(
                 }
             },
         )
+    }
+}
+
+@Composable
+private fun PlanEntryCard(onClick: () -> Unit) {
+    AppCard(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = AppSpacing.xl),
+        variant = AppCardVariant.Filled,
+        onClick = onClick,
+        containerColor = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        contentPadding = PaddingValues(AppSpacing.lg),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Rounded.AutoAwesome,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.width(AppSpacing.md))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "一句话生成",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "说个想法，AI 把人物、核心和大纲搭好",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+            )
+        }
     }
 }
 

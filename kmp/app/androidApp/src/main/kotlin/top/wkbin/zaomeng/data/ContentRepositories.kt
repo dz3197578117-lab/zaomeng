@@ -33,6 +33,8 @@ import top.wkbin.zaomeng.data.api.DraftChapterRequest
 import top.wkbin.zaomeng.data.api.GenerateNovelOutlineRequest
 import top.wkbin.zaomeng.data.api.GenerateStoryBibleRequest
 import top.wkbin.zaomeng.data.api.NovelOutlineResponse
+import top.wkbin.zaomeng.data.api.NovelPlanDto
+import top.wkbin.zaomeng.data.api.NovelPlanRequest
 import top.wkbin.zaomeng.data.api.ChapterReviewDto
 import top.wkbin.zaomeng.data.api.PolishChapterRequest
 import top.wkbin.zaomeng.data.api.RescueOptionDto
@@ -125,6 +127,10 @@ class ChapterRepositoryImpl(
         instruction: String,
     ): ChapterDto = repositoryRequest {
         chapters.polishChapter(runId, chapterId, PolishChapterRequest(instruction))
+    }
+
+    override suspend fun planNovel(request: NovelPlanRequest): NovelPlanDto = repositoryRequest {
+        chapters.planNovel(request)
     }
 
     override suspend fun readStoryCore(runId: String): StoryCoreDto = repositoryRequest {

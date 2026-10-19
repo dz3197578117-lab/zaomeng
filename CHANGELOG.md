@@ -6,6 +6,28 @@
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 每个 tag 对应的 GitHub Release 正文取自 [`.github/release-notes/`](.github/release-notes/)。
 
+## [2.14.0] - 2026-10-19
+
+### 新增：一句话生成小说
+
+- 新增 `planNovel` 全链路：`prompts/chapters/novel_plan.yaml` 一次生成书名、主角、类型、
+  故事核心、设定集与分章大纲；`WritingToolParser.parseNovelPlan` 容错解析。
+- 创作页新增「一句话生成」横幅与 `NovelPlanSheet`：输入想法 → 选章数 → 生成方案 →
+  预览书名/主题/人物/大纲 → 「就按这个写」。
+- 确认后 `CreationViewModel.createFromPlan` 串行完成：建原创书卷 → 保存核心/设定/类型 →
+  逐章写入大纲 → 进入章节工作台。方案未确认时不建书。
+- 新增 2 条单测：完整方案解析、缺省块容错。
+
+### 界面：继续对齐工作台设计
+
+- 底栏改为白色浮动胶囊，选中项用 `primaryContainer` 托底。
+- 章节工作台顶栏收为 AI 创作 / 新建 / 更多，会话转小说与导出收进下拉菜单。
+- 卡片阴影提升到 4dp，增强白卡与冷灰底的层次。
+
+### 验证
+
+`testDebugUnitTest`（637 用例）、`lintDebug`（0 error）、`assembleDebug` 全部通过。
+
 ## [2.13.0] - 2026-10-19
 
 ### 界面：创作相关页面换成「工作台」，全局配色换为冷灰 + 靛蓝

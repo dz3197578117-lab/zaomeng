@@ -30,7 +30,7 @@ import top.wkbin.zaomeng.feature.timeline.WorldTimelineViewModel
 
 internal fun sharedViewModelModule(platform: AppPlatform) = module {
     viewModel { BookshelfViewModel(get(), get(), get(), get()) }
-    viewModel { CreationViewModel(get()) }
+    viewModel { CreationViewModel(get(), get()) }
     viewModel { SessionsViewModel(get(), get(), get(), get(), get(), get()) }
     viewModel { parameters ->
         ChaptersViewModel(

@@ -25,6 +25,9 @@ import top.wkbin.zaomeng.data.api.DraftVersionsRequest
 import top.wkbin.zaomeng.data.api.FinalReviewDto
 import top.wkbin.zaomeng.data.api.GenerateSceneCardsRequest
 import top.wkbin.zaomeng.data.api.GenerateStoryCoreRequest
+import top.wkbin.zaomeng.data.api.NovelPlanDto
+import top.wkbin.zaomeng.data.api.NovelPlanRequest
+import top.wkbin.zaomeng.data.api.NovelOutlineChapterDto
 import top.wkbin.zaomeng.data.api.RewriteOptionDto
 import top.wkbin.zaomeng.data.api.RewriteSelectionRequest
 import top.wkbin.zaomeng.data.api.SceneCardDto
@@ -676,6 +679,63 @@ class ChapterManagementService(
         ).choices.firstOrNull()?.message?.content.orEmpty()
         if (raw.isBlank()) throw IllegalStateException("模型没有返回故事核心，请稍后重试。")
         return WritingToolParser.parseStoryCore(raw)
+    }
+
+    /**
+     * 一句话生成小说：只出方案，不建书。
+     *
+     * 用户确认后由客户端串行调用建卷、保存核心/设定、写章节——
+     * 这样方案不满意时不会在书架上留下半成品。
+     */
+    suspend fun planNovel(request: NovelPlanRequest): NovelPlanDto {
+        val prompt = request.prompt.trim()
+        require(prompt.length >= 4) { "先用一句话说说你想写什么。" }
+        require(prompt.length <= 1200) { "描述请控制在 1200 字以内。" }
+        val client = requireNotNull(llm) { "还没有配置模型，请先到设置里填写模型与密钥。" }
+        val loader = requireNotNull(prompts) { "提示词加载器未配置。" }
+        val count = request.chapterCount.coerceIn(3, 15)
+        val input = buildJsonObject {
+            put("prompt", prompt)
+            put("chapter_count", count)
+        }
+        val raw = client.chatCompletion(
+            messages = listOf(
+                LlmClient.ChatMessage("system", loader.getNovelPlanPrompt()),
+                LlmClient.ChatMessage("user", input.toString()),
+            ),
+            temperature = 0.8,
+            maxTokens = 4096,
+        ).choices.firstOrNull()?.message?.content.orEmpty()
+        if (raw.isBlank()) throw IllegalStateException("模型没有返回方案，请稍后重试。")
+
+        val plan = WritingToolParser.parseNovelPlan(raw)
+        val bible = plan.bible.normalizedForStorage()
+        val title = plan.title.trim().lineSequence().firstOrNull().orEmpty().trim()
+            .ifBlank { "未命名书卷" }.take(60)
+        val lead = plan.lead.trim()
+            .ifBlank { bible.characters.firstOrNull()?.name.orEmpty() }
+            .ifBlank { "主角" }
+            .take(20)
+        val genre = WritingGenres.byId(plan.genreId.trim())
+            ?: WritingGenres.all.firstOrNull { it.name == plan.genreId.trim() }
+        val premise = plan.premise.trim().ifBlank { plan.core.theme.trim() }.take(1200)
+        val outline = plan.outline.map { item ->
+            NovelOutlineChapterDto(
+                title = item.title.trim().take(60),
+                goal = item.goal.trim().take(300),
+            )
+        }.filter { it.title.isNotBlank() || it.goal.isNotBlank() }.take(count)
+        require(outline.isNotEmpty()) { "模型没有给出章节大纲，请重试。" }
+
+        return plan.copy(
+            title = title,
+            lead = lead,
+            genreId = genre?.id.orEmpty(),
+            premise = premise,
+            core = plan.core.normalizedForStorage(),
+            bible = bible,
+            outline = outline,
+        )
     }
 
     // ===== 场景卡与多版本初稿 =====

@@ -8,8 +8,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import top.wkbin.zaomeng.data.ChapterRepository
 import top.wkbin.zaomeng.data.RunRepository
+import top.wkbin.zaomeng.data.api.NovelPlanDto
+import top.wkbin.zaomeng.data.api.NovelPlanRequest
 import top.wkbin.zaomeng.data.api.RunManifestDto
+import top.wkbin.zaomeng.data.api.SaveChapterRequest
+import top.wkbin.zaomeng.data.api.WritingGenres
+import top.wkbin.zaomeng.data.api.WritingProfileDto
 
 data class CreationUiState(
     val loading: Boolean = true,
@@ -19,6 +25,12 @@ data class CreationUiState(
     val error: String = "",
     /** 新建原创书卷的失败原因；非空时由新建弹层展示。 */
     val createError: String = "",
+    /** 一句话生成：用户描述。 */
+    val planPrompt: String = "",
+    val planning: Boolean = false,
+    val plan: NovelPlanDto? = null,
+    val planError: String = "",
+    val creatingFromPlan: Boolean = false,
 )
 
 /**
@@ -30,6 +42,7 @@ data class CreationUiState(
  */
 class CreationViewModel(
     private val runs: RunRepository,
+    private val chapters: ChapterRepository,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(CreationUiState())
     val state: StateFlow<CreationUiState> = mutableState.asStateFlow()
@@ -116,6 +129,109 @@ class CreationViewModel(
 
     fun clearCreateError() {
         mutableState.update { it.copy(createError = "") }
+    }
+
+    // ===== 一句话生成小说 =====
+
+    fun updatePlanPrompt(value: String) {
+        mutableState.update { it.copy(planPrompt = value.take(1200), planError = "") }
+    }
+
+    fun planNovel(chapterCount: Int = 8) {
+        val current = state.value
+        if (current.planning) return
+        val prompt = current.planPrompt.trim()
+        if (prompt.length < 4) {
+            mutableState.update { it.copy(planError = "先用一句话说说你想写什么。") }
+            return
+        }
+        viewModelScope.launch {
+            mutableState.update { it.copy(planning = true, planError = "", plan = null) }
+            try {
+                val plan = chapters.planNovel(NovelPlanRequest(prompt, chapterCount.coerceIn(3, 15)))
+                mutableState.update { it.copy(planning = false, plan = plan) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(planning = false, planError = error.message ?: "生成方案失败。")
+                }
+            }
+        }
+    }
+
+    fun clearPlan() {
+        mutableState.update { it.copy(plan = null, planError = "") }
+    }
+
+    /** 用户确认方案后，建卷 → 保存核心/设定/类型 → 写入章节。 */
+    fun createFromPlan(onCreated: (String) -> Unit) {
+        val plan = state.value.plan ?: return
+        if (state.value.creatingFromPlan) return
+        viewModelScope.launch {
+            mutableState.update { it.copy(creatingFromPlan = true, planError = "") }
+            try {
+                val seed = buildString {
+                    append("《").append(plan.title).append("》\n")
+                    append("主角：").append(plan.lead).append("\n\n")
+                    if (plan.premise.isNotBlank()) append(plan.premise).append("\n\n")
+                    append("这是一本原创书卷，分章大纲已生成，可以直接开始写。")
+                }
+                val run = runs.createNovel(
+                    filename = "${safeNovelFileName(plan.title)}.md",
+                    bytes = seed.encodeToByteArray(),
+                    characters = listOf(plan.lead),
+                    maxSentences = 120,
+                    maxChars = 50_000,
+                    autoRun = false,
+                    origin = RunManifestDto.ORIGIN_ORIGINAL,
+                )
+                if (!plan.core.isEmpty) {
+                    runCatching { chapters.saveStoryCore(run.runId, plan.core) }
+                }
+                if (!plan.bible.isEmpty) {
+                    runCatching { chapters.saveStoryBible(run.runId, plan.bible) }
+                }
+                if (plan.genreId.isNotBlank()) {
+                    val genre = WritingGenres.byId(plan.genreId)
+                    runCatching {
+                        chapters.saveWritingProfile(
+                            run.runId,
+                            WritingProfileDto(
+                                genre = plan.genreId,
+                                chapterLength = genre?.defaultChapterLength ?: 2500,
+                            ),
+                        )
+                    }
+                }
+                plan.outline.forEachIndexed { index, item ->
+                    chapters.saveChapter(
+                        run.runId,
+                        "",
+                        SaveChapterRequest(
+                            title = item.title.ifBlank { "第 ${index + 1} 章" },
+                            goal = item.goal,
+                            perspective = "第三人称限知",
+                        ),
+                    )
+                }
+                mutableState.update { current ->
+                    val displayed = run.copy(novelName = plan.title)
+                    current.copy(
+                        creatingFromPlan = false,
+                        plan = null,
+                        runs = (listOf(displayed) + current.runs).distinctBy(RunManifestDto::runId),
+                    )
+                }
+                onCreated(run.runId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                mutableState.update {
+                    it.copy(creatingFromPlan = false, planError = error.message ?: "按方案建书失败。")
+                }
+            }
+        }
     }
 }
 
