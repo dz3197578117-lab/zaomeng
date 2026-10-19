@@ -262,7 +262,11 @@ internal fun Transcript(
     val visibleCount = transcript.size + streamingReplies.size +
             (if (sending && modelReasoning.isNotBlank()) 1 else 0) +
             if (pendingUserMessage == null) 0 else 1
-    val lastContentIndex = (visibleCount - 1).coerceAtLeast(0)
+    // 列表头部在有历史可加载时会多插入一行「加载更早的消息」，
+    // 少算这一行会让自动跟随永远停在「倒数第二条」：最新那条一旦长过一屏，
+    // 流式输出的后半截就落到视口外，用户得手动再滑一次。
+    val leadingRowCount = if (hasMoreHistory || loadingEarlier) 1 else 0
+    val lastContentIndex = (visibleCount - 1 + leadingRowCount).coerceAtLeast(0)
     val contentRevision = (transcript.lastOrNull()?.message?.hashCode() ?: 0) * 31 +
             streamingReplies.sumOf { it.text.length + it.innerThought.length } * 17 +
             modelReasoning.length * 13 +
@@ -464,7 +468,10 @@ internal fun Transcript(
     }
 }
 internal suspend fun LazyListState.scrollToBottom(itemIndex: Int, animated: Boolean) {
-    val targetIndex = itemIndex.coerceAtLeast(0)
+    // 以实际布局为准：调用方算出来的索引只要少一行（例如漏掉头部「加载更早」那一行），
+    // 「回到底部 / 自动跟随」就会一直差一条，正在变长的最后一条会停在视口外。
+    // layoutInfo 尚未布局时 totalItemsCount 为 0，此时回退到调用方给的索引。
+    val targetIndex = maxOf(itemIndex.coerceAtLeast(0), layoutInfo.totalItemsCount - 1)
     var target = layoutInfo.visibleItemsInfo.firstOrNull { it.index == targetIndex }
     if (target == null) {
         if (animated) {

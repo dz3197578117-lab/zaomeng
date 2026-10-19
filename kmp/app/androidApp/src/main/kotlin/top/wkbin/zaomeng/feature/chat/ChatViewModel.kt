@@ -159,13 +159,15 @@ class ChatViewModel(
                         runSessions = loaded.runSessions,
                         avatarBytes = loaded.avatarBytes,
                         personaFields = loaded.personaFields,
-                        pluginActions = plugins.actions,
-                        generationEnhancers = plugins.enhancers,
+                        pluginActions = plugins?.actions ?: it.pluginActions,
+                        generationEnhancers = plugins?.enhancers ?: it.generationEnhancers,
                         memoryQuality = loaded.memoryQuality,
-                        includeInnerThoughts = plugins.enhancers.any { enhancer ->
-                            enhancer.stateKey == INNER_THOUGHTS_ENHANCER_KEY &&
-                                enhancer.isActive(session)
-                        },
+                        includeInnerThoughts = plugins?.let { loadedPlugins ->
+                            loadedPlugins.enhancers.any { enhancer ->
+                                enhancer.stateKey == INNER_THOUGHTS_ENHANCER_KEY &&
+                                    enhancer.isActive(session)
+                            }
+                        } ?: it.includeInnerThoughts,
                         error = "",
                     )
                 }
@@ -242,7 +244,7 @@ class ChatViewModel(
         }
     }
 
-    private suspend fun loadChatPlugins(): LoadedChatPlugins {
+    private suspend fun loadChatPlugins(): LoadedChatPlugins? {
         return try {
             val plugins = plugins.listPlugins()
                 .filter { plugin -> plugin.executable && plugin.enabled && plugin.status == "enabled" }
@@ -298,7 +300,10 @@ class ChatViewModel(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Throwable) {
-            LoadedChatPlugins()
+            // 插件读取失败 ≠ 用户关掉了内心独白。
+            // 返回 null 让调用方保留原有判定：否则一次读取失败就会把历史里**已经生成过**的
+            // 内心独白整段藏起来，看起来像内容丢了。
+            null
         }
     }
 
@@ -309,12 +314,14 @@ class ChatViewModel(
                 val plugins = loadChatPlugins()
                 mutableState.update { current ->
                     current.copy(
-                        pluginActions = plugins.actions,
-                        generationEnhancers = plugins.enhancers,
-                        includeInnerThoughts = plugins.enhancers.any { enhancer ->
-                            enhancer.stateKey == INNER_THOUGHTS_ENHANCER_KEY &&
-                                enhancer.isActive(current.session)
-                        },
+                        pluginActions = plugins?.actions ?: current.pluginActions,
+                        generationEnhancers = plugins?.enhancers ?: current.generationEnhancers,
+                        includeInnerThoughts = plugins?.let { loadedPlugins ->
+                            loadedPlugins.enhancers.any { enhancer ->
+                                enhancer.stateKey == INNER_THOUGHTS_ENHANCER_KEY &&
+                                    enhancer.isActive(current.session)
+                            }
+                        } ?: current.includeInnerThoughts,
                     )
                 }
             } catch (cancelled: CancellationException) {
@@ -466,8 +473,21 @@ class ChatViewModel(
         )
     }
 
-    fun toggleContinuousObserve() = continuousObserveController.toggle()
+    /**
+     * 停止当前这一轮生成。
+     *
+     * 取消流式请求后，服务端不会收录这一轮（`DialogueStreamService` 只有整轮解析成功才 commit），
+     * 所以不做「把半截台词留在气泡里当作已发出」这种假象：清掉未收录的流式内容，
+     * 把用户原话放回输入框，并明确说明发生了什么，让「重发」成为唯一诚实的下一步。
+     */
+    fun stopGenerating() {
+        val snapshot = state.value
+        if (!snapshot.sending) return
+        streamEngine.cancel()
+        mutableState.update { it.afterStopGenerating() }
+    }
 
+    fun toggleContinuousObserve() = continuousObserveController.toggle()
     fun pauseContinuousObserve() = continuousObserveController.pause()
 
     private fun stopContinuousObserve(notice: String) =
@@ -769,6 +789,18 @@ class ChatViewModel(
 
     private fun cancelToolRequest() {
         toolsDelegate.cancel()
+    }
+
+    /**
+     * 用户主动取消正在运行的写作工具（剧情导演 / 生成修正版 / 深度复核 / 切换场景…）。
+     *
+     * 此前这些工具只做阻断：`toolBusy` 非空时发送、刷新、工具菜单全部禁用，
+     * 而可见进度只在工具面板内部——顺手关掉面板之后，界面就成了「全灰、没有任何出口」。
+     */
+    fun cancelTool() {
+        if (state.value.toolBusy.isBlank()) return
+        cancelToolRequest()
+        mutableState.update { it.copy(notice = "已取消这次生成，可以重新选择工具。") }
     }
 
     private fun cancelRecoveryRequest() {

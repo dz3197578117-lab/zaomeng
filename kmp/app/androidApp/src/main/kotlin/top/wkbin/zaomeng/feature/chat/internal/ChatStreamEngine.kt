@@ -198,8 +198,17 @@ internal class ChatStreamEngine(
                             reasoningTruncated = false
                             reasoningFinalized = false
                             lastReasoningUpdateAt = TimeSource.Monotonic.markNow()
+                            // 服务端因解析失败正在重来一次：必须把「屏幕上的台词为什么突然没了」
+                            // 说出来，否则用户只看到气泡退回空、只剩转圈，很像数据丢了。
+                            val resetStatus = event.message.ifBlank { "正在重新整理回复…" }
                             updateSendState(snapshot, operationId) {
-                                it.copy(modelReasoning = "", streamingReplies = emptyList())
+                                it.copy(
+                                    modelReasoning = "",
+                                    streamingReplies = emptyList(),
+                                    pendingUserMessage = it.pendingUserMessage?.copy(
+                                        statusText = resetStatus,
+                                    ),
+                                )
                             }
                         }
                         is DialogueStreamEvent.Complete -> {
@@ -360,13 +369,9 @@ internal class ChatStreamEngine(
             val failureText = if (responseWasCommitted) {
                 ""
             } else {
-                error.readableMessage(
-                    if (retryable) {
-                        "回复生成失败，可安全重试这次发送。"
-                    } else {
-                        "回复请求失败，请检查消息或模型配置。"
-                    },
-                )
+                // 只给结论与下一步：端点、状态码、上游原文不进用户气泡，
+                // 归因细节由诊断侧（content_rejected / stream_error）单独记账。
+                replyFailureMessage(error, retryable)
             }
             current.copy(
                 sending = false,

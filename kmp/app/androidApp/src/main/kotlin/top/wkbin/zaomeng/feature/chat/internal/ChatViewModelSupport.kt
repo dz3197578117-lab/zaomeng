@@ -18,6 +18,7 @@ import top.wkbin.zaomeng.data.api.TranscriptItemDto
 import top.wkbin.zaomeng.data.preferences.AppPreferencesRepository
 import top.wkbin.zaomeng.data.preferences.ChatDisplayPreferences
 import top.wkbin.zaomeng.domain.chat.LoadChatSessionUseCase
+import top.wkbin.zaomeng.ktor.services.ContentRejectedException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -169,6 +170,42 @@ internal fun Throwable.readableMessage(fallback: String): String = message
     ?.trim()
     ?.takeIf(String::isNotEmpty)
     ?: fallback
+
+/**
+ * 把「这一轮回复失败」翻译成一句用户能照做的话。
+ *
+ * 线上问题形状：气泡里直接摊开异常原文——
+ * 「内容被模型提供方拒绝（非应用故障） · 模型 x · 提供方 openai · https://… · HTTP 400 ·
+ * 上游原文：…」。端点、状态码、上游原文全在用户界面上，而且三类失败（可重试 / 审核拒绝 /
+ * 凭据或端点配错）看起来一模一样，用户只能反复点重试。
+ *
+ * 归因与细节已经由诊断侧单独记账（`dialogue.content_rejected` / `dialogue.stream_error`，
+ * 见 `DiagnosticsProblemAggregator`），所以这里**只给结论和下一步**。
+ * 审核拒绝依然不可重试——内容没变，重试只会再被拒一次（见 `LlmClient.retryableStatus`）。
+ */
+internal fun replyFailureMessage(error: Throwable, retryable: Boolean): String {
+    val status = (error as? ApiRequestException)?.statusCode
+    return when {
+        error is ContentRejectedException ->
+            "内容被模型提供方拒绝了（不是应用故障）：改一下措辞，或换一个模型再发。"
+
+        status == 401 || status == 403 ->
+            "模型凭据被拒绝了：去「设置 → 模型」确认 API Key 与模型名后再发。"
+
+        status == 429 -> "模型端限流了：等一会儿再发，或换一个模型。"
+
+        status != null && status >= 500 -> "模型端出错了：可以稍后重试这次发送。"
+
+        status == 408 -> "请求超时了：可以重试这次发送。"
+
+        error is ApiRequestException && status == null ->
+            "连不上模型：确认端点地址与网络后重试。"
+
+        retryable -> "回复生成失败，可安全重试这次发送。"
+
+        else -> "回复请求失败，请检查消息或模型配置后重试。"
+    }
+}
 
 internal class StreamReplyException(
     message: String,

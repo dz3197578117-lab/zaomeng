@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Visibility
@@ -159,12 +160,15 @@ internal fun ChatComposer(
     onInvokePluginAction: (ChatPluginAction) -> Unit,
     onOpenDirector: () -> Unit,
     onSend: () -> Unit,
+    /** 生成中把发送位换成「停止」：此前生成期间所有出口都被禁用，模型卡住时只能退出会话。 */
+    onStop: () -> Unit,
     onToggleContinuousObserve: () -> Unit,
     onToggleGenerationEnhancer: (ChatGenerationEnhancer) -> Unit,
     onRecover: () -> Unit,
     onReconcile: () -> Unit,
     onRetry: () -> Unit,
     onDiscardRetry: () -> Unit,
+    onCancelTool: () -> Unit = {},
 ) {
     var mentionsOpen by rememberSaveable(state.sessionId) { mutableStateOf(false) }
     var messageKindMenuOpen by rememberSaveable(state.sessionId) { mutableStateOf(false) }
@@ -559,6 +563,15 @@ internal fun ChatComposer(
                     Spacer(Modifier.width(4.dp))
                     Text("暂停")
                 }
+            } else if (state.sending) {
+                // 生成中：发送位变成常驻「停止」，与「连续旁观」的暂停按钮同一位置语义。
+                IconButton(onClick = onStop) {
+                    Icon(
+                        imageVector = Icons.Filled.Stop,
+                        contentDescription = "停止生成",
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                }
             } else {
                 IconButton(
                     onClick = onSend,
@@ -583,6 +596,7 @@ internal fun ChatComposer(
             onReconcile = onReconcile,
             onRetry = onRetry,
             onDiscardRetry = onDiscardRetry,
+            onCancelTool = onCancelTool,
         )
     }
 }

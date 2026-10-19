@@ -206,3 +206,31 @@ data class ChatUiState(
                 session.mode == "observe"
         }
 }
+
+/**
+ * 用户主动「停止生成」后的状态收敛（纯函数，便于回归测试）。
+ *
+ * 语义与「失败重试」区分开：这一轮**没有被服务端收录**（只有整轮解析成功才会 commit），
+ * 所以不制造「半截台词已发出」的假象——清空未收录的流式内容、把用户原话放回输入框，
+ * 并说明发生了什么，让「重发」成为唯一诚实的下一步。
+ */
+internal fun ChatUiState.afterStopGenerating(): ChatUiState {
+    val pending = pendingUserMessage
+    return copy(
+        sending = false,
+        streamingReplies = emptyList(),
+        modelReasoning = "",
+        pendingUserMessage = null,
+        failedOperationId = "",
+        failedMessage = "",
+        failedMessageKind = "dialogue",
+        failedSpeakerOverride = "",
+        sendOutcomeUnknown = false,
+        sendBaselineTranscript = null,
+        draft = pending?.message?.takeIf(String::isNotBlank) ?: draft,
+        draftSpeakerOverride = pending?.speakerOverride?.takeIf(String::isNotBlank)
+            ?: draftSpeakerOverride,
+        error = "",
+        notice = "已停止这一轮生成：这一轮没有写进会话，原话已放回输入框。",
+    )
+}

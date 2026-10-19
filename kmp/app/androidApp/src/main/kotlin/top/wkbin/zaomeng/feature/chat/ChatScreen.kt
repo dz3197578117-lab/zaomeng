@@ -301,6 +301,7 @@ fun ChatScreen(
                 ChatSessionPane(
                     sessions = state.runSessions,
                     activeSessionId = sessionId,
+                    generating = state.sending,
                     onSelect = onSelectSession,
                 )
             }
@@ -346,12 +347,14 @@ fun ChatScreen(
                                 onInvokePluginAction = viewModel::invokePluginAction,
                                 onOpenDirector = { directorOpen = true },
                                 onSend = viewModel::send,
+                                onStop = viewModel::stopGenerating,
                                 onToggleContinuousObserve = viewModel::toggleContinuousObserve,
                                 onToggleGenerationEnhancer = viewModel::toggleGenerationEnhancer,
                                 onRecover = viewModel::recoverPending,
                                 onReconcile = viewModel::reconcileUnknownSend,
                                 onRetry = viewModel::retryLastSend,
                                 onDiscardRetry = viewModel::discardFailedSend,
+                                onCancelTool = viewModel::cancelTool,
                             )
                         }
                     }

@@ -152,12 +152,15 @@ import kotlinx.serialization.json.jsonPrimitive
 internal fun ChatSessionPane(
     sessions: List<DialogueSessionDto>,
     activeSessionId: String,
+    /** 当前会话正在生成：切走会取消这一轮（服务端不会收录），必须先确认。 */
+    generating: Boolean = false,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val sorted = remember(sessions) {
         sessions.sortedByDescending { it.updatedAt }
     }
+    var pendingSwitch by remember { mutableStateOf<String?>(null) }
     Surface(
         modifier = modifier.width(280.dp).fillMaxHeight(),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -184,7 +187,15 @@ internal fun ChatSessionPane(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable(enabled = !selected) { onSelect(session.sessionId) }
+                                .clickable(enabled = !selected) {
+                                    // 生成中点另一个会话 = 静默丢掉这一轮（VM 随旧条目销毁）。
+                                    // 先问一句，别让用户以为「切过去再切回来还在」。
+                                    if (generating) {
+                                        pendingSwitch = session.sessionId
+                                    } else {
+                                        onSelect(session.sessionId)
+                                    }
+                                }
                                 .background(
                                     if (selected) {
                                         MaterialTheme.colorScheme.primaryContainer
@@ -227,6 +238,24 @@ internal fun ChatSessionPane(
                 }
             }
         }
+    }
+    pendingSwitch?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingSwitch = null },
+            title = { Text("切换会话会中断这一轮生成") },
+            text = { Text("这一轮还没有写进会话，切过去之后需要重新发送。") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingSwitch = null
+                        onSelect(target)
+                    },
+                ) { Text("仍要切换") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingSwitch = null }) { Text("留在这里") }
+            },
+        )
     }
 }
 internal fun chatSessionModeLabel(mode: String): String = when (mode) {

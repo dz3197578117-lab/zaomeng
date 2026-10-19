@@ -367,18 +367,34 @@ internal fun TranscriptBubble(
                             },
                         )
                         if (includeInnerThoughts && item.innerThought.isNotBlank() && !isUser) {
-                            androidx.compose.material3.HorizontalDivider(
-                                modifier = Modifier.padding(top = 6.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant,
-                            )
-                            Text(
-                                text = "内心独白：${item.innerThought}",
-                                modifier = Modifier.padding(top = 6.dp),
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontStyle = FontStyle.Italic,
-                                ),
-                                color = MaterialTheme.colorScheme.tertiary,
-                            )
+                            // 单条可折叠：此前内心独白只能靠「插件」菜单里的全局开关控制，
+                            // 想读某一轮的独白就得把所有独白一起铺开。
+                            var innerThoughtExpanded by rememberSaveable(item.transcriptKey()) {
+                                mutableStateOf(false)
+                            }
+                            TextButton(
+                                onClick = { innerThoughtExpanded = !innerThoughtExpanded },
+                                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
+                            ) {
+                                Text(
+                                    if (innerThoughtExpanded) "收起内心独白" else "内心独白",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                )
+                            }
+                            if (innerThoughtExpanded) {
+                                androidx.compose.material3.HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant,
+                                )
+                                Text(
+                                    text = item.innerThought,
+                                    modifier = Modifier.padding(top = 6.dp),
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontStyle = FontStyle.Italic,
+                                    ),
+                                    color = MaterialTheme.colorScheme.tertiary,
+                                )
+                            }
                         }
                         if (streaming) {
                             Text(

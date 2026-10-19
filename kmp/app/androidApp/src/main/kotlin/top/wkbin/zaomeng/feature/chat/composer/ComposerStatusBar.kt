@@ -155,8 +155,28 @@ internal fun ComposerStatusBar(
     onReconcile: () -> Unit,
     onRetry: () -> Unit,
     onDiscardRetry: () -> Unit,
+    /** 取消正在运行的写作工具（导演/修正版/深度复核…）：此前它只做阻断，没有任何可见出口。 */
+    onCancelTool: () -> Unit = {},
 ) {
-        if (state.pendingUserMessage == null && state.failedOperationId.isNotBlank() && !state.sending) {
+        if (state.toolBusy.isNotBlank()) {
+            // 工具跑起来时发送/刷新/工具菜单全被禁用，而进度只在工具面板内部——面板一关
+            // 界面就是「全灰、只有个默认文案的按钮」，用户会以为点了没反应。
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                Text(
+                    toolBusyLabel(state.toolBusy),
+                    modifier = Modifier.weight(1f).padding(start = 8.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = onCancelTool) { Text("取消") }
+            }
+        } else if (state.pendingUserMessage == null && state.failedOperationId.isNotBlank() && !state.sending) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -253,4 +273,15 @@ internal fun ComposerStatusBar(
                 }
             }
         }
+}
+
+/** 写作工具的忙碌文案：键就是工具名，不认识的一律给通用说法，避免漏配时出现空白进度。 */
+internal fun toolBusyLabel(toolBusy: String): String = when {
+    toolBusy == "memory" -> "正在整理长期记忆…"
+    toolBusy == "correct" -> "正在生成修正版…"
+    toolBusy == "review" -> "正在深度复核…"
+    toolBusy == "recommend_scene" -> "正在推荐下一场景…"
+    toolBusy == "scene_cards" -> "正在读取场景卡…"
+    toolBusy.startsWith("enhancer:") -> "正在切换生成增强…"
+    else -> "正在生成方案…"
 }
