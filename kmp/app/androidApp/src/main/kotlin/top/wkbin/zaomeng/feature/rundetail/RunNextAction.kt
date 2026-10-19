@@ -4,6 +4,9 @@ import top.wkbin.zaomeng.data.api.RunManifestDto
 
 internal enum class RunNextActionTarget {
     ResumeDistillation,
+
+    /** 沿用原人物与正文整本重跑（书卷详情里带确认框的那条路径）。 */
+    RestartDistillation,
     OpenRedistill,
     OpenPersona,
     OpenRelations,
@@ -18,6 +21,15 @@ internal data class RunNextAction(
     val target: RunNextActionTarget,
     val character: String = "",
 )
+
+/**
+ * 关系图谱「已经跑过但没成」（失败/被停止），需要重跑。
+ *
+ * 与「还没跑过」（空白、`pending`）区分开：后者人物档案通常还没校对完，
+ * 先把人推去校对人物是对的；但图谱已经失败时再让人去校对人物等于让用户做无用功。
+ */
+internal fun graphNeedsRestart(graphStatus: String): Boolean =
+    graphStatus == "failed" || graphStatus == "stopped"
 
 /**
  * Selects the single most useful next step for a book volume.
@@ -71,6 +83,16 @@ internal fun nextActionFor(run: RunManifestDto): RunNextAction {
     }
 
     val firstCharacter = characters.first()
+
+    if (graphNeedsRestart(graphStatus)) {
+        return RunNextAction(
+            title = "关系图谱没有跑完",
+            description = "人物资料已经在书卷里了；沿用原人物与正文重跑一遍就能补齐关系图谱，不必重新导入正文。",
+            label = "重跑一遍",
+            target = RunNextActionTarget.RestartDistillation,
+        )
+    }
+
     if (graphStatus != "complete") {
         return RunNextAction(
             title = "先校对人物档案",

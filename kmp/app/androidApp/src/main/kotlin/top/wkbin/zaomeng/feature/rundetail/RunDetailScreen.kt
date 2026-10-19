@@ -58,6 +58,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -68,6 +70,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -92,6 +95,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.koin.compose.koinInject
 import androidx.window.core.layout.WindowSizeClass
+import kotlinx.coroutines.launch
+import top.wkbin.zaomeng.feature.redistill.NOTIFICATION_DENIED_MESSAGE
 import top.wkbin.zaomeng.platform.DistillationForeground
 import top.wkbin.zaomeng.platform.rememberDocumentPicker
 import top.wkbin.zaomeng.platform.rememberFileExporter
@@ -146,10 +151,19 @@ fun RunDetailScreen(
         if (persona != null) avatarCropBytes = bytes
     }
     var resumeAfterPermission by rememberSaveable { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarScope = rememberCoroutineScope()
+    // 通知权限只决定「进度能否在通知栏看到」，而蒸馏是十几分钟起步的长任务：
+    // 没有通知就没有任何页面外可见性 → **拒绝即不启动**并说清下一步。
+    // 与 RedistillScreen 共用同一句话（NOTIFICATION_DENIED_MESSAGE），两处行为与文案都不许漂移。
     val requestNotificationPermission = rememberNotificationPermissionRequester { granted ->
         if (granted) {
             if (resumeAfterPermission) viewModel.resumeUnfinishedCharacters()
             else viewModel.redistillOriginalCharacters()
+        } else {
+            snackbarScope.launch {
+                snackbarHostState.showSnackbar(NOTIFICATION_DENIED_MESSAGE)
+            }
         }
         resumeAfterPermission = false
     }
@@ -315,6 +329,7 @@ fun RunDetailScreen(
 
     Scaffold(
         modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -427,7 +442,13 @@ private fun RunDetailContent(
                     message = state.error.ifBlank { state.message },
                     error = state.error.isNotBlank(),
                     onDismiss = onDismissNotice,
-                    actionLabel = if (state.error.isNotBlank() && state.exportedPackage != null) {
+                    // 只要导出包还留着（包括用户主动取消了保存位置）就给回「重新选择位置」的入口；
+                    // 系统保存框正开着（exportDestinationPending）时不需要这个按钮。
+                    actionLabel = if (
+                        state.exportedPackage != null &&
+                        !state.exporting &&
+                        !state.exportDestinationPending
+                    ) {
                         "重新选择位置"
                     } else {
                         ""
@@ -453,6 +474,7 @@ private fun RunDetailContent(
                         onOpenRelations = onOpenRelations,
                         onOpenSessions = onOpenSessions,
                         onOpenChapters = onOpenChapters,
+                        onRestart = onRedistill,
                         modifier = Modifier.weight(1f),
                     )
                     BookReviewCard(
@@ -475,6 +497,7 @@ private fun RunDetailContent(
                     onOpenRelations = onOpenRelations,
                     onOpenSessions = onOpenSessions,
                     onOpenChapters = onOpenChapters,
+                    onRestart = onRedistill,
                 )
             }
             if (reviewAvailable) {
@@ -737,6 +760,7 @@ private fun NextActionCard(
     onOpenRelations: () -> Unit,
     onOpenSessions: () -> Unit,
     onOpenChapters: () -> Unit,
+    onRestart: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val action = nextActionFor(run)
@@ -766,6 +790,7 @@ private fun NextActionCard(
                         RunNextActionTarget.OpenRelations -> onOpenRelations()
                         RunNextActionTarget.OpenSessions -> onOpenSessions()
                         RunNextActionTarget.OpenChapters -> onOpenChapters()
+                        RunNextActionTarget.RestartDistillation -> onRestart()
                     }
                 },
                 modifier = Modifier.align(Alignment.End),

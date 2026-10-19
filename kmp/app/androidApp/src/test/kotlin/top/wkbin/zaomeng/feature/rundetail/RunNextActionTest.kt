@@ -50,4 +50,42 @@ class RunNextActionTest {
 
         assertEquals(RunNextActionTarget.OpenRelations, action.target)
     }
+
+    @Test
+    fun `failed graph offers a restart instead of persona review`() {
+        val action = nextActionFor(
+            RunManifestDto(
+                status = "failed",
+                artifactIndex = ArtifactIndexDto(characters = listOf(PersonaIndexDto(name = "黛玉"))),
+                summary = RunSummaryDto(graphStatus = "failed"),
+            ),
+        )
+
+        // 人物已经齐了，只是关系图谱失败：再让人去校对人物等于让他做无用功。
+        assertEquals(RunNextActionTarget.RestartDistillation, action.target)
+        assertEquals("重跑一遍", action.label)
+    }
+
+    @Test
+    fun `stopped graph also offers a restart`() {
+        val action = nextActionFor(
+            RunManifestDto(
+                status = "stopped",
+                artifactIndex = ArtifactIndexDto(characters = listOf(PersonaIndexDto(name = "黛玉"))),
+                summary = RunSummaryDto(graphStatus = "stopped"),
+            ),
+        )
+
+        assertEquals(RunNextActionTarget.RestartDistillation, action.target)
+    }
+
+    @Test
+    fun `graph status completeness helper ignores unfinished states`() {
+        // 只有「跑过但没成」才需要重跑；空白与 pending 说明还没开始跑。
+        assertEquals(true, graphNeedsRestart("failed"))
+        assertEquals(true, graphNeedsRestart("stopped"))
+        assertEquals(false, graphNeedsRestart(""))
+        assertEquals(false, graphNeedsRestart("pending"))
+        assertEquals(false, graphNeedsRestart("complete"))
+    }
 }

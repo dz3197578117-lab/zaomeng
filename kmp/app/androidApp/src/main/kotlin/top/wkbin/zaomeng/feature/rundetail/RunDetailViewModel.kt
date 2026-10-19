@@ -45,6 +45,8 @@ data class RunDetailUiState(
     val exportedPackage: ExportedRunPackage? = null,
     val exportRequestId: Long = 0,
     val exportDestinationPending: Boolean = false,
+    /** 本次导出是否携带会话记录：决定完成提示怎么写（提示写错会让用户按错误判断去转发）。 */
+    val exportIncludesDialogue: Boolean = true,
     val avatarBytes: Map<String, ByteArray> = emptyMap(),
     val updatingAvatar: String = "",
     val reviewLoading: Boolean = false,
@@ -200,6 +202,7 @@ class RunDetailViewModel(
                     exporting = true,
                     exportedPackage = null,
                     exportDestinationPending = false,
+                    exportIncludesDialogue = includeDialogue,
                     error = "",
                     message = "",
                 )
@@ -262,14 +265,16 @@ class RunDetailViewModel(
         mutableState.update {
             it.copy(
                 exportDestinationPending = false,
-                error = "已取消选择保存位置。",
-                message = "",
+                // 用户主动取消不是失败：走非错误提示通道（message），导出包仍然留着，
+                // 提示条上还能再点「重新选择位置」。
+                message = "已取消选择保存位置，导出包还在，可以重新选择位置。",
             )
         }
     }
 
     suspend fun saveExportedPackage(destination: Sink) {
         val exported = state.value.exportedPackage ?: return
+        val includesDialogue = state.value.exportIncludesDialogue
         try {
             withContext(platformIoDispatcher) {
                 FileSystem.SYSTEM.source(exported.file).buffer().use { source ->
@@ -282,7 +287,7 @@ class RunDetailViewModel(
                     exportedPackage = null,
                     exportDestinationPending = false,
                     error = "",
-                    message = "书卷已导出（不含聊天记录）。",
+                    message = exportSuccessMessage(includesDialogue),
                 )
             }
         } catch (cancelled: CancellationException) {
@@ -502,4 +507,16 @@ class RunDetailViewModel(
         const val RUNNING_STATUS = "running"
         const val POLL_INTERVAL_MS = 2_000L
     }
+}
+
+/**
+ * 导出完成后的提示文案。
+ *
+ * 带会话记录时必须明说：这句提示是用户判断「这个包能不能随手转发」的唯一依据，
+ * 写死成「不含聊天记录」会让带聊天记录的包被当成可以随便发的东西。
+ */
+internal fun exportSuccessMessage(includesDialogue: Boolean): String = if (includesDialogue) {
+    "书卷已导出（含会话记录），转发前请留意。"
+} else {
+    "书卷已导出（不含聊天记录）。"
 }

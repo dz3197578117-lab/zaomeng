@@ -172,6 +172,12 @@ fun SessionsScreen(
             if (visibleSessions.none { it.key == pending.key }) pendingDeletion = null
         }
     }
+    // 删除成功就立刻关对话框：不等分页把这一项刷掉，否则用户点了「删除」看上去毫无反应。
+    LaunchedEffect(state.deletedSessionKeys) {
+        pendingDeletion?.let { pending ->
+            if (pending.key in state.deletedSessionKeys) pendingDeletion = null
+        }
+    }
     LaunchedEffect(lazySessions.itemCount) {
         viewModel.ensureAvatars(visibleSessions)
     }
@@ -341,10 +347,31 @@ fun SessionsScreen(
 
     pendingDeletion?.let { session ->
         val deleting = session.key in state.deletingSessionKeys
+        val deleteError = state.deleteErrorMessage.takeIf { state.deleteErrorKey == session.key }.orEmpty()
         AlertDialog(
             onDismissRequest = { if (!deleting) pendingDeletion = null },
             title = { Text("删除这段会话？") },
-            text = { Text("聊天记录会从这台手机上永久删除，人物资料和书卷不会受影响。") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("聊天记录会从这台手机上永久删除，人物资料和书卷不会受影响。")
+                    if (deleting) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Text("正在删除…", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    if (deleteError.isNotBlank()) {
+                        Text(
+                            deleteError,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -352,7 +379,7 @@ fun SessionsScreen(
                     },
                     enabled = !deleting,
                 ) {
-                    Text("删除", color = MaterialTheme.colorScheme.error)
+                    Text(if (deleteError.isNotBlank()) "重试" else "删除", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {

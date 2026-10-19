@@ -11,6 +11,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -30,6 +32,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.CollectionsBookmark
@@ -38,12 +43,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -164,6 +171,10 @@ fun BookshelfScreen(
                     onImport = onImport,
                     onOpenCrossover = onOpenCrossover,
                     onOpenRun = onOpenRun,
+                    onSearchQueryChange = viewModel::updateSearchQuery,
+                    onSelectFilter = viewModel::selectFilter,
+                    onToggleSort = viewModel::toggleSort,
+                    onClearFilters = viewModel::clearFilters,
                     modifier = Modifier.padding(innerPadding),
                 )
             } else {
@@ -203,9 +214,14 @@ private fun ReadyBookshelf(
     onImport: () -> Unit,
     onOpenCrossover: () -> Unit,
     onOpenRun: (String) -> Unit,
+    onSearchQueryChange: (String) -> Unit,
+    onSelectFilter: (BookshelfFilter) -> Unit,
+    onToggleSort: () -> Unit,
+    onClearFilters: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val visibleRuns = state.runs
+    // 书架会用搜索词、状态筛选与排序收敛列表；空书架不显示这些控件（省得摆一排没用的东西）。
+    val visibleRuns = filterBookshelfRuns(state)
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 380.dp),
         modifier = modifier.fillMaxSize(),
@@ -292,10 +308,108 @@ private fun ReadyBookshelf(
         } else if (state.runs.isEmpty()) {
             item(span = { GridItemSpan(maxLineSpan) }) { EmptyBookshelf(onImport) }
         } else {
-            items(visibleRuns, key = RunManifestDto::runId) { run ->
-                RunCard(run = run, onClick = { onOpenRun(run.runId) })
+            item(key = "bookshelf-controls", span = { GridItemSpan(maxLineSpan) }) {
+                BookshelfControls(
+                    state = state,
+                    visibleCount = visibleRuns.size,
+                    onSearchQueryChange = onSearchQueryChange,
+                    onSelectFilter = onSelectFilter,
+                    onToggleSort = onToggleSort,
+                )
+            }
+            if (visibleRuns.isEmpty()) {
+                item(key = "bookshelf-no-match", span = { GridItemSpan(maxLineSpan) }) {
+                    NoMatchingBooks(onClearFilters = onClearFilters)
+                }
+            } else {
+                items(visibleRuns, key = RunManifestDto::runId) { run ->
+                    RunCard(run = run, onClick = { onOpenRun(run.runId) })
+                }
             }
         }
+    }
+}
+
+/**
+ * 书架的搜索 / 状态筛选 / 排序。
+ *
+ * 书架一长，「需处理的、失败的」和「能直接用的」混在一排卡片里就没法找了，
+ * 所以这三个控件必须真的接上 [filterBookshelfRuns]，而不是只把状态留在 ViewModel 里。
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun BookshelfControls(
+    state: BookshelfUiState,
+    visibleCount: Int,
+    onSearchQueryChange: (String) -> Unit,
+    onSelectFilter: (BookshelfFilter) -> Unit,
+    onToggleSort: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(AppSpacing.sm)) {
+        OutlinedTextField(
+            value = state.searchQuery,
+            onValueChange = onSearchQueryChange,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("搜索书名、来源或人物") },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            trailingIcon = if (state.searchQuery.isBlank()) {
+                null
+            } else {
+                {
+                    IconButton(onClick = { onSearchQueryChange("") }) {
+                        Icon(Icons.Default.Close, contentDescription = "清空搜索")
+                    }
+                }
+            },
+            singleLine = true,
+        )
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(AppSpacing.sm),
+            verticalArrangement = Arrangement.spacedBy(AppSpacing.xs),
+        ) {
+            BookshelfFilter.entries.forEach { option ->
+                FilterChip(
+                    selected = state.filter == option,
+                    onClick = { onSelectFilter(option) },
+                    label = { Text(option.label) },
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (visibleCount == state.runs.size) {
+                    "共 ${state.runs.size} 本书"
+                } else {
+                    "找到 $visibleCount 本 / 共 ${state.runs.size} 本"
+                },
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TextButton(onClick = onToggleSort) {
+                Icon(Icons.Default.Sort, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(state.sort.label)
+            }
+        }
+    }
+}
+
+@Composable
+private fun NoMatchingBooks(onClearFilters: () -> Unit) {
+    AppCard(variant = AppCardVariant.Outlined, contentPadding = PaddingValues(0.dp)) {
+        AppEmptyState(
+            title = "没有符合条件的书卷",
+            description = "换个关键词，或者把筛选清掉再看。",
+            icon = Icons.Default.Search,
+            action = {
+                Button(onClick = onClearFilters) { Text("清空筛选") }
+            },
+        )
     }
 }
 

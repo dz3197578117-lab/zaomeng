@@ -300,7 +300,8 @@ internal fun filterBookshelfRuns(state: BookshelfUiState): List<RunManifestDto> 
         BookshelfFilter.All -> { _ -> true }
         BookshelfFilter.Ready -> { run -> run.status == "ready" }
         BookshelfFilter.Running -> { run -> run.status == "running" }
-        BookshelfFilter.Draft -> { run -> run.status == "draft" }
+        // 「待蒸馏」在书架卡片上同时对应 pending（刚导入）与 draft（旧数据），两处标签一致。
+        BookshelfFilter.Draft -> { run -> run.status == "draft" || run.status == "pending" }
         BookshelfFilter.NeedsAttention -> { run -> run.status == "failed" || run.status == "stopped" }
     }
     val filtered = state.runs.filter { run ->

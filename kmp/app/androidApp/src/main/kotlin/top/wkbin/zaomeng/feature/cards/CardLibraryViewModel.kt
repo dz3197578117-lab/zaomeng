@@ -169,6 +169,14 @@ class CardLibraryViewModel(
     fun save() {
         val snapshot = state.value
         if (!snapshot.editorVisible || snapshot.saving) return
+        // 星号只是视觉提示；真正的必填拦截在这里。缺了就说缺哪些，别让用户对着 41 个输入框猜。
+        val missing = missingRequiredFields(snapshot.kind, snapshot.draft.values)
+        if (missing.isNotEmpty()) {
+            mutableState.update {
+                it.copy(error = missingRequiredFieldsMessage(missing), message = "")
+            }
+            return
+        }
         viewModelScope.launch {
             mutableState.update { it.copy(saving = true, error = "", message = "") }
             try {
@@ -314,6 +322,23 @@ internal fun definitions(kind: ReusableCardKind): List<CardFieldDefinition> = wh
     ReusableCardKind.Self -> selfFields
     ReusableCardKind.Opening -> openingFields
 }
+
+/**
+ * 保存前还缺哪些必填项（编辑器里打了星号的那些）。
+ *
+ * 为什么要在客户端拦：服务端只对场景卡校验必填，自设卡/开场预设原样落盘，
+ * 于是「角色名、核心身份、说话风格全空」的空壳卡也能存下来；到了「入场」会话里
+ * 选中它，名字和身份都填不出来，用户只会看到「进入场景」一直是灰的。
+ */
+internal fun missingRequiredFields(
+    kind: ReusableCardKind,
+    values: Map<String, String>,
+): List<CardFieldDefinition> = definitions(kind).filter { definition ->
+    definition.required && values[definition.key].orEmpty().isBlank()
+}
+
+internal fun missingRequiredFieldsMessage(missing: List<CardFieldDefinition>): String =
+    "请先补全这些必填项：${missing.joinToString("、") { it.label }}"
 
 internal val ReusableCardKind.displayName: String
     get() = when (this) {

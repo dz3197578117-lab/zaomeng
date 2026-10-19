@@ -29,6 +29,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,6 +39,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -45,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import top.wkbin.zaomeng.platform.DistillationForeground
 import top.wkbin.zaomeng.platform.rememberDocumentPicker
@@ -62,8 +67,22 @@ fun ImportBookScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var requestedKindName by rememberSaveable { mutableStateOf("") }
     var showEstimateConfirmation by rememberSaveable { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarScope = rememberCoroutineScope()
     val distillationForeground: DistillationForeground = koinInject()
-    val documentPicker = rememberDocumentPicker { name, bytes ->
+    val documentPicker = rememberDocumentPicker(
+        // 取消与读取失败都必须复位：beginFileSelection 已经在拉起选择器**之前**
+        // 就把页面置成「正在读取文件…」并禁用了来源卡与提交按钮，没有回调就再也没有
+        // 复位路径——界面会一直转圈，只能退出页面重进。
+        onCancelled = {
+            requestedKindName = ""
+            viewModel.cancelFileSelection()
+        },
+        onFailed = { message ->
+            requestedKindName = ""
+            viewModel.failFileSelection(message)
+        },
+    ) { name, bytes ->
         val kind = ImportDocumentKind.entries.firstOrNull { it.name == requestedKindName }
         requestedKindName = ""
         if (kind != null) {
@@ -72,7 +91,15 @@ fun ImportBookScreen(
             viewModel.cancelFileSelection()
         }
     }
-    val requestNotificationPermission = rememberNotificationPermissionRequester {
+    val requestNotificationPermission = rememberNotificationPermissionRequester { granted ->
+        // 与重蒸馏/续跑那两处（拒绝则**不启动**）刻意不同：导入是主流程，
+        // 因为没给通知权限就挡住「导入并蒸馏」，用户就没有任何替代路径。
+        // 这里照常开始，但明确告知「完成后不会在通知栏提醒你」。
+        if (!granted) {
+            snackbarScope.launch {
+                snackbarHostState.showSnackbar("未授予通知权限：蒸馏会照常开始，但完成后不会在通知栏提醒你。")
+            }
+        }
         viewModel.submit()
     }
 
@@ -155,6 +182,7 @@ fun ImportBookScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("导入小说") },

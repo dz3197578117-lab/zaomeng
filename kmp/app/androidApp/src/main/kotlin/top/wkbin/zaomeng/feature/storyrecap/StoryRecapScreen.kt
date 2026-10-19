@@ -26,10 +26,12 @@ import androidx.compose.material.icons.outlined.MenuBook
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -65,30 +67,34 @@ fun StoryRecapScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val recap = state.session?.storyRecap
-    var novelConversionStarted by remember { mutableStateOf(false) }
     var pendingNovelConversion by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val novelConversionForeground: NovelConversionForeground = koinInject()
-    val requestNotificationPermission = rememberNotificationPermissionRequester { granted ->
-        if (pendingNovelConversion && granted) {
-            novelConversionStarted = novelConversionForeground.start(
-                viewModel.runId,
-                viewModel.sessionId,
-                "",
-            )
+
+    fun startNovelConversion() {
+        if (novelConversionForeground.start(viewModel.runId, viewModel.sessionId, "")) {
+            viewModel.markNovelConversionStarted()
+        } else {
+            viewModel.updateConversionNotice("没能启动后台生成，请稍后重试。")
         }
-        pendingNovelConversion = false
+    }
+
+    val requestNotificationPermission = rememberNotificationPermissionRequester { granted ->
+        if (pendingNovelConversion) {
+            pendingNovelConversion = false
+            // 未授权通知也照常排队：前台服务不需要通知权限也能跑，只是结果不会在通知栏提醒。
+            startNovelConversion()
+            if (!granted) {
+                viewModel.updateConversionNotice("未授权通知不影响生成，但完成后不会在通知栏提醒你。")
+            }
+        }
     }
     val shareText = rememberShareText()
 
-    fun startNovelConversion() {
+    fun requestNovelConversion() {
         if (novelConversionForeground.hasNotificationPermission()) {
-            novelConversionStarted = novelConversionForeground.start(
-                viewModel.runId,
-                viewModel.sessionId,
-                "",
-            )
+            startNovelConversion()
         } else {
             pendingNovelConversion = true
             requestNotificationPermission()
@@ -177,6 +183,13 @@ fun StoryRecapScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                // 已经有复盘内容时，刷新失败原本是完全静默的（错误页只在 recap == null 时渲染）。
+                // 顶部留一条可重试的提示条，用户至少知道「刚才那次刷新没成」。
+                if (state.error.isNotBlank()) {
+                    item(key = "error-banner") {
+                        RecapRefreshErrorBanner(message = state.error, onRetry = viewModel::load)
+                    }
+                }
                 item(key = "header") { RecapHeader(recap) }
                 if (recap.events.isNotEmpty()) {
                     item(key = "events") { EventTimelineCard(recap.events) }
@@ -198,8 +211,9 @@ fun StoryRecapScreen(
                 }
                 item(key = "convert") {
                     NovelConversionCard(
-                        started = novelConversionStarted,
-                        onClick = ::startNovelConversion,
+                        started = state.novelConversionStarted,
+                        notice = state.conversionNotice,
+                        onClick = ::requestNovelConversion,
                     )
                 }
                 item(key = "footer-space") { Spacer(Modifier.height(8.dp)) }
@@ -417,6 +431,7 @@ private fun HooksCard(hooks: List<String>) {
 @Composable
 private fun NovelConversionCard(
     started: Boolean,
+    notice: String,
     onClick: () -> Unit,
 ) {
     AppCard(
@@ -432,18 +447,54 @@ private fun NovelConversionCard(
             )
             Text(
                 text = if (started) {
-                    "完成后会通过通知提醒你。"
+                    "已经排进后台队列，完成后会通过通知栏提醒（未授权通知则不会提醒）。想换一版可以再生成一次，会覆盖本会话生成的章节。"
                 } else {
                     "把这段对话改写成连贯的小说章节，至少需要 6 轮有效对话。"
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (!started) {
+            if (started) {
+                // 不做硬性禁用：确实有人就是想再写一版；只是别再让人以为「上一次没生效」。
+                OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+                    Text("再生成一版")
+                }
+            } else {
                 Button(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
                     Text("开始生成")
                 }
             }
+            if (notice.isNotBlank()) {
+                Text(
+                    text = notice,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/** 已经有复盘内容时刷新失败的提示条：说明原因并给一次重试。 */
+@Composable
+private fun RecapRefreshErrorBanner(message: String, onRetry: () -> Unit) {
+    AppCard(
+        modifier = Modifier.fillMaxWidth(),
+        containerColor = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        contentPadding = PaddingValues(AppSpacing.lg),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = message,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            TextButton(onClick = onRetry) { Text("重试") }
         }
     }
 }

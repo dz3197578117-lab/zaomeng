@@ -86,6 +86,11 @@ data class SessionsUiState(
     val selectedSessionKeys: Set<String> = emptySet(),
     val deletingSelection: Boolean = false,
     val deletingSessionKeys: Set<String> = emptySet(),
+    /** 已删除成功的会话 key：删除对话框据此立刻关闭，不再靠「列表刷新后消失」表现成功。 */
+    val deletedSessionKeys: Set<String> = emptySet(),
+    /** 单条删除失败的原因，只对该会话的删除对话框显示（列表顶部的错误卡会被对话框挡住）。 */
+    val deleteErrorKey: String = "",
+    val deleteErrorMessage: String = "",
     val createdSession: DialogueSessionDto? = null,
     val error: String = "",
 ) {
@@ -673,22 +678,34 @@ class SessionsViewModel(
                     loading = false,
                     refreshing = false,
                     deletingSessionKeys = it.deletingSessionKeys + key,
+                    deleteErrorKey = "",
+                    deleteErrorMessage = "",
                     error = "",
                 )
             }
             try {
                 deleteDialogueSession(session.runId, session.sessionId)
                 mutableState.update {
-                    it.copy(deletingSessionKeys = it.deletingSessionKeys - key)
+                    it.copy(
+                        deletingSessionKeys = it.deletingSessionKeys - key,
+                        deletedSessionKeys = it.deletedSessionKeys + key,
+                        deleteErrorKey = "",
+                        deleteErrorMessage = "",
+                    )
                 }
                 rebuildPagerIfNeeded()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
+                val message = error.readableMessage("删除会话失败，请稍后重试。")
                 mutableState.update { current ->
                     current.copy(
                         deletingSessionKeys = current.deletingSessionKeys - key,
-                        error = error.readableMessage("删除会话失败，请稍后重试。"),
+                        // 删除对话框是模态的：把原因同时放进它自己的错误位，否则用户只会看到
+                        // 对话框没关、列表顶部那块红卡被压在下面。
+                        deleteErrorKey = key,
+                        deleteErrorMessage = message,
+                        error = message,
                     )
                 }
             }

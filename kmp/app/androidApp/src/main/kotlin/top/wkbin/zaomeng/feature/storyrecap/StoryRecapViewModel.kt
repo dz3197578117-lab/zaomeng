@@ -16,6 +16,13 @@ data class StoryRecapUiState(
     val refreshing: Boolean = false,
     val session: DialogueSessionDto? = null,
     val error: String = "",
+    /**
+     * 这一局是否已经提交过「转小说」。由 [NovelConversionTracker] 提供，
+     * 页面重建/退出再进都还是「已在后台开始」，不会让用户以为上一次没生效。
+     */
+    val novelConversionStarted: Boolean = false,
+    /** 「开始生成」相关的提示（例如未授权通知、启动失败），非错误通道。 */
+    val conversionNotice: String = "",
 )
 
 class StoryRecapViewModel(
@@ -29,7 +36,20 @@ class StoryRecapViewModel(
     init {
         require(runId.isNotBlank()) { "runId 不能为空。" }
         require(sessionId.isNotBlank()) { "sessionId 不能为空。" }
+        mutableState.update {
+            it.copy(novelConversionStarted = NovelConversionTracker.isStarted(runId, sessionId))
+        }
         load()
+    }
+
+    /** 后台生成已经排队成功：记进进程内账本，并让按钮立刻变成「已在后台开始」。 */
+    fun markNovelConversionStarted() {
+        NovelConversionTracker.markStarted(runId, sessionId)
+        mutableState.update { it.copy(novelConversionStarted = true, conversionNotice = "") }
+    }
+
+    fun updateConversionNotice(message: String) {
+        mutableState.update { it.copy(conversionNotice = message) }
     }
 
     fun load() {

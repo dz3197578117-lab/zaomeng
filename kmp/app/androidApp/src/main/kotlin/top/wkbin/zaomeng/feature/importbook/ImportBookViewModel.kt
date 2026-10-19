@@ -83,6 +83,18 @@ class ImportBookViewModel(
         mutableState.update { it.copy(readingFile = false) }
     }
 
+    /**
+     * 选择器拿不到文件字节（文件被移走、权限被撤销、大文件 OOM）时复位。
+     *
+     * 与 [cancelFileSelection] 分开：用户主动取消不必报错，读不出来要说明原因，
+     * 否则「正在读取文件…」消失后页面什么都不说。
+     */
+    fun failFileSelection(message: String) {
+        mutableState.update {
+            it.copy(readingFile = false, error = message.ifBlank { "文件读取失败。" })
+        }
+    }
+
     fun loadDocument(name: String, bytes: ByteArray, kind: ImportDocumentKind) {
         fileLoadJob?.cancel()
         fileLoadJob = viewModelScope.launch {
